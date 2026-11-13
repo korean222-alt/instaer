@@ -149,7 +149,8 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   const frame = (now: number) => {
     if (disposed) return;
     raf = requestAnimationFrame(frame);
-    const dt = Math.min(0.05, (now - last) / 1000);
+    // 첫 프레임은 시간이 거꾸로 잡힐 수 있어서 0 아래로 내려가지 않게 한다
+    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
     const t0 = performance.now();
 
@@ -162,6 +163,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     else if (regionGoal !== regionNow) regionNow = regionGoal;
     else if (regionNow >= 0) regionAmount = Math.min(1, regionAmount + dt / 0.35);
     else regionAmount = Math.max(0, regionAmount - dt / 0.25);
+    regionAmount = Math.min(1, Math.max(0, regionAmount));
     atmosphere.shared.uRegion.value.set(regionNow, regionAmount * regionAmount * (3 - 2 * regionAmount));
 
     // 그림자는 보이는 범위만. 살짝 움직일 때마다 다시 잡지 않도록 격자에 맞춘다
