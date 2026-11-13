@@ -10,6 +10,8 @@ import { createCatMaterial, type CatShared } from './catMaterial';
  */
 export interface CatModel {
   geometry: THREE.BufferGeometry;
+  /** 보통 거리에서 쓰는 가벼운 모양 (없으면 geometry 를 그대로 쓴다) */
+  lowGeometry?: THREE.BufferGeometry;
   material: THREE.Material;
   /** 그림자용 재질 (없으면 기본값) */
   depthMaterial?: THREE.Material;
@@ -19,5 +21,5 @@ export interface CatModel {
 
 export function createProceduralCatModel(shared: CatShared): CatModel {
   const { material, depthMaterial } = createCatMaterial(shared);
-  return { geometry: buildCatGeometry(), material, depthMaterial, height: 1 };
+  return { geometry: buildCatGeometry('high'), lowGeometry: buildCatGeometry('low'), material, depthMaterial, height: 1 };
 }

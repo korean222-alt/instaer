@@ -1,21 +1,33 @@
 import * as THREE from 'three';
 import type { Atmosphere } from '../core/atmosphere';
 import { GRASS_EDGE, LAND_RANGE, PATH_RANGE, SHORE_D } from './constants';
-import { heightFromLand, type MapField } from './mapField';
+import { heightFromLand } from './mapField';
+import type { MapUniforms } from './mapUniforms';
 
-/** 섬 땅 모양: 지도 범위를 격자로 덮고 높이만 준다. 깊은 바닷속은 그리지 않는다 */
-export function buildTerrainGeometry(map: MapField, cell = 0.5): THREE.BufferGeometry {
-  const { minX, minZ, size } = map.def;
-  const n = Math.round(size / cell);
-  const verts = (n + 1) * (n + 1);
+export interface TerrainBounds {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+/** 섬 하나의 땅 모양: 범위를 격자로 덮고 높이만 준다. 깊은 바닷속은 그리지 않는다 */
+export function buildTerrainGeometry(
+  b: TerrainBounds,
+  landFn: (x: number, z: number) => number,
+  cell = 1,
+): THREE.BufferGeometry {
+  const nx = Math.ceil((b.maxX - b.minX) / cell);
+  const nz = Math.ceil((b.maxZ - b.minZ) / cell);
+  const verts = (nx + 1) * (nz + 1);
   const pos = new Float32Array(verts * 3);
   const land = new Float32Array(verts);
-  for (let j = 0; j <= n; j++) {
-    for (let i = 0; i <= n; i++) {
-      const k = j * (n + 1) + i;
-      const x = minX + i * cell;
-      const z = minZ + j * cell;
-      const d = map.landAt(x, z);
+  for (let j = 0; j <= nz; j++) {
+    for (let i = 0; i <= nx; i++) {
+      const k = j * (nx + 1) + i;
+      const x = b.minX + i * cell;
+      const z = b.minZ + j * cell;
+      const d = landFn(x, z);
       land[k] = d;
       pos[k * 3] = x;
       pos[k * 3 + 1] = heightFromLand(d);
@@ -24,14 +36,14 @@ export function buildTerrainGeometry(map: MapField, cell = 0.5): THREE.BufferGeo
   }
   const index: number[] = [];
   const deep = -2.2;
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) {
-      const a = j * (n + 1) + i;
-      const b = a + 1;
-      const c = a + (n + 1);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const a = j * (nx + 1) + i;
+      const bb = a + 1;
+      const c = a + (nx + 1);
       const d = c + 1;
-      if (land[a] < deep && land[b] < deep && land[c] < deep && land[d] < deep) continue;
-      index.push(a, c, b, b, c, d);
+      if (land[a] < deep && land[bb] < deep && land[c] < deep && land[d] < deep) continue;
+      index.push(a, c, bb, bb, c, d);
     }
   }
   const geo = new THREE.BufferGeometry();
@@ -47,18 +59,19 @@ export function buildTerrainGeometry(map: MapField, cell = 0.5): THREE.BufferGeo
  * 풀밭 가장자리에는 어두운 테두리와 모래 위 그림자를 그려서 얕은 턱처럼 보이게 한다.
  */
 export function createTerrainMaterial(
-  map: MapField,
+  map: MapUniforms,
   noise: THREE.Texture,
   atmosphere: Atmosphere,
 ): THREE.MeshLambertMaterial {
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   const c = (hex: string) => ({ value: new THREE.Color(hex) });
   const uniforms = {
-    uMapTex: { value: map.texture },
+    uMapTex: map.uMapTex,
     uNoiseTex: { value: noise },
-    uMapMin: { value: new THREE.Vector2(map.def.minX, map.def.minZ) },
-    uMapSize: { value: map.def.size },
+    uMapMin: map.uMapMin,
+    uMapSize: map.uMapSize,
     uNight: atmosphere.shared.uNight,
+    uLockTint: c('#e6eef2'),
     uSand: c('#f7e6bb'),
     uSandLight: c('#fdf1d2'),
     uSandWet: c('#e3c794'),
@@ -86,7 +99,7 @@ export function createTerrainMaterial(
         uniform vec2 uMapMin;
         uniform float uMapSize;
         uniform vec3 uSand, uSandLight, uSandWet, uGrass, uGrassLight, uGrassDark;
-        uniform vec3 uPath, uPathLight, uPathEdge, uStone, uStoneDark;
+        uniform vec3 uPath, uPathLight, uPathEdge, uStone, uStoneDark, uLockTint;
 
         float edgeMask(float d) {
           float aa = max(fwidth(d), 1e-4);
@@ -138,6 +151,9 @@ export function createTerrainMaterial(
           sc = mix(sc, uStoneDark * 0.86, edgeMask(max(joint, round)));
           sc = mix(sc, uStoneDark * 0.86, (1.0 - smoothstep(0.0, 0.14, dPlaza)) * 0.8);
           col = mix(col, sc, edgeMask(dPlaza) * grass);
+          // 아직 열리지 않은 구역은 안개 낀 듯 흐리게
+          float lum = dot(col, vec3(0.3, 0.59, 0.11));
+          col = mix(col, mix(vec3(lum), uLockTint, 0.6), (1.0 - m.a) * 0.72);
           return col;
         }`,
       )

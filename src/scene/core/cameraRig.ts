@@ -152,7 +152,7 @@ export class CameraRig {
     this.camera.position.set(this.tx, y + Math.sin(pitch) * this.dist, this.tz + Math.cos(pitch) * this.dist);
     this.camera.lookAt(this.tx, y, this.tz);
     // 카메라 바로 앞을 가리는 나무나 집은 잘라낸다
-    const near = Math.max(1, this.dist * 0.42);
+    const near = Math.max(1, this.dist * 0.26);
     if (Math.abs(near - this.camera.near) > 0.01) {
       this.camera.near = near;
       this.camera.updateProjectionMatrix();

@@ -298,3 +298,101 @@ export function buildYardGeometry(size: number, houseFrontZ: number): THREE.Buff
 
   return mergeParts(parts, GLOW_ATTRS);
 }
+
+/**
+ * 멀리서 보는 단순한 집 (삼각형 약 110개, 마당 흔적 포함).
+ * 크기와 윤곽은 가까이서 보는 집과 같고, 지붕 색/고양이 귀/창문 불빛만 남긴다.
+ */
+export function buildFarHouseGeometry(yardSize: number, yardZ: number): THREE.BufferGeometry {
+  const D = HOUSE_DIM;
+  const parts: Piece[] = [];
+  const frontZ = D.depth / 2;
+  parts.push(piece(new THREE.BoxGeometry(D.width, 1.8, D.depth).translate(0, 0.14 + 0.9, 0), C.wall));
+  // 지붕: 같은 단면을 각지게
+  {
+    const e = D.eaveZ;
+    const s = new THREE.Shape();
+    s.moveTo(-e, 1.6);
+    s.lineTo(e, 1.6);
+    s.lineTo(e, 1.76);
+    s.lineTo(0.8, 2.72);
+    s.lineTo(0, D.ridge);
+    s.lineTo(-0.8, 2.72);
+    s.lineTo(-e, 1.76);
+    s.lineTo(-e, 1.6);
+    parts.push(piece(extrudeAlongX(s, D.width + 0.6, 0, 1), '#ffffff', 1));
+  }
+  for (const side of [1, -1]) {
+    const ear = new THREE.ConeGeometry(0.52, 1.1, 5, 1, true);
+    ear.scale(1, 1, 0.56);
+    ear.rotateZ(-side * 0.22);
+    ear.translate(side * 0.95, D.ridge - 0.4 + 0.5, 0.06);
+    parts.push(piece(ear, '#ffffff', 1, 0, 0.92));
+  }
+  parts.push(piece(new THREE.BoxGeometry(0.44, 0.9, 0.44).translate(0, 2.8, -0.78), C.chimney));
+  const quad = (w: number, h: number, x: number, y: number) => new THREE.PlaneGeometry(w, h).translate(x, y, frontZ + 0.02);
+  parts.push(piece(quad(0.72, 1.28, 0, 0.8), C.wood));
+  parts.push(piece(quad(0.52, 0.52, 0.93, 1.14), C.glass, 0, 1));
+  parts.push(piece(quad(0.52, 0.52, -0.93, 1.14), C.glass, 0, 1));
+  // 마당 흔적: 잔디 깔개와 낮은 흰 울타리 띠 (집 가운데 기준이라 z 를 yardZ 만큼 민다)
+  const half = yardSize / 2 - 0.12;
+  parts.push(piece(new THREE.PlaneGeometry(yardSize - 0.1, yardSize - 0.1).rotateX(-Math.PI / 2).translate(0, 0.035, yardZ), '#c2ea92'));
+  parts.push(piece(new THREE.BoxGeometry(half * 2, 0.34, 0.08).translate(0, 0.3, yardZ - half), '#fffaf0'));
+  for (const sx of [-1, 1]) {
+    parts.push(piece(new THREE.BoxGeometry(0.08, 0.34, half * 1.38).translate(sx * half, 0.3, yardZ - half + half * 0.69), '#fffaf0'));
+  }
+  return mergeParts(parts, GLOW_ATTRS);
+}
+
+/** 깃발 크기 기준값 */
+export const FLAG_DIM = { height: 1.75, clothW: 0.66, clothH: 0.44 };
+
+/**
+ * 지역 깃발. 원점은 깃대 바닥.
+ * aMask.x=1 인 부분(깃발 천)만 인스턴스 색을 받고, 깃대는 흰색 그대로.
+ * aMask.y 는 깃대에서 떨어진 정도(0~1)라서 셰이더에서 펄럭임에 쓴다.
+ */
+export function buildFlagGeometry(): THREE.BufferGeometry {
+  const F = FLAG_DIM;
+  const parts: THREE.BufferGeometry[] = [];
+  const pole = new THREE.CylinderGeometry(0.035, 0.045, F.height, 5).translate(0, F.height / 2, 0);
+  paint(pole, '#fffaf0');
+  fillAttr(pole, 'aMask', [0, 0]);
+  parts.push(pole);
+  const knob = new THREE.SphereGeometry(0.065, 6, 4).translate(0, F.height + 0.04, 0);
+  paint(knob, '#f4c95d');
+  fillAttr(knob, 'aMask', [0, 0]);
+  parts.push(knob);
+  // 천: 끝이 제비꼬리처럼 갈라진 얇은 판 (앞뒤 두 면)
+  const seg = 4;
+  for (const face of [1, -1]) {
+    const cloth = new THREE.PlaneGeometry(F.clothW, F.clothH, seg, 2);
+    const pos = cloth.attributes.position;
+    const mask = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      const u = pos.getX(i) / F.clothW + 0.5;
+      const v = pos.getY(i) / F.clothH;
+      // 끝쪽 가운데를 안으로 당겨서 제비꼬리 모양
+      const notch = u > 0.99 ? (1 - Math.abs(v) * 2) * 0.24 : 0;
+      pos.setX(i, (u - notch) * F.clothW + 0.04);
+      pos.setY(i, pos.getY(i) + F.height - F.clothH / 2 - 0.06);
+      pos.setZ(i, face * 0.004);
+      mask[i * 2] = 1;
+      mask[i * 2 + 1] = u;
+    }
+    if (face < 0) {
+      // 뒷면은 감는 방향을 뒤집는다
+      const idx = cloth.index!;
+      for (let i = 0; i < idx.count; i += 3) {
+        const a = idx.getX(i);
+        idx.setX(i, idx.getX(i + 2));
+        idx.setX(i + 2, a);
+      }
+    }
+    cloth.computeVertexNormals();
+    paint(cloth, '#ffffff');
+    cloth.setAttribute('aMask', new THREE.BufferAttribute(mask, 2));
+    parts.push(cloth);
+  }
+  return mergeParts(parts, GLOW_ATTRS);
+}

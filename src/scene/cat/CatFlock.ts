@@ -21,10 +21,10 @@ export class CatFlock {
   private readonly c = new THREE.Color();
   private static readonly UP = new THREE.Vector3(0, 1, 0);
 
-  constructor(model: CatModel, capacity: number) {
+  constructor(model: CatModel, capacity: number, detail: 'high' | 'low' = 'high') {
     this.capacity = capacity;
-    // 마리별 속성을 붙이려고 모양을 복사해서 쓴다 (꼭짓점 데이터는 공유)
-    const geo = model.geometry.clone();
+    // 마리별 속성을 붙이려고 모양을 복사해서 쓴다
+    const geo = (detail === 'low' && model.lowGeometry ? model.lowGeometry : model.geometry).clone();
     this.fur = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     this.eye = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     this.pat = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);

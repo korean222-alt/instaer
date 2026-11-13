@@ -48,6 +48,11 @@ export class CatBrain {
     this.timer = 0.6 + this.rnd() * 3;
   }
 
+  /** 피해 다닐 자리 (마당 가운데 기준 좌표) */
+  setBlocked(cells: Array<[number, number]>) {
+    this.blocked = cells;
+  }
+
   /** 쓰다듬기: 눈웃음 + 폴짝 */
   pet() {
     this.happyTimer = 1.8;
@@ -77,8 +82,12 @@ export class CatBrain {
         const r = this.rnd();
         if (r < 0.62) {
           this.state = 'walk';
-          this.goalX = this.area.minX + (this.area.maxX - this.area.minX) * this.rnd();
-          this.goalZ = this.area.minZ + (this.area.maxZ - this.area.minZ) * this.rnd();
+          // 아이템이 놓인 칸은 피해서 갈 곳을 고른다
+          for (let tries = 0; tries < 8; tries++) {
+            this.goalX = this.area.minX + (this.area.maxX - this.area.minX) * this.rnd();
+            this.goalZ = this.area.minZ + (this.area.maxZ - this.area.minZ) * this.rnd();
+            if (!this.blocked.some(([bx, bz]) => Math.hypot(bx - this.goalX, bz - this.goalZ) < 0.8)) break;
+          }
           this.timer = 12;
         } else if (r < 0.8) {
           this.state = 'sleep';
@@ -122,6 +131,7 @@ export class CatBrain {
   }
 
   private goalYaw = 0;
+  private blocked: Array<[number, number]> = [];
 
   private toIdle(wait: number) {
     this.state = 'idle';

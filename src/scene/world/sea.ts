@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Atmosphere } from '../core/atmosphere';
 import { LAND_RANGE, SHORE_D } from './constants';
-import type { MapField } from './mapField';
+import type { MapUniforms } from './mapUniforms';
 
 /**
  * 바다. 큰 평면 한 장에 색만 칠한다(조명 계산 없음).
@@ -10,12 +10,12 @@ import type { MapField } from './mapField';
  * - 낮에는 햇빛 반짝임, 밤에는 물에 비친 별빛
  * - 아주 먼 곳은 수평선 색으로 흐려진다
  */
-export function createSea(map: MapField, noise: THREE.Texture, atmosphere: Atmosphere) {
+export function createSea(map: MapUniforms, noise: THREE.Texture, atmosphere: Atmosphere) {
   const uniforms = {
-    uMapTex: { value: map.texture },
+    uMapTex: map.uMapTex,
     uNoiseTex: { value: noise },
-    uMapMin: { value: new THREE.Vector2(map.def.minX, map.def.minZ) },
-    uMapSize: { value: map.def.size },
+    uMapMin: map.uMapMin,
+    uMapSize: map.uMapSize,
     uTime: atmosphere.shared.uTime,
     uNight: atmosphere.shared.uNight,
     uShallow: { value: atmosphere.seaShallow },
@@ -100,7 +100,7 @@ export function createSea(map: MapField, noise: THREE.Texture, atmosphere: Atmos
         #include <colorspace_fragment>
       }`,
   });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600).rotateX(-Math.PI / 2), material);
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000).rotateX(-Math.PI / 2), material);
   mesh.renderOrder = 1;
   mesh.frustumCulled = false;
   return { mesh, uniforms };

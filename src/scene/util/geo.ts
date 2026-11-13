@@ -69,9 +69,8 @@ export function mergeParts(parts: THREE.BufferGeometry[], keep: Record<string, n
 }
 
 /** 위가 둥근 원뿔(귀, 지붕 귀 등에 쓴다). 바닥은 y=0, 꼭대기는 y=height */
-export function roundedCone(radius: number, height: number, radial = 14): THREE.BufferGeometry {
+export function roundedCone(radius: number, height: number, radial = 14, steps = 7): THREE.BufferGeometry {
   const pts: THREE.Vector2[] = [];
-  const steps = 7;
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     // 아래는 넓고 위로 갈수록 부드럽게 모이는 곡선

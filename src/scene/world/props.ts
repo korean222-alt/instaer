@@ -33,7 +33,15 @@ export function place(pieces: Pieces, x: number, y: number, z: number, rotY = 0,
 
 /** 몽실몽실한 잎 덩어리 */
 function blob(r: number, x: number, y: number, z: number, squash = 0.86, bottom = '#62b565', top = '#a9df7c') {
-  const g = new THREE.SphereGeometry(r, 14, 10);
+  const g = new THREE.SphereGeometry(r, 9, 6);
+  g.scale(1, squash, 1);
+  g.translate(x, y, z);
+  return pg(g, bottom, top);
+}
+
+/** 덤불용 가벼운 잎 덩어리 */
+function lowBlob(r: number, x: number, y: number, z: number, squash: number, bottom: string, top: string) {
+  const g = new THREE.SphereGeometry(r, 8, 5);
   g.scale(1, squash, 1);
   g.translate(x, y, z);
   return pg(g, bottom, top);
@@ -65,7 +73,7 @@ export function plazaTree(): Pieces {
     const a = rnd() * Math.PI * 2;
     const up = 0.15 + rnd() * 0.75;
     const r = 1.9 * Math.sqrt(1 - up * up * 0.55);
-    const f = new THREE.SphereGeometry(0.15, 8, 6);
+    const f = new THREE.SphereGeometry(0.15, 6, 5);
     f.translate(Math.cos(a) * r * 0.86, 2.75 + up * 1.55, Math.sin(a) * r * 0.86);
     out.push(p(f, '#ffa62b'));
   }
@@ -114,7 +122,7 @@ export function bush(seed: number): Pieces {
   const n = 2 + Math.floor(rnd() * 2);
   for (let i = 0; i < n; i++) {
     const r = 0.36 + rnd() * 0.2;
-    out.push(blob(r, (i - (n - 1) / 2) * 0.42, r * 0.7, (rnd() - 0.5) * 0.3, 0.8, '#5fb267', '#9edb7c'));
+    out.push(lowBlob(r, (i - (n - 1) / 2) * 0.42, r * 0.7, (rnd() - 0.5) * 0.3, 0.8, '#5fb267', '#9edb7c'));
   }
   if (rnd() > 0.4) {
     // 열매나 작은 꽃
@@ -134,18 +142,18 @@ export function flowers(seed: number): Pieces {
   const out: Pieces = [];
   const palette = ['#ff8fa3', '#ffd166', '#ffffff', '#c9a7ff', '#ffb37a'];
   const col = palette[Math.floor(rnd() * palette.length)];
-  const n = 3 + Math.floor(rnd() * 3);
+  const n = 3 + Math.floor(rnd() * 2);
   for (let i = 0; i < n; i++) {
     const x = (rnd() - 0.5) * 0.9;
     const z = (rnd() - 0.5) * 0.9;
     const h = 0.2 + rnd() * 0.14;
-    const stem = new THREE.CylinderGeometry(0.018, 0.022, h, 4).translate(x, h / 2, z);
+    const stem = new THREE.CylinderGeometry(0.018, 0.022, h, 3, 1, true).translate(x, h / 2, z);
     out.push(p(stem, '#6fbf63'));
-    const head = new THREE.IcosahedronGeometry(0.095, 1);
+    const head = new THREE.IcosahedronGeometry(0.1, 0);
     head.scale(1, 0.62, 1);
     head.translate(x, h + 0.03, z);
     out.push(p(head, col));
-    const mid = new THREE.IcosahedronGeometry(0.045, 0).translate(x, h + 0.075, z);
+    const mid = new THREE.TetrahedronGeometry(0.055).translate(x, h + 0.08, z);
     out.push(p(mid, col === '#ffd166' ? '#ff9f43' : '#ffe08a'));
   }
   return out;
@@ -177,13 +185,13 @@ export function rock(seed: number): Pieces {
 /** 길가 등불 (밤에 빛남) */
 export function lantern(): Pieces {
   const out: Pieces = [];
-  out.push(p(new THREE.CylinderGeometry(0.16, 0.2, 0.14, 10).translate(0, 0.07, 0), '#cfc3b2'));
-  out.push(p(new THREE.CylinderGeometry(0.055, 0.07, 1.35, 8).translate(0, 0.78, 0), '#8a6a52'));
-  out.push(p(new RoundedBoxGeometry(0.4, 0.07, 0.4, 1, 0.03).translate(0, 1.46, 0), '#8a6a52'));
-  out.push(p(new RoundedBoxGeometry(0.36, 0.42, 0.36, 2, 0.12).translate(0, 1.7, 0), '#fff1c2', 1));
-  const cap = new THREE.ConeGeometry(0.3, 0.16, 10).translate(0, 1.98, 0);
+  out.push(p(new THREE.CylinderGeometry(0.16, 0.2, 0.14, 7).translate(0, 0.07, 0), '#cfc3b2'));
+  out.push(p(new THREE.CylinderGeometry(0.055, 0.07, 1.35, 5).translate(0, 0.78, 0), '#8a6a52'));
+  out.push(p(new THREE.BoxGeometry(0.4, 0.07, 0.4).translate(0, 1.46, 0), '#8a6a52'));
+  out.push(p(new RoundedBoxGeometry(0.36, 0.42, 0.36, 1, 0.12).translate(0, 1.7, 0), '#fff1c2', 1));
+  const cap = new THREE.ConeGeometry(0.3, 0.16, 7).translate(0, 1.98, 0);
   out.push(p(cap, '#8a6a52'));
-  out.push(p(new THREE.SphereGeometry(0.05, 8, 6).translate(0, 2.08, 0), '#f4c95d'));
+  out.push(p(new THREE.SphereGeometry(0.05, 5, 4).translate(0, 2.08, 0), '#f4c95d'));
   return out;
 }
 
@@ -242,5 +250,57 @@ export function boat(): Pieces {
   flag.rotateY(Math.PI / 2);
   flag.translate(0, 2.4, 0.08);
   out.push(p(flag, '#ffd166'));
+  return out;
+}
+
+/**
+ * 섬과 섬을 잇는 아치형 나무다리. 가운데가 원점, x 방향으로 length 만큼 뻗는다.
+ * 양 끝은 endY(풀밭 높이)에 닿고 가운데가 rise 만큼 솟는다.
+ */
+export function bridge(length: number, endY: number, rise = 0.85): Pieces {
+  const out: Pieces = [];
+  const w = 2.3;
+  const yAt = (x: number) => endY + rise * (1 - Math.pow((2 * x) / length, 2));
+  const n = Math.round(length / 0.5);
+  for (let i = 0; i < n; i++) {
+    const x0 = -length / 2 + (i / n) * length;
+    const x1 = -length / 2 + ((i + 1) / n) * length;
+    const g = new THREE.BoxGeometry(Math.hypot(x1 - x0, yAt(x1) - yAt(x0)) - 0.03, 0.1, w);
+    g.rotateZ(Math.atan2(yAt(x1) - yAt(x0), x1 - x0));
+    g.translate((x0 + x1) / 2, (yAt(x0) + yAt(x1)) / 2 - 0.05, 0);
+    out.push(p(g, i % 2 ? '#d7a878' : '#cb9a69'));
+  }
+  const posts = Math.round(length / 2.4);
+  for (const sz of [-1, 1]) {
+    for (let i = 0; i <= posts; i++) {
+      const x = -length / 2 + (i / posts) * length;
+      const y = yAt(x);
+      out.push(p(new THREE.BoxGeometry(0.16, 0.75, 0.16).translate(x, y + 0.32, sz * (w / 2 - 0.05)), '#a97a52'));
+      out.push(p(new THREE.SphereGeometry(0.12, 8, 6).translate(x, y + 0.76, sz * (w / 2 - 0.05)), '#f6ead8'));
+      if (i < posts) {
+        const xn = -length / 2 + ((i + 1) / posts) * length;
+        const yn = yAt(xn);
+        const rail = new THREE.BoxGeometry(Math.hypot(xn - x, yn - y), 0.08, 0.08);
+        rail.rotateZ(Math.atan2(yn - y, xn - x));
+        rail.translate((x + xn) / 2, (y + yn) / 2 + 0.55, sz * (w / 2 - 0.05));
+        out.push(p(rail, '#f6ead8'));
+      }
+    }
+    // 물속 기둥
+    for (const t of [-0.28, 0, 0.28]) {
+      const x = t * length;
+      const h = yAt(x) + 1.0;
+      out.push(p(new THREE.CylinderGeometry(0.16, 0.18, h, 8).translate(x, yAt(x) - 0.1 - h / 2, sz * (w / 2 - 0.25)), '#9c6f4b'));
+    }
+  }
+  return out;
+}
+
+/** 광장 둘레 벤치 (원점 기준, 앞은 +z) */
+export function plazaBench(): Pieces {
+  const out: Pieces = [];
+  out.push(p(new THREE.BoxGeometry(1.5, 0.09, 0.46).translate(0, 0.42, 0), '#cb9a69'));
+  out.push(p(new THREE.BoxGeometry(1.5, 0.34, 0.08).translate(0, 0.72, -0.22), '#cb9a69'));
+  for (const sx of [-1, 1]) out.push(p(new THREE.BoxGeometry(0.1, 0.42, 0.42).translate(sx * 0.6, 0.21, 0), '#a2734c'));
   return out;
 }

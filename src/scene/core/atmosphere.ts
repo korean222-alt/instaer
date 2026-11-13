@@ -45,10 +45,9 @@ const NIGHT: Palette = {
   foam: '#c6dbff',
 };
 
-const SHADOW_DISTANCE = 120;
 
 export class Atmosphere {
-  readonly shared = { uTime: { value: 0 }, uNight: { value: 0 } };
+  readonly shared = { uTime: { value: 0 }, uNight: { value: 0 }, uRegion: { value: new THREE.Vector2(-1, 0) } };
   readonly hemi = new THREE.HemisphereLight();
   readonly sun = new THREE.DirectionalLight();
   readonly horizon = new THREE.Color();
@@ -56,6 +55,7 @@ export class Atmosphere {
   readonly seaDeep = new THREE.Color();
   readonly foam = new THREE.Color();
   private goal = 0;
+  private sunDistance = 120;
   private readonly dir = new THREE.Vector3();
   private readonly center = new THREE.Vector3();
   private readonly a = new THREE.Color();
@@ -79,8 +79,10 @@ export class Atmosphere {
     cam.right = radius;
     cam.top = radius;
     cam.bottom = -radius;
+    // 범위가 넓어지면 해도 그만큼 멀리 둔다 (가까우면 그림자가 잘린다)
+    this.sunDistance = radius * 2 + 50;
     cam.near = 1;
-    cam.far = SHADOW_DISTANCE * 2;
+    cam.far = this.sunDistance * 2;
     cam.updateProjectionMatrix();
     this.placeSun();
   }
@@ -137,7 +139,7 @@ export class Atmosphere {
 
   private placeSun() {
     this.sun.target.position.copy(this.center);
-    this.sun.position.copy(this.center).addScaledVector(this.dir, SHADOW_DISTANCE);
+    this.sun.position.copy(this.center).addScaledVector(this.dir, this.sunDistance);
     this.sun.target.updateMatrixWorld();
   }
 }

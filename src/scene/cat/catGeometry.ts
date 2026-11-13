@@ -38,14 +38,19 @@ function tag(geo: THREE.BufferGeometry, part: number, pivot: [number, number, nu
   return geo;
 }
 
-export function buildCatGeometry(): THREE.BufferGeometry {
+/**
+ * detail 'high': 가까이서 볼 때 (삼각형 약 4,000개)
+ * detail 'low' : 보통 거리 (약 1,300개). 모양과 비율은 같고 둥근 정도만 낮다
+ */
+export function buildCatGeometry(detail: 'high' | 'low' = 'high'): THREE.BufferGeometry {
+  const hi = detail === 'high';
   const parts: THREE.BufferGeometry[] = [];
   const H = CAT_DIM.headCenter;
   const HR = CAT_DIM.headRadius;
 
   // 몸: 뒤쪽이 살짝 통통한 콩 모양
   {
-    const g = new THREE.SphereGeometry(1, 22, 16);
+    const g = new THREE.SphereGeometry(1, hi ? 22 : 12, hi ? 16 : 9);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i);
@@ -63,7 +68,7 @@ export function buildCatGeometry(): THREE.BufferGeometry {
 
   // 머리: 볼이 통통한 찹쌀떡 모양
   {
-    const g = new THREE.SphereGeometry(1, 34, 22);
+    const g = new THREE.SphereGeometry(1, hi ? 34 : 18, hi ? 22 : 12);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i);
@@ -82,13 +87,13 @@ export function buildCatGeometry(): THREE.BufferGeometry {
   // 귀 (바깥 + 분홍 안쪽)
   for (const side of [1, -1]) {
     const base: [number, number, number] = [side * 0.19, H.y + 0.165, H.z - 0.005];
-    const outer = roundedCone(0.135, 0.25, 12);
+    const outer = roundedCone(0.135, 0.25, hi ? 12 : 7, hi ? 7 : 4);
     outer.scale(1, 1, 0.5);
     outer.rotateZ(-side * 0.3);
     outer.translate(...base);
     parts.push(tag(outer, PART.ear, base));
 
-    const inner = roundedCone(0.092, 0.175, 10);
+    const inner = roundedCone(0.092, 0.175, hi ? 10 : 6, hi ? 7 : 3);
     inner.scale(1, 1, 0.42);
     inner.translate(0, 0.03, 0.036);
     inner.rotateZ(-side * 0.3);
@@ -104,7 +109,7 @@ export function buildCatGeometry(): THREE.BufferGeometry {
     [PART.legBR, -0.132, -0.26],
   ];
   for (const [part, x, z] of legs) {
-    const g = new THREE.CapsuleGeometry(0.083, 0.1, 4, 12);
+    const g = new THREE.CapsuleGeometry(0.083, 0.1, hi ? 4 : 2, hi ? 12 : 7);
     g.translate(x, 0.133, z);
     parts.push(tag(g, part, [x, 0.25, z]));
   }
@@ -119,7 +124,7 @@ export function buildCatGeometry(): THREE.BufferGeometry {
       new THREE.Vector3(0, 0.92, -0.35),
     ]);
     const radius = 0.056;
-    const tube = new THREE.TubeGeometry(curve, 16, radius, 10, false);
+    const tube = new THREE.TubeGeometry(curve, hi ? 16 : 9, radius, hi ? 10 : 6, false);
     // TubeGeometry 의 uv.x 가 길이 방향 위치(0~1)
     const uv = tube.attributes.uv;
     const w = new Float32Array(uv.count);
@@ -129,7 +134,7 @@ export function buildCatGeometry(): THREE.BufferGeometry {
     parts.push(tag(tube, PART.tail, pivot));
 
     const end = curve.getPoint(1);
-    const cap = new THREE.SphereGeometry(radius, 10, 8);
+    const cap = new THREE.SphereGeometry(radius, hi ? 10 : 6, hi ? 8 : 5);
     cap.translate(end.x, end.y, end.z);
     parts.push(tag(cap, PART.tail, pivot, 1));
   }

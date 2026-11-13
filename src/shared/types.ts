@@ -1,6 +1,11 @@
 // 공통 타입. 씬(src/scene)은 읽기만 한다.
 // (앱 쪽 작업이 아직 없어서 씬 작업에서 지시문의 "공통 약속" 그대로 임시 생성함)
 
+import type { REGIONS } from './config';
+
+/** 지역 id ('seoul', 'busan', ... 'other') */
+export type RegionId = (typeof REGIONS)[number]['id'];
+
 export type CatPattern = 'cheese' | 'black' | 'calico' | 'white' | 'gray' | 'tuxedo';
 
 export interface CatLook {
@@ -18,6 +23,8 @@ export interface House {
   /** 지붕 색 (hex) */
   roofColor: string;
   cat: CatLook | null;
+  /** 지역 (깃발 색) */
+  region: RegionId;
   likes: number;
   isNpc: boolean;
   verified: boolean;

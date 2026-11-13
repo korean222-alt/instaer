@@ -20,17 +20,19 @@ export interface Plaza {
   z: number;
   r: number;
 }
-export interface MapDef {
+/** 지도에 그릴 섬 하나 */
+export interface ZoneShape {
+  /** 이 섬이 차지하는 범위 (세계 좌표). 이 범위 밖은 전부 바다로 본다 */
   minX: number;
+  maxX: number;
   minZ: number;
-  /** 정사각형 지도 한 변 길이 */
-  size: number;
-  /** 텍스처 해상도 */
-  res: number;
-  /** 해안까지의 거리. 땅 안쪽이 +, 바다가 - */
+  maxZ: number;
+  /** 해안까지의 거리. 땅 안쪽이 +, 바다가 - (세계 좌표) */
   land: (x: number, z: number) => number;
   paths: PathSeg[];
   plazas: Plaza[];
+  /** 아직 열리지 않은 구역 (안개 낀 색으로 칠한다) */
+  locked: boolean;
 }
 
 function segDist(px: number, pz: number, s: PathSeg): number {
@@ -42,26 +44,72 @@ function segDist(px: number, pz: number, s: PathSeg): number {
   return Math.hypot(wx - vx * t, wz - vz * t) - s.r;
 }
 
-export class MapField {
-  readonly def: MapDef;
-  readonly texture: THREE.DataTexture;
+/** 텍스처 한 칸이 담는 실제 길이의 목표값 */
+const TEXEL = 0.42;
 
-  constructor(def: MapDef) {
-    this.def = def;
-    const n = def.res;
+export class MapField {
+  readonly zones: ZoneShape[];
+  readonly texture: THREE.DataTexture;
+  readonly minX: number;
+  readonly minZ: number;
+  /** 정사각형 지도 한 변 길이 */
+  readonly size: number;
+  readonly res: number;
+
+  constructor(zones: ZoneShape[]) {
+    this.zones = zones;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const z of zones) {
+      minX = Math.min(minX, z.minX);
+      maxX = Math.max(maxX, z.maxX);
+      minZ = Math.min(minZ, z.minZ);
+      maxZ = Math.max(maxZ, z.maxZ);
+    }
+    const margin = 12;
+    const size = Math.max(maxX - minX, maxZ - minZ) + margin * 2;
+    this.size = size;
+    this.minX = (minX + maxX) / 2 - size / 2;
+    this.minZ = (minZ + maxZ) / 2 - size / 2;
+    let res = 256;
+    while (res < 2048 && size / res > TEXEL) res *= 2;
+    this.res = res;
+
+    const n = res;
     const data = new Uint8Array(n * n * 4);
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
-        const x = def.minX + ((i + 0.5) / n) * def.size;
-        const z = def.minZ + ((j + 0.5) / n) * def.size;
-        const o = (j * n + i) * 4;
-        // 지도 가장자리는 반드시 바다가 되도록
-        const border = Math.min(i, j, n - 1 - i, n - 1 - j) < 2;
-        const land = border ? -LAND_RANGE : def.land(x, z);
-        data[o] = Math.round(clamp(land / LAND_RANGE, -1, 1) * 127 + 128);
-        data[o + 1] = Math.round(clamp(this.pathAt(x, z) / PATH_RANGE, -1, 1) * 127 + 128);
-        data[o + 2] = Math.round(clamp(this.plazaAt(x, z) / PATH_RANGE, -1, 1) * 127 + 128);
-        data[o + 3] = 255;
+    // 기본값: 전부 바다 (거리 -최대), 잠김 없음
+    for (let i = 0; i < n * n; i++) {
+      data[i * 4] = 1;
+      data[i * 4 + 1] = 1;
+      data[i * 4 + 2] = 1;
+      data[i * 4 + 3] = 255;
+    }
+    const texel = size / n;
+    // 섬마다 자기 범위만 칠한다 (전체를 훑지 않아서 섬이 많아도 빠르다)
+    for (const zone of zones) {
+      const i0 = Math.max(2, Math.floor((zone.minX - this.minX) / texel));
+      const i1 = Math.min(n - 3, Math.ceil((zone.maxX - this.minX) / texel));
+      const j0 = Math.max(2, Math.floor((zone.minZ - this.minZ) / texel));
+      const j1 = Math.min(n - 3, Math.ceil((zone.maxZ - this.minZ) / texel));
+      for (let j = j0; j <= j1; j++) {
+        const z = this.minZ + (j + 0.5) * texel;
+        for (let i = i0; i <= i1; i++) {
+          const x = this.minX + (i + 0.5) * texel;
+          const o = (j * n + i) * 4;
+          const land = zone.land(x, z);
+          data[o] = Math.round(clamp(land / LAND_RANGE, -1, 1) * 127 + 128);
+          if (land > 0) {
+            let dp = Infinity;
+            for (const s of zone.paths) dp = Math.min(dp, segDist(x, z, s));
+            data[o + 1] = Math.round(clamp(-dp / PATH_RANGE, -1, 1) * 127 + 128);
+            let dq = Infinity;
+            for (const p of zone.plazas) dq = Math.min(dq, Math.hypot(x - p.x, z - p.z) - p.r);
+            data[o + 2] = Math.round(clamp(-dq / PATH_RANGE, -1, 1) * 127 + 128);
+          }
+          data[o + 3] = zone.locked ? 0 : 255;
+        }
       }
     }
     const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat, THREE.UnsignedByteType);
@@ -73,25 +121,21 @@ export class MapField {
     this.texture = tex;
   }
 
+  private zoneOf(x: number, z: number): ZoneShape | null {
+    for (const zone of this.zones) {
+      if (x >= zone.minX && x <= zone.maxX && z >= zone.minZ && z <= zone.maxZ) return zone;
+    }
+    return null;
+  }
+
   /** 해안까지의 거리 (안쪽 +) */
   landAt(x: number, z: number): number {
-    return this.def.land(x, z);
-  }
-  /** 길 안쪽이면 + */
-  pathAt(x: number, z: number): number {
-    let d = Infinity;
-    for (const s of this.def.paths) d = Math.min(d, segDist(x, z, s));
-    return -d;
-  }
-  /** 광장 안쪽이면 + */
-  plazaAt(x: number, z: number): number {
-    let d = Infinity;
-    for (const p of this.def.plazas) d = Math.min(d, Math.hypot(x - p.x, z - p.z) - p.r);
-    return -d;
+    const zone = this.zoneOf(x, z);
+    return zone ? zone.land(x, z) : -LAND_RANGE;
   }
   /** 땅 높이 (바다 수면이 0) */
   heightAt(x: number, z: number): number {
-    return heightFromLand(this.def.land(x, z));
+    return heightFromLand(this.landAt(x, z));
   }
 
   dispose() {
