@@ -203,7 +203,7 @@ export function buildHouseGeometry(): THREE.BufferGeometry {
     const flowerColors = side > 0 ? ['#ff8fa3', '#ffd166', '#ffffff'] : ['#ffd166', '#ff9ec2', '#ffb37a'];
     flowerColors.forEach((fc, i) => {
       const fx = x + (i - 1) * 0.2;
-      parts.push(piece(new THREE.IcosahedronGeometry(0.09, 0).translate(fx, 0.86, frontZ + 0.13), fc));
+      parts.push(piece(new THREE.SphereGeometry(0.09, 8, 6).translate(fx, 0.86, frontZ + 0.13), fc));
       parts.push(piece(new THREE.IcosahedronGeometry(0.07, 0).translate(fx + 0.1, 0.82, frontZ + 0.1), C.leaf));
     });
   }

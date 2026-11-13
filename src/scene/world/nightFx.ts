@@ -109,7 +109,7 @@ export class Fireflies {
           vTwinkle = 0.45 + 0.55 * sin(uTime * (1.6 + aSeed * 2.0) + s);
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           gl_Position = projectionMatrix * mv;
-          gl_PointSize = max(2.0, 0.34 * uScale / -mv.z);
+          gl_PointSize = clamp(0.26 * uScale / -mv.z, 2.0, 14.0);
         }`,
       fragmentShader: /* glsl */ `
         uniform float uNight;
