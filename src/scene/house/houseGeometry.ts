@@ -355,11 +355,11 @@ export const FLAG_DIM = { height: 1.75, clothW: 0.66, clothH: 0.44 };
 export function buildFlagGeometry(): THREE.BufferGeometry {
   const F = FLAG_DIM;
   const parts: THREE.BufferGeometry[] = [];
-  const pole = new THREE.CylinderGeometry(0.035, 0.045, F.height, 5).translate(0, F.height / 2, 0);
+  const pole = new THREE.CylinderGeometry(0.035, 0.045, F.height, 5, 1, true).translate(0, F.height / 2, 0);
   paint(pole, '#fffaf0');
   fillAttr(pole, 'aMask', [0, 0]);
   parts.push(pole);
-  const knob = new THREE.SphereGeometry(0.065, 6, 4).translate(0, F.height + 0.04, 0);
+  const knob = new THREE.OctahedronGeometry(0.075).translate(0, F.height + 0.03, 0);
   paint(knob, '#f4c95d');
   fillAttr(knob, 'aMask', [0, 0]);
   parts.push(knob);

@@ -66,6 +66,7 @@ interface ZoneBatch {
   far: THREE.InstancedMesh;
   state: THREE.InstancedBufferAttribute;
   flags: THREE.InstancedMesh | null;
+  box: THREE.Box3;
 }
 
 interface NearCat {
@@ -240,17 +241,17 @@ export class HouseLayer {
       });
       far.castShadow = this.farShadows;
       far.receiveShadow = true;
-      far.computeBoundingSphere();
+      far.frustumCulled = false;
       if (flags) {
-        flags.computeBoundingSphere();
-        // 깃발이 커졌을 때 화면 가장자리에서 잘리지 않게 여유를 준다
-        flags.boundingSphere!.radius += 6;
+        flags.frustumCulled = false;
         if (flags.instanceColor) flags.instanceColor.needsUpdate = true;
         this.group.add(flags);
       }
       this.group.add(far);
       const c = zoneCenter(zone);
-      this.zones.set(zone, { zone, cx: c.x, cz: c.z, list, far, state, flags });
+      // 구역 범위 (화면에 안 걸리면 이 구역의 집과 깃발을 통째로 건너뛴다)
+      const box = new THREE.Box3(new THREE.Vector3(c.x - 50, -1, c.z - 54), new THREE.Vector3(c.x + 50, 12, c.z + 54));
+      this.zones.set(zone, { zone, cx: c.x, cz: c.z, list, far, state, flags, box });
     }
     this.near = [];
     this.dirty = true;
@@ -274,8 +275,19 @@ export class HouseLayer {
 
   // ───────────── 매 프레임 ─────────────
 
-  update(dt: number, camera: THREE.PerspectiveCamera, target: { x: number; z: number; dist: number }, viewport: { w: number; h: number }) {
+  update(
+    dt: number,
+    camera: THREE.PerspectiveCamera,
+    target: { x: number; z: number; dist: number },
+    viewport: { w: number; h: number },
+    frustum: THREE.Frustum,
+  ) {
     const aspect = camera.aspect;
+    for (const zb of this.zones.values()) {
+      const on = frustum.intersectsBox(zb.box);
+      zb.far.visible = on;
+      if (zb.flags) zb.flags.visible = on;
+    }
     const moved = Math.hypot(target.x - this.lastX, target.z - this.lastZ);
     const zoomed = Math.abs(target.dist - this.lastDist) > this.lastDist * 0.05;
     // 마당 한 칸이 화면에서 몇 픽셀인가 (확대 정도)

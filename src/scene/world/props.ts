@@ -128,7 +128,7 @@ export function bush(seed: number): Pieces {
     // 열매나 작은 꽃
     const col = rnd() > 0.5 ? '#ff8fa3' : '#fff3b0';
     for (let i = 0; i < 4; i++) {
-      const f = new THREE.IcosahedronGeometry(0.07, 0);
+      const f = new THREE.OctahedronGeometry(0.075);
       f.translate((rnd() - 0.5) * 0.7, 0.5 + rnd() * 0.18, 0.2 + rnd() * 0.2);
       out.push(p(f, col));
     }
@@ -188,7 +188,7 @@ export function lantern(): Pieces {
   out.push(p(new THREE.CylinderGeometry(0.16, 0.2, 0.14, 7).translate(0, 0.07, 0), '#cfc3b2'));
   out.push(p(new THREE.CylinderGeometry(0.055, 0.07, 1.35, 5).translate(0, 0.78, 0), '#8a6a52'));
   out.push(p(new THREE.BoxGeometry(0.4, 0.07, 0.4).translate(0, 1.46, 0), '#8a6a52'));
-  out.push(p(new RoundedBoxGeometry(0.36, 0.42, 0.36, 1, 0.12).translate(0, 1.7, 0), '#fff1c2', 1));
+  out.push(p(new THREE.CylinderGeometry(0.2, 0.17, 0.42, 7).translate(0, 1.7, 0), '#fff1c2', 1));
   const cap = new THREE.ConeGeometry(0.3, 0.16, 7).translate(0, 1.98, 0);
   out.push(p(cap, '#8a6a52'));
   out.push(p(new THREE.SphereGeometry(0.05, 5, 4).translate(0, 2.08, 0), '#f4c95d'));

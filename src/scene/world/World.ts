@@ -264,6 +264,8 @@ export class World {
   private clouds: THREE.InstancedMesh[] = [];
   private fireflyScale: [number, number] = [800, 30];
   private readonly zoneOnly: THREE.BufferGeometry[] = [];
+  /** 구역별 묶음과 그 범위. 화면에 안 걸리는 구역은 통째로 건너뛴다 */
+  private readonly zoneGroups: Array<{ group: THREE.Group; box: THREE.Box3 }> = [];
   private readonly tallDecor: THREE.Mesh[] = [];
   private readonly groundDecor: THREE.Mesh[] = [];
 
@@ -352,10 +354,17 @@ export class World {
       this.zoneOnly.push(geo);
       const terrain = new THREE.Mesh(geo, this.terrainMaterial);
       terrain.receiveShadow = true;
-      this.zonesGroup.add(terrain);
+      terrain.frustumCulled = false;
+      const zg = new THREE.Group();
+      zg.add(terrain);
+      this.zonesGroup.add(zg);
+      this.zoneGroups.push({
+        group: zg,
+        box: new THREE.Box3(new THREE.Vector3(shape.minX, -2, shape.minZ), new THREE.Vector3(shape.maxX, 16, shape.maxZ)),
+      });
 
       if (zone >= unlocked) {
-        this.addClouds(zone, c);
+        zg.add(this.addClouds(zone, c));
         continue;
       }
       const tpl = this.template(zone === 0);
@@ -367,14 +376,16 @@ export class World {
       const ground = new THREE.Mesh(tpl.ground, this.decorMaterial);
       ground.position.set(c.x, 0, c.z);
       ground.receiveShadow = true;
+      decor.frustumCulled = false;
+      ground.frustumCulled = false;
       this.groundDecor.push(ground);
-      this.zonesGroup.add(decor, ground);
+      zg.add(decor, ground);
       for (const [lx, lz] of tpl.lanterns) poolList.push({ x: c.x + lx, y: GROUND_Y + 0.05, z: c.z + lz, sx: 5.2, sz: 5.2 });
       const ff = new Fireflies(tpl.fireflies, this.atmosphere.shared);
       ff.points.position.set(c.x, 0, c.z);
       ff.resize(this.fireflyScale[0], this.fireflyScale[1]);
       this.fireflyLayers.push(ff);
-      this.zonesGroup.add(ff.points);
+      zg.add(ff.points);
 
       if (zone === 0) {
         this.boatGeometry ??= mergeParts(props.boat(), GLOW_ATTRS);
@@ -382,7 +393,7 @@ export class World {
         this.boat.castShadow = true;
         this.boat.position.set(c.x + HARBOR.x + 2.9, 0, c.z + ZONE.halfZ + 3.4 + 3.7);
         this.boat.rotation.y = 0.25;
-        this.zonesGroup.add(this.boat);
+        zg.add(this.boat);
       }
     }
 
@@ -419,7 +430,8 @@ export class World {
     for (const f of this.fireflyLayers) f.resize(viewportHpx, fovDeg);
   }
 
-  update(focusX: number, focusZ: number, dist: number) {
+  update(focusX: number, focusZ: number, dist: number, frustum: THREE.Frustum) {
+    for (const z of this.zoneGroups) z.group.visible = frustum.intersectsBox(z.box);
     const t = this.atmosphere.shared.uTime.value;
     const night = this.atmosphere.shared.uNight.value;
     this.seaUniforms.uFocus.value.set(focusX, focusZ);
@@ -487,11 +499,12 @@ export class World {
     puffs.forEach((m, i) => mesh.setMatrixAt(i, m));
     mesh.frustumCulled = false;
     this.clouds.push(mesh);
-    this.zonesGroup.add(mesh);
+    return mesh;
   }
 
   private clearZones() {
     this.zonesGroup.clear();
+    this.zoneGroups.length = 0;
     this.tallDecor.length = 0;
     this.groundDecor.length = 0;
     for (const g of this.zoneOnly) g.dispose();

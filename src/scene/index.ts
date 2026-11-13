@@ -138,6 +138,8 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     if (houseNo !== null) tapCb?.(houseNo);
   });
 
+  const frustum = new THREE.Frustum();
+  const viewProj = new THREE.Matrix4();
   let shadowX = Infinity;
   let shadowZ = Infinity;
   let shadowR = 0;
@@ -174,8 +176,9 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       atmosphere.setShadowArea(sx, sz, radius);
     }
 
-    world.update(target.x, target.z, target.dist);
-    houses.update(dt, camera, target, { w: viewportW, h: viewportH });
+    frustum.setFromProjectionMatrix(viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    world.update(target.x, target.z, target.dist, frustum);
+    houses.update(dt, camera, target, { w: viewportW, h: viewportH }, frustum);
     mark.update(atmosphere.shared.uTime.value, target.dist);
 
     renderer.render(scene, camera);
