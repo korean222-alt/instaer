@@ -10,7 +10,7 @@ import { CAT_DIM } from './catGeometry';
  * 인스턴스(마리)마다 넣는 속성
  * - iFur  : 털 색 (선형 rgb)
  * - iEye  : 눈 색 (선형 rgb)
- * - iPat  : x=무늬 번호, y=시드(0~1, 같은 번지는 항상 같은 값)
+ * - iPat  : x=무늬 번호, y=시드(0~1, 같은 번지는 항상 같은 값), z=앉은 정도(식빵 자세, 0~1), w=하품(0~1)
  * - iAnim : x=걸음 위상, y=걷는 정도(0~1), z=자는 정도(0~1), w=행복(눈웃음, 0~1)
  */
 
@@ -35,7 +35,7 @@ varying vec3 vRest;
 varying vec3 vFur;
 varying vec3 vEye;
 varying vec4 vInfo;   // x=부위, y=꼬리 위치, z=무늬, w=시드
-varying vec2 vFace;   // x=눈 감은 정도, y=눈웃음
+varying vec3 vFace;   // x=눈 감은 정도, y=눈웃음, z=하품
 
 const vec3 CAT_NECK = ${vec3(CAT_DIM.neck)};
 
@@ -51,12 +51,15 @@ vec3 catDeform(vec3 p, out float closed) {
   float walk = iAnim.y;
   float sleep = iAnim.z;
   float awake = 1.0 - sleep;
+  float yawn = iPat.w;
+  // 앉기(식빵 자세): 잘 때처럼 다리를 접고 몸을 낮추지만 고개는 들고 눈은 뜬다
+  float low = max(sleep, iPat.z);
   float breath = sin(t * mix(2.4, 1.2, sleep) + seed * 6.283);
 
   // 눈 깜빡임: 몇 초에 한 번 짧게
   float bt = fract((t + seed * 9.7) / mix(3.2, 4.6, seed));
   float blink = 1.0 - smoothstep(0.0, 0.03, abs(bt - 0.5));
-  closed = max(blink, smoothstep(0.25, 0.6, sleep));
+  closed = max(max(blink, smoothstep(0.25, 0.6, sleep)), smoothstep(0.25, 0.6, yawn));
 
   if (aPart > 4.5) {
     // 다리: 대각선 다리끼리 같이 움직인다
@@ -64,13 +67,13 @@ vec3 catDeform(vec3 p, out float closed) {
     vec3 q = p - aPivot;
     q.yz = catRot(q.yz, sin(ph + diag) * 0.62 * walk);
     p = aPivot + q;
-    p.y *= mix(1.0, 0.34, sleep);
+    p.y *= mix(1.0, 0.34, low);
   } else {
     if (aPart < 0.5) {
       // 몸: 숨쉬기 + 잘 때 납작하게
       float k = p.y - 0.09;
-      p.y = 0.09 + k * (1.0 + 0.035 * breath) * mix(1.0, 0.9, sleep);
-      p.x *= 1.0 + 0.02 * breath + 0.07 * sleep;
+      p.y = 0.09 + k * (1.0 + 0.035 * breath) * mix(1.0, 0.9, low);
+      p.x *= 1.0 + 0.02 * breath + 0.07 * low;
     } else if (aPart > 3.5) {
       // 꼬리: 뿌리는 고정, 끝으로 갈수록 크게 살랑
       vec3 q = p - aPivot;
@@ -95,13 +98,13 @@ vec3 catDeform(vec3 p, out float closed) {
       // 머리(귀 포함): 갸웃, 끄덕, 잘 때는 앞으로 숙임
       vec3 q = p - CAT_NECK;
       float tilt = sin(t * 0.7 + seed * 11.0) * 0.075 * awake * (1.0 - walk) + 0.09 * sleep;
-      float nod = (sin(t * 0.9 + seed * 3.0) * 0.03 - 0.1) * awake + 0.2 * sleep + sin(ph * 2.0) * 0.035 * walk;
+      float nod = (sin(t * 0.9 + seed * 3.0) * 0.03 - 0.1) * awake + 0.2 * sleep + sin(ph * 2.0) * 0.035 * walk - 0.34 * yawn;
       q.xy = catRot(q.xy, tilt);
       q.yz = catRot(q.yz, nod);
       p = CAT_NECK + q;
       p.y -= 0.03 * sleep;
     }
-    p.y -= 0.1 * sleep;
+    p.y -= 0.1 * low;
     p.y += abs(sin(ph)) * 0.016 * walk;
   }
   return p;
@@ -115,7 +118,7 @@ vRest = position;
 vFur = iFur;
 vEye = iEye;
 vInfo = vec4(aPart, aW, iPat.x, iPat.y);
-vFace = vec2(catClosed, iAnim.w);
+vFace = vec3(catClosed, iAnim.w, iPat.w);
 `;
 
 const VERT_MAIN_DEPTH = /* glsl */ `
@@ -128,7 +131,7 @@ varying vec3 vRest;
 varying vec3 vFur;
 varying vec3 vEye;
 varying vec4 vInfo;
-varying vec2 vFace;
+varying vec3 vFace;
 uniform vec3 uCream;
 uniform vec3 uPink;
 uniform vec3 uInk;
@@ -308,7 +311,10 @@ vec3 catAlbedo() {
     vec2 mq = vec2(abs(f.x) - 0.027, f.y + 0.09);
     float dMouth = max(abs(length(mq) - 0.027) - 0.0062, mq.y - 0.004);
     float dLine = max(abs(f.x) - 0.0055, abs(f.y + 0.089) - 0.008);
-    col = mix(col, ink, catFill(min(dMouth, dLine)) * front * 0.9);
+    col = mix(col, ink, catFill(min(dMouth, dLine)) * front * 0.9 * (1.0 - vFace.z));
+    // 하품: 입을 크게 벌린다
+    vec2 yq = vec2(f.x, f.y + 0.1 + 0.02 * vFace.z) / vec2(0.034, 0.008 + 0.04 * vFace.z);
+    col = mix(col, uPink * 0.62, catFill((length(yq) - 1.0) * 0.02) * front * step(0.08, vFace.z));
   }
   return col;
 }
@@ -347,7 +353,7 @@ export function createCatMaterial(shared: CatShared): {
         #include <opaque_fragment>`,
       );
   };
-  material.customProgramCacheKey = () => 'cat-lambert-v1';
+  material.customProgramCacheKey = () => 'cat-lambert-v2';
 
   // 그림자에도 같은 움직임이 반영되도록 깊이 재질에도 같은 변형을 넣는다
   const depthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
@@ -357,7 +363,7 @@ export function createCatMaterial(shared: CatShared): {
       .replace('#include <common>', `#include <common>\n${VERT_PARS}`)
       .replace('#include <begin_vertex>', VERT_MAIN_DEPTH);
   };
-  depthMaterial.customProgramCacheKey = () => 'cat-depth-v1';
+  depthMaterial.customProgramCacheKey = () => 'cat-depth-v2';
 
   return { material, depthMaterial };
 }

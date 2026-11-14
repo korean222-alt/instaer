@@ -73,5 +73,5 @@ createIslandScene(canvas) → IslandScene
 
 ## 현재 상태
 (작업이 끝날 때마다 `src/scene/README-scene.md`(씬) 또는 `README.md`(앱, 서버)에 적고, 여기에는 한 줄 요약만 남긴다)
-- 씬(Fable): 1단계(고양이 + 작은 섬), 2단계(전체 군도, 지역 깃발, highlightRegion) 완료. 동네 배치는 아직.
+- 씬(Fable): 작업 1(동네 단위 배치), 작업 2(3인칭 걷기: `setWalkMode`, `onNearHouse`), 작업 3a(다른 유저 고양이 표시: `setRemotePlayers`, `onLocalMove`, `getLocalState`) 완료. 실제 폰 fps 는 미측정.
 - 앱(Opus): 단계 0 완료 (2026-11-14). 앱 뼈대(지도/입주/순위/꾸미기 화면 전환, 씬 연결), Worker + D1 구조, 첫 스키마, `/api/health`. 실제 기능은 단계 A.

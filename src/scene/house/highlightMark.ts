@@ -50,9 +50,12 @@ export class HighlightMark {
   }
 
   /** 마당 가운데 좌표. null 이면 숨긴다 */
-  set(pos: { x: number; z: number } | null) {
+  set(pos: { x: number; z: number; rot?: number } | null) {
     this.group.visible = !!pos;
-    if (pos) this.group.position.set(pos.x, 0, pos.z);
+    if (pos) {
+      this.group.position.set(pos.x, 0, pos.z);
+      this.group.rotation.y = pos.rot ?? 0;
+    }
   }
 
   update(t: number, dist: number) {
@@ -63,7 +66,7 @@ export class HighlightMark {
     this.ring.scale.setScalar((1 + far * 0.7) * pulse);
     this.ringMaterial.opacity = 0.8 + Math.sin(t * 3.2) * 0.18;
     this.star.position.set(0, GROUND_Y + HOUSE_DIM.labelY + 1.5 + Math.sin(t * 2) * 0.15 + far * 3, HOUSE_OFFSET_Z);
-    this.star.rotation.y = t * 1.6;
+    this.star.rotation.y = t * 1.6 - this.group.rotation.y;
     this.star.scale.setScalar(1 + far * 4);
   }
 

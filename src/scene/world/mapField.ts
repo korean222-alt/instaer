@@ -93,16 +93,31 @@ export class MapField {
       const i1 = Math.min(n - 3, Math.ceil((zone.maxX - this.minX) / texel));
       const j0 = Math.max(2, Math.floor((zone.minZ - this.minZ) / texel));
       const j1 = Math.min(n - 3, Math.ceil((zone.maxZ - this.minZ) / texel));
+      // 길이 많아서(구불구불한 길은 짧은 선분 수백 개) 칸마다 가까운 선분만 추려 둔다
+      const B = 5;
+      const bw = Math.ceil((zone.maxX - zone.minX) / B) + 1;
+      const bh = Math.ceil((zone.maxZ - zone.minZ) / B) + 1;
+      const buckets: PathSeg[][] = Array.from({ length: bw * bh }, () => []);
+      for (const s of zone.paths) {
+        const reach = s.r + PATH_RANGE;
+        const x0 = Math.max(0, Math.floor((Math.min(s.ax, s.bx) - reach - zone.minX) / B));
+        const x1 = Math.min(bw - 1, Math.floor((Math.max(s.ax, s.bx) + reach - zone.minX) / B));
+        const z0 = Math.max(0, Math.floor((Math.min(s.az, s.bz) - reach - zone.minZ) / B));
+        const z1 = Math.min(bh - 1, Math.floor((Math.max(s.az, s.bz) + reach - zone.minZ) / B));
+        for (let bz = z0; bz <= z1; bz++) for (let bx = x0; bx <= x1; bx++) buckets[bz * bw + bx].push(s);
+      }
       for (let j = j0; j <= j1; j++) {
         const z = this.minZ + (j + 0.5) * texel;
+        const bz = clamp(Math.floor((z - zone.minZ) / B), 0, bh - 1);
         for (let i = i0; i <= i1; i++) {
           const x = this.minX + (i + 0.5) * texel;
           const o = (j * n + i) * 4;
           const land = zone.land(x, z);
           data[o] = Math.round(clamp(land / LAND_RANGE, -1, 1) * 127 + 128);
           if (land > 0) {
-            let dp = Infinity;
-            for (const s of zone.paths) dp = Math.min(dp, segDist(x, z, s));
+            let dp = PATH_RANGE;
+            const near = buckets[bz * bw + clamp(Math.floor((x - zone.minX) / B), 0, bw - 1)];
+            for (let k = 0; k < near.length; k++) dp = Math.min(dp, segDist(x, z, near[k]));
             data[o + 1] = Math.round(clamp(-dp / PATH_RANGE, -1, 1) * 127 + 128);
             let dq = Infinity;
             for (const p of zone.plazas) dq = Math.min(dq, Math.hypot(x - p.x, z - p.z) - p.r);
