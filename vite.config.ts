@@ -13,5 +13,6 @@ export default defineConfig({
     target: 'es2022',
     rollupOptions: { input: pages },
   },
-  server: { host: true },
+  // npm run dev(5173) 의 /api 요청을 npm run dev:api(wrangler, 8787)로 넘긴다
+  server: { host: true, proxy: { '/api': 'http://127.0.0.1:8787' } },
 });
