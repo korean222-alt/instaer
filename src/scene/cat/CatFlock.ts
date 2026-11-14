@@ -21,10 +21,16 @@ export class CatFlock {
   private readonly c = new THREE.Color();
   private static readonly UP = new THREE.Vector3(0, 1, 0);
 
-  constructor(model: CatModel, capacity: number, detail: 'high' | 'low' = 'high') {
+  constructor(model: CatModel, capacity: number, detail: 'high' | 'low' | 'tiny' = 'high') {
     this.capacity = capacity;
     // 마리별 속성을 붙이려고 모양을 복사해서 쓴다
-    const geo = (detail === 'low' && model.lowGeometry ? model.lowGeometry : model.geometry).clone();
+    const base =
+      detail === 'tiny'
+        ? (model.tinyGeometry ?? model.lowGeometry ?? model.geometry)
+        : detail === 'low' && model.lowGeometry
+          ? model.lowGeometry
+          : model.geometry;
+    const geo = base.clone();
     this.fur = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     this.eye = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     this.pat = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
@@ -58,6 +64,19 @@ export class CatFlock {
     this.c.set(look.eyeColor);
     this.eye.setXYZ(slot, this.c.r, this.c.g, this.c.b);
     this.pat.setXYZW(slot, PATTERN_INDEX[look.pattern] ?? 0, seed, 0, 0);
+    this.fur.needsUpdate = true;
+    this.eye.needsUpdate = true;
+    this.pat.needsUpdate = true;
+  }
+
+  /**
+   * setLook 과 같지만 미리 바꿔 둔 색을 그대로 쓴다 (매 프레임 자리를 다시 채울 때 쓴다).
+   * sit, yawn 도 같이 넣는다.
+   */
+  setLookRaw(slot: number, fur: THREE.Color, eye: THREE.Color, pattern: number, seed: number, sit: number, yawn: number) {
+    this.fur.setXYZ(slot, fur.r, fur.g, fur.b);
+    this.eye.setXYZ(slot, eye.r, eye.g, eye.b);
+    this.pat.setXYZW(slot, pattern, seed, sit, yawn);
     this.fur.needsUpdate = true;
     this.eye.needsUpdate = true;
     this.pat.needsUpdate = true;

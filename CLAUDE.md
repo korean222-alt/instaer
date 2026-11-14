@@ -69,4 +69,4 @@ createIslandScene(canvas) → IslandScene
 
 ## 현재 상태
 (작업이 끝날 때마다 `src/scene/README-scene.md` 에 적고, 여기에는 한 줄 요약만 남긴다)
-- 씬: 작업 1(동네 단위 배치)과 작업 2(3인칭 걷기: `setWalkMode`, `onNearHouse`) 완료. 멀티플레이(작업 3a/3b)는 아직. 실제 폰 fps 는 미측정. `src/shared` 에 `NEIGHBORHOOD_SIZE` 등이 아직 없어서 씬이 임시 값을 쓴다(README-scene.md "요청" 참고).
+- 씬: 작업 1(동네 단위 배치), 작업 2(3인칭 걷기: `setWalkMode`, `onNearHouse`), 작업 3a(다른 유저 고양이 표시: `setRemotePlayers`, `onLocalMove`, `getLocalState`, 데모의 "다른 유저 20명 시험") 완료. 서버와 통신(작업 3b)은 아직. 실제 폰 fps 는 미측정. `RemotePlayer`, `LocalState`, `NEARBY_MAX` 등이 `src/shared` 에 아직 없어서 씬이 임시로 같은 모양을 둔다(README-scene.md "요청" 참고).

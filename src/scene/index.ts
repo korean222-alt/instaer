@@ -7,6 +7,8 @@ import { CameraRig } from './core/cameraRig';
 import { regionIndex } from './core/labelLayer';
 import { HighlightMark } from './house/highlightMark';
 import { HouseLayer } from './house/HouseLayer';
+import { RemotePlayers } from './remote/RemotePlayers';
+import type { LocalState, RemotePlayer } from './remote/types';
 import { houseNoAt, houseSlot, LOCAL_SLOTS, lotGate, neighborhoodArea, neighborhoodAt, zoneAt, zoneCenter } from './layout';
 import { ZONE_CAPACITY } from '../shared/config';
 import { WalkControls } from './walk/controls';
@@ -17,6 +19,7 @@ import { GROUND_Y } from './world/constants';
 import { World } from './world/World';
 
 export { houseSlot, neighborhoodArea, neighborhoodAt, NEIGHBORHOOD_SIZE } from './layout';
+export type { LocalState, PlayerAnim, RemotePlayer } from './remote/types';
 
 /**
  * 고양이섬 3D 씬.
@@ -46,6 +49,15 @@ export interface IslandScene {
   setWalkMode(on: boolean, startHouseNo?: number): void;
   /** 걷다가 어떤 집 마당 입구에 가까이 가면 그 집 번호를, 멀어지면 null 을 알린다 */
   onNearHouse(cb: (houseNo: number | null) => void): void;
+  /**
+   * 내 주변에 보여줄 다른 유저 목록 전체. 위치가 올 때마다(1초에 8~10번쯤) 통째로 다시 넘긴다.
+   * 새로 생긴 유저는 부드럽게 나타나고, 목록에서 빠진 유저는 부드럽게 사라진다. 빈 목록도 된다.
+   */
+  setRemotePlayers(players: RemotePlayer[]): void;
+  /** 걷는 동안 내 고양이의 위치/방향/동작이 바뀌면 알린다 (많아야 1초에 20번쯤) */
+  onLocalMove(cb: (state: LocalState) => void): void;
+  /** 내 고양이의 지금 상태 */
+  getLocalState(): LocalState;
   /** 캔버스 크기가 바뀌면 부른다 */
   resize(): void;
   dispose(): void;
@@ -66,6 +78,8 @@ export interface SceneStats {
   pixelRatio: number;
   /** 걷기 모드일 때 내 고양이 위치 */
   walker: { x: number; z: number; y: number; anim: string } | null;
+  /** 지금 그리는 다른 유저 수 (전체 / 그중 자세한 모양 / 이름표) */
+  remotes: { shown: number; near: number; tags: number };
 }
 const statsOf = new WeakMap<IslandScene, () => SceneStats>();
 export const getSceneStats = (scene: IslandScene): SceneStats | null => statsOf.get(scene)?.() ?? null;
@@ -112,7 +126,9 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   // 내가 조작하는 고양이 (걷기 모드에서만 보인다)
   const player = new CatFlock(catModel, 1, 'high');
   player.mesh.visible = false;
-  scene.add(world.group, houses.group, mark.group, player.mesh);
+  // 다른 유저의 고양이
+  const remotes = new RemotePlayers(catModel);
+  scene.add(world.group, houses.group, mark.group, player.mesh, remotes.group);
 
   const rig = new CameraRig(camera, canvas, {
     groundY: GROUND_Y,
@@ -129,6 +145,10 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   let walking = false;
   let nearCb: ((houseNo: number | null) => void) | null = null;
   let nearHouse: number | null = null;
+  // onLocalMove: 마지막으로 알린 값. 달라졌을 때만, 너무 잦지 않게 알린다
+  let moveCb: ((state: LocalState) => void) | null = null;
+  const sent = { x: NaN, z: NaN, rotY: NaN, anim: '', at: 0 };
+  const remoteView = { focusX: 0, focusZ: 0, walking: false, dist: 60, viewportW: 1, viewportH: 1, quality: 0 };
   const walkFocus = { x: 0, z: 0 };
   const target = { x: 0, z: 0, dist: 60 };
   // 시점 전환(동네 시점 ↔ 걷기)을 부드럽게 섞는다
@@ -165,6 +185,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     const unlocked = Math.max(requestedZones, houses.zoneCount(), 1);
     world.rebuild(unlocked, 1);
     walker.bridges = world.bridges;
+    remotes.bridges = world.bridges;
     const b = world.viewBounds;
     rig.setLimits({ bounds: { minX: b.minX + 6, maxX: b.maxX - 6, minZ: b.minZ + 4, maxZ: b.maxZ + 6 } });
   };
@@ -198,6 +219,8 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   // 처음 화면: 첫 동네(1~10번지)를 동네 시점으로
   const n0 = neighborhoodArea(0);
   rig.jumpTo(n0.x, n0.z - 1, camera.aspect < 0.8 ? NEIGHBORHOOD_DIST : 60);
+  // 걷기 전에 getLocalState 를 불러도 땅 위의 자리가 나오게 한다
+  walker.place(n0.x, n0.z + 7.4, 0);
 
   const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => resize()) : null;
   observer?.observe(canvas);
@@ -250,6 +273,29 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       nearHouse = best;
       nearCb?.(best);
     }
+  };
+
+  const wrapAngle = (a: number) => a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
+  const localState = (): LocalState => ({
+    x: walker.x,
+    z: walker.z,
+    rotY: wrapAngle(walker.yaw),
+    anim: walking ? walker.anim : 'idle',
+  });
+  const notifyMove = (now: number) => {
+    if (!moveCb) return;
+    const animChanged = walker.anim !== sent.anim;
+    // 동작이 바뀌면 바로, 그 밖에는 50ms 에 한 번까지만
+    if (!animChanged && now - sent.at < 50) return;
+    const same =
+      Math.abs(walker.x - sent.x) < 0.004 && Math.abs(walker.z - sent.z) < 0.004 && Math.abs(wrapAngle(walker.yaw - sent.rotY)) < 0.01;
+    if (same && !animChanged) return;
+    sent.x = walker.x;
+    sent.z = walker.z;
+    sent.rotY = walker.yaw;
+    sent.anim = walker.anim;
+    sent.at = now;
+    moveCb(localState());
   };
 
   const startBlend = () => {
@@ -318,6 +364,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       target.z = walkCam.focus.z;
       target.dist = WALK_DIST;
       checkNearHouse();
+      notifyMove(now);
     } else {
       rig.update(dt);
       const t = rig.target;
@@ -369,6 +416,14 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     world.update(target.x, target.z, target.dist, frustum);
     houses.update(dt, camera, target, { w: viewportW, h: viewportH }, frustum);
     mark.update(atmosphere.shared.uTime.value, target.dist);
+    remoteView.focusX = walking ? walker.x : target.x;
+    remoteView.focusZ = walking ? walker.z : target.z;
+    remoteView.walking = walking;
+    remoteView.dist = target.dist;
+    remoteView.viewportW = viewportW;
+    remoteView.viewportH = viewportH;
+    remoteView.quality = quality;
+    remotes.update(performance.now(), dt, remoteView);
 
     renderer.render(scene, camera);
     cpuMs = cpuMs * 0.9 + (performance.now() - t0) * 0.1;
@@ -454,6 +509,8 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
         walkFocus.x = walker.x;
         walkFocus.z = walker.z;
         if (!walking) startBlend();
+        // 다음 프레임에 시작 위치를 한 번 알린다
+        sent.x = NaN;
         walkCam.snap(walker.x, walker.groundY, walker.z, 0);
         walking = true;
         rig.enabled = false;
@@ -476,6 +533,13 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     onNearHouse(cb) {
       nearCb = cb;
     },
+    setRemotePlayers(players) {
+      remotes.setPlayers(players, performance.now());
+    },
+    onLocalMove(cb) {
+      moveCb = cb;
+    },
+    getLocalState: localState,
     resize,
     dispose() {
       disposed = true;
@@ -485,6 +549,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       canvas.removeEventListener('webglcontextrestored', onRestored);
       controls.dispose();
       player.dispose();
+      remotes.dispose();
       rig.dispose();
       world.dispose();
       houses.dispose();
@@ -501,6 +566,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     pixelRatio: renderer.getPixelRatio(),
     zones: world.visibleZones,
     walker: walking ? { x: walker.x, z: walker.z, y: walker.y, anim: walker.anim } : null,
+    remotes: { shown: remotes.shown, near: remotes.shownNear, tags: remotes.shownTags },
   }));
   qualityOf.set(api, (level) => {
     qualityAuto = level === 'auto';

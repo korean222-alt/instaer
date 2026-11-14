@@ -21,10 +21,11 @@ import { heightFromLand } from '../world/mapField';
  */
 const RADIUS = 0.32;
 const SPEED_SLOW = 1.25;
-const SPEED_FAST = 4.7;
-const STRIDE = 0.66;
-const JUMP_V = 4.7;
-const GRAVITY = 17;
+export const SPEED_FAST = 4.7;
+/** 한 걸음(다리 한 번 왕복) 길이, 점프 처음 속도, 중력. 다른 유저 고양이도 같은 값으로 움직인다 */
+export const STRIDE = 0.66;
+export const JUMP_V = 4.7;
+export const GRAVITY = 17;
 /** 이보다 바다 쪽으로는 못 간다 (모래사장까지는 내려갈 수 있다) */
 const MIN_LAND = 1.0;
 
@@ -275,22 +276,31 @@ export class Walker {
   }
 
   private bridgeAt(x: number, z: number): Bridge | null {
-    const half = BRIDGE.length / 2;
-    const w = BRIDGE.width / 2 - 0.1;
-    for (const b of this.bridges) {
-      const along = b.axis === 'x' ? x - b.x : z - b.z;
-      const side = b.axis === 'x' ? z - b.z : x - b.x;
-      if (Math.abs(along) <= half && Math.abs(side) <= w) return b;
-    }
-    return null;
+    return bridgeAt(this.bridges, x, z);
   }
 
   private heightAt(x: number, z: number): number {
-    const ground = heightFromLand(landAt(x, z));
-    const b = this.bridgeAt(x, z);
-    if (!b) return ground;
-    const along = b.axis === 'x' ? x - b.x : z - b.z;
-    const deck = GROUND_Y + BRIDGE.rise * (1 - Math.pow((2 * along) / BRIDGE.length, 2));
-    return Math.max(ground, deck);
+    return groundHeightAt(this.bridges, x, z);
   }
+}
+
+function bridgeAt(bridges: readonly Bridge[], x: number, z: number): Bridge | null {
+  const half = BRIDGE.length / 2;
+  const w = BRIDGE.width / 2 - 0.1;
+  for (const b of bridges) {
+    const along = b.axis === 'x' ? x - b.x : z - b.z;
+    const side = b.axis === 'x' ? z - b.z : x - b.x;
+    if (Math.abs(along) <= half && Math.abs(side) <= w) return b;
+  }
+  return null;
+}
+
+/** 그 자리의 땅 높이 (다리 위면 다리 바닥). 내 고양이와 다른 유저 고양이가 같이 쓴다 */
+export function groundHeightAt(bridges: readonly Bridge[], x: number, z: number): number {
+  const ground = heightFromLand(landAt(x, z));
+  const b = bridgeAt(bridges, x, z);
+  if (!b) return ground;
+  const along = b.axis === 'x' ? x - b.x : z - b.z;
+  const deck = GROUND_Y + BRIDGE.rise * (1 - Math.pow((2 * along) / BRIDGE.length, 2));
+  return Math.max(ground, deck);
 }
