@@ -42,6 +42,10 @@ export class LabelLayer {
   private readonly uv: THREE.InstancedBufferAttribute;
   private readonly size: THREE.InstancedBufferAttribute;
   private readonly info: THREE.InstancedBufferAttribute;
+  /** 이름표마다의 크기 배율 (걷기 모드에서 가까운 집일수록 크게) */
+  private readonly grow: THREE.InstancedBufferAttribute;
+  private focus: { x: number; z: number } | null = null;
+  private focusDirty = false;
   private readonly uniforms: {
     uMap: { value: THREE.Texture };
     uViewport: { value: THREE.Vector2 };
@@ -72,6 +76,9 @@ export class LabelLayer {
     geo.setAttribute('iUv', this.uv);
     geo.setAttribute('iSize', this.size);
     geo.setAttribute('iRegion', this.info);
+    this.grow = new THREE.InstancedBufferAttribute(new Float32Array(LABEL_CAPACITY).fill(1), 1);
+    this.grow.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('iGrow', this.grow);
 
     this.uniforms = {
       uMap: { value: this.texture },
@@ -91,16 +98,19 @@ export class LabelLayer {
         attribute vec4 iUv;
         attribute vec2 iSize;
         attribute float iRegion;
+        attribute float iGrow;
         uniform vec2 uViewport;
         uniform float uScale;
         uniform vec2 uRegion;
         varying vec2 vUv;
         varying float vDim;
+        varying float vFade;
         void main() {
           vUv = iUv.xy + uv * iUv.zw;
           vDim = step(0.5, abs(iRegion - uRegion.x)) * uRegion.y;
           vec4 clip = projectionMatrix * viewMatrix * vec4(iAnchor, 1.0);
-          clip.xy += position.xy * iSize * uScale * 2.0 / uViewport * clip.w;
+          vFade = smoothstep(0.5, 0.66, iGrow);
+          clip.xy += position.xy * iSize * uScale * iGrow * 2.0 / uViewport * clip.w;
           gl_Position = clip;
         }`,
       fragmentShader: /* glsl */ `
@@ -108,9 +118,10 @@ export class LabelLayer {
         uniform float uOpacity;
         varying vec2 vUv;
         varying float vDim;
+        varying float vFade;
         void main() {
           vec4 c = texture2D(uMap, vUv);
-          gl_FragColor = vec4(c.rgb, c.a * uOpacity * (1.0 - 0.65 * vDim));
+          gl_FragColor = vec4(c.rgb, c.a * uOpacity * vFade * (1.0 - 0.65 * vDim));
           #include <colorspace_fragment>
         }`,
     });
@@ -163,8 +174,30 @@ export class LabelLayer {
     if (dirty) this.texture.needsUpdate = true;
   }
 
+  /**
+   * 걷기 모드: 이 점(내 고양이)에 가까운 집의 이름표는 크게, 먼 집은 작게 그린다.
+   * null 이면 전부 같은 크기.
+   */
+  setFocus(at: { x: number; z: number } | null) {
+    if (!at && this.focus) this.focusDirty = true;
+    this.focus = at;
+  }
+
   /** viewportW/H 는 CSS 픽셀 */
   update(viewportW: number, viewportH: number, scale: number, opacity: number) {
+    if (this.focus) {
+      const n = this.mesh.count;
+      for (let i = 0; i < n; i++) {
+        const d = Math.hypot(this.anchor.getX(i) - this.focus.x, this.anchor.getZ(i) - this.focus.z);
+        const t = Math.min(1, Math.max(0, (d - 6) / 30));
+        this.grow.setX(i, 1.12 - 0.62 * t * t * (3 - 2 * t));
+      }
+      this.grow.needsUpdate = true;
+    } else if (this.focusDirty) {
+      for (let i = 0; i < LABEL_CAPACITY; i++) this.grow.setX(i, 1);
+      this.grow.needsUpdate = true;
+      this.focusDirty = false;
+    }
     this.uniforms.uViewport.value.set(viewportW, viewportH);
     this.uniforms.uScale.value = scale;
     this.uniforms.uOpacity.value = opacity;

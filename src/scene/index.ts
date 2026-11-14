@@ -6,11 +6,11 @@ import { CameraRig } from './core/cameraRig';
 import { regionIndex } from './core/labelLayer';
 import { HighlightMark } from './house/highlightMark';
 import { HouseLayer } from './house/HouseLayer';
-import { houseNoAt, houseSlot, PLAZA_LOCAL, zoneCenter } from './layout';
+import { houseNoAt, houseSlot, neighborhoodArea } from './layout';
 import { GROUND_Y } from './world/constants';
 import { World } from './world/World';
 
-export { houseSlot } from './layout';
+export { houseSlot, neighborhoodArea, neighborhoodAt, NEIGHBORHOOD_SIZE } from './layout';
 
 /**
  * 고양이섬 3D 씬.
@@ -24,7 +24,7 @@ export interface IslandScene {
   /** 열린 구역 수 (1부터). 나머지는 구름에 가려진다 */
   setUnlockedZones(count: number): void;
   setTimeOfDay(mode: 'day' | 'night'): void;
-  /** 그 집으로 부드럽게 이동하며 확대 */
+  /** 그 집이 있는 동네로 부드럽게 이동 (동네 시점) */
   focusHouse(houseNo: number): void;
   /** 오늘의 특이한 집: 금색 테두리. null 이면 해제 */
   highlightHouse(houseNo: number | null): void;
@@ -51,7 +51,10 @@ const riggedOf = new WeakMap<IslandScene, CameraRig>();
 /** 확인용: 카메라를 원하는 거리로 바로 옮긴다 */
 export const debugSetCamera = (scene: IslandScene, x: number, z: number, dist: number) => riggedOf.get(scene)?.jumpTo(x, z, dist);
 
-const MAX_DIST = 360;
+/** 전체 시점: 구역(동네 10개)이 한눈에 들어오는 거리 */
+const MAX_DIST = 900;
+/** 동네 시점 (기본) */
+const NEIGHBORHOOD_DIST = 78;
 const MIN_DIST = 10;
 
 export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
@@ -112,9 +115,9 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
 
   syncWorld();
   resize();
-  // 처음 화면: 1구역 광장 근처를 고양이가 보일 만큼 당겨서
-  const c0 = zoneCenter(0);
-  rig.jumpTo(c0.x + PLAZA_LOCAL.x, c0.z + PLAZA_LOCAL.z + 3, camera.aspect < 0.8 ? 66 : 54);
+  // 처음 화면: 첫 동네(1~10번지)를 동네 시점으로
+  const n0 = neighborhoodArea(0);
+  rig.jumpTo(n0.x, n0.z - 1, camera.aspect < 0.8 ? NEIGHBORHOOD_DIST : 60);
 
   const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => resize()) : null;
   observer?.observe(canvas);
@@ -126,7 +129,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       const g = rig.groundPoint(cx, cy);
       if (g) {
         // 지붕을 누르면 광선이 집 뒤쪽 땅에 닿으므로 앞쪽으로 조금씩 당겨 가며 찾는다
-        for (const dz of [0, 1.6, 3.1]) {
+        for (const dz of [0, 1.6, 3.1, 4.4]) {
           const n = houseNoAt(g.x, g.z + dz);
           if (n !== null && houses.has(n)) {
             houseNo = n;
@@ -167,7 +170,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     atmosphere.shared.uRegion.value.set(regionNow, regionAmount * regionAmount * (3 - 2 * regionAmount));
 
     // 그림자는 보이는 범위만. 살짝 움직일 때마다 다시 잡지 않도록 격자에 맞춘다
-    const radius = THREE.MathUtils.clamp(target.dist * 0.5, 18, 170);
+    const radius = THREE.MathUtils.clamp(target.dist * 0.5, 18, 260);
     const snap = radius / 24;
     const sx = Math.round(target.x / snap) * snap;
     const sz = Math.round((target.z - radius * 0.15) / snap) * snap;
@@ -204,8 +207,10 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       atmosphere.setMode(mode);
     },
     focusHouse(houseNo) {
+      // 집과 동네 가운데 사이를 보면서 동네 시점으로 간다
       const s = houseSlot(houseNo);
-      rig.flyTo(s.x, s.z + 0.6, 27);
+      const n = neighborhoodArea(s.neighborhood);
+      rig.flyTo(s.x * 0.7 + n.x * 0.3, s.z * 0.7 + n.z * 0.3, camera.aspect < 0.8 ? NEIGHBORHOOD_DIST * 0.82 : 54);
     },
     highlightHouse(houseNo) {
       mark.set(houseNo === null ? null : houseSlot(houseNo));

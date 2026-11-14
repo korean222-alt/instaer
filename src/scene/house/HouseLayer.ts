@@ -7,7 +7,7 @@ import type { CatModel } from '../cat/catModel';
 import { createGlowLambert, type GlowShared } from '../core/glowLambert';
 import { LABEL_CAPACITY, LabelLayer, regionIndex, type LabelEntry } from '../core/labelLayer';
 import { cellToLocal, ItemField } from '../items/ItemField';
-import { houseSlot, zoneCenter } from '../layout';
+import { houseSlot, NEIGHBORHOODS, NEIGHBORHOODS_PER_ZONE, ZONE, zoneCenter } from '../layout';
 import { hash01 } from '../util/rand';
 import { GROUND_Y, HOUSE_OFFSET_Z, YARD_WORLD } from '../world/constants';
 import { GlowPools, type Pool } from '../world/nightFx';
@@ -28,20 +28,24 @@ import {
  * - 가까운 집: 화면 가운데 근처 몇십 채만 자세한 집 + 마당 + 고양이 + 이름표 + 꾸미기 아이템.
  *          집이 화면에서 작아지면(1칸이 NEAR_PX 픽셀보다 작으면) 가까운 집은 0채가 된다.
  *          그림자는 가까운 집도 단순 모델이 대신 드리운다 (자세한 모델은 그림자를 만들지 않는다).
- * - 깃발: 구역마다 InstancedMesh 하나, 색은 인스턴스 색. 가깝든 멀든 항상 보인다.
- *         멀어질수록 천이 커져서 지도에서도 지역 색 점으로 보인다.
+ * - 깃발: 구역마다 InstancedMesh 하나, 색은 인스턴스 색. 동네 시점에서만 작게 보인다.
+ * - 동네 색: 전체 시점에서는 깃발 대신 동네마다 그 동네에 가장 많은 지역의 색을 옅게 깐다.
+ * - 걷기 모드에서는 화면 가운데가 아니라 내 고양이 둘레의 집을 자세히 그린다.
  */
 const NEAR_MAX = 64;
 const NEAR_PORTRAIT = 36;
 /** 마당 한 칸(1)이 화면에서 이 픽셀보다 작게 보이면 전부 단순 모델로 그린다 */
 const NEAR_PX = 10.5;
 /** 이보다 작게 보이면 이름표를 숨긴다 (옆집 이름표와 겹치기 때문) */
-const LABEL_PX = 19;
+const LABEL_PX = 14;
 /** 이보다 크게 보이면(아주 가까이) 고양이를 자세한 모델로 바꾼다 */
 const CAT_HI_PX = 42;
 const CAT_SCALE = 1.12;
 /** 깃발 위치 (마당 가운데 기준): 입구 디딤돌 바로 왼쪽, 마당 앞 테두리 위 */
 const FLAG_LOCAL = { x: -1.55, z: YARD_WORLD / 2 - 0.02 };
+const FLAG_SCALE = 0.8;
+/** 걷기 모드에서 자세히 그리는 범위 (내 고양이 기준) */
+const WALK_NEAR_RADIUS = 46;
 /** 고양이가 돌아다니는 범위 (마당 가운데 기준): 집 앞 잔디밭 */
 const CAT_AREA = { minX: -2.2, maxX: 2.2, minZ: 0.7, maxZ: 2.45 };
 
@@ -49,7 +53,16 @@ interface Rec {
   house: House;
   x: number;
   z: number;
+  /** 집이 몸을 튼 각도와 그 cos/sin */
+  rot: number;
+  cos: number;
+  sin: number;
+  /** 집(건물) 가운데 */
+  hx: number;
+  hz: number;
   zone: number;
+  /** 구역 안 동네 번호 */
+  nb: number;
   /** 구역 먼 집 메시 안에서의 순번 */
   farIndex: number;
   occupied: boolean;
@@ -66,6 +79,8 @@ interface ZoneBatch {
   far: THREE.InstancedMesh;
   state: THREE.InstancedBufferAttribute;
   flags: THREE.InstancedMesh | null;
+  /** 전체 시점에서 보이는 동네 색 */
+  tint: THREE.InstancedMesh;
   box: THREE.Box3;
 }
 
@@ -82,6 +97,15 @@ export class HouseLayer {
   private readonly flagUniforms = { uTime: { value: 0 }, uFlagScale: { value: 1 } };
   private readonly farGeometry = buildFarHouseGeometry(YARD_WORLD, -HOUSE_OFFSET_Z);
   private readonly flagGeometry = buildFlagGeometry();
+  private readonly tintGeometry = new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2);
+  private readonly tintMaterial: THREE.ShaderMaterial;
+  private readonly tintUniforms: { uOpacity: { value: number }; uRegion: { value: THREE.Vector2 } };
+  private readonly q = new THREE.Quaternion();
+  private readonly s = new THREE.Vector3();
+  private static readonly UP = new THREE.Vector3(0, 1, 0);
+  /** 걷기 모드에서 내 고양이 위치 (없으면 null) */
+  private walkAt: { x: number; z: number } | null = null;
+  private nearLimit = NEAR_MAX;
   private readonly nearHouses: THREE.InstancedMesh;
   private readonly nearYards: THREE.InstancedMesh;
   private readonly nearTint: THREE.InstancedBufferAttribute;
@@ -162,6 +186,37 @@ export class HouseLayer {
     };
     this.flagMaterial.customProgramCacheKey = () => 'region-flag-v1';
 
+    // 동네 색: 가장자리가 부드러운 옅은 색 원. 강조 지역이 있으면 다른 지역 동네는 흐려진다
+    this.tintUniforms = { uOpacity: { value: 0 }, uRegion: shared.uRegion };
+    this.tintMaterial = new THREE.ShaderMaterial({
+      uniforms: this.tintUniforms,
+      transparent: true,
+      depthWrite: false,
+      vertexShader: /* glsl */ `
+        attribute vec3 iColor;
+        attribute float iRegion;
+        uniform vec2 uRegion;
+        varying vec3 vColor;
+        varying float vR;
+        varying float vDim;
+        void main() {
+          vColor = iColor;
+          vR = length(position.xz);
+          vDim = step(0.5, abs(iRegion - uRegion.x)) * uRegion.y;
+          gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform float uOpacity;
+        varying vec3 vColor;
+        varying float vR;
+        varying float vDim;
+        void main() {
+          float a = (1.0 - smoothstep(0.72, 1.0, vR)) * uOpacity * 0.7 * (1.0 - 0.8 * vDim);
+          gl_FragColor = vec4(vColor, a);
+          #include <colorspace_fragment>
+        }`,
+    });
+
     const houseGeo = buildHouseGeometry();
     this.nearTint = new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 3), 3);
     this.nearState = new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 4), 4);
@@ -205,7 +260,13 @@ export class HouseLayer {
         house,
         x: slot.x,
         z: slot.z,
+        rot: slot.rot,
+        cos: Math.cos(slot.rot),
+        sin: Math.sin(slot.rot),
+        hx: slot.x + HOUSE_OFFSET_Z * Math.sin(slot.rot),
+        hz: slot.z + HOUSE_OFFSET_Z * Math.cos(slot.rot),
         zone: slot.zone,
+        nb: slot.neighborhood % NEIGHBORHOODS_PER_ZONE,
         farIndex: 0,
         occupied,
         region: occupied ? regionIndex(house.region) : -2,
@@ -230,13 +291,13 @@ export class HouseLayer {
       const flagged = list.filter((r) => r.occupied);
       const flags = flagged.length ? new THREE.InstancedMesh(this.flagGeometry, this.flagMaterial, flagged.length) : null;
       list.forEach((r, i) => {
-        far.setMatrixAt(i, this.m.makeTranslation(r.x, GROUND_Y, r.z + HOUSE_OFFSET_Z));
+        far.setMatrixAt(i, this.place(r, 0, HOUSE_OFFSET_Z, GROUND_Y));
         this.c.set(r.house.roofColor);
         tint.setXYZ(i, this.c.r, this.c.g, this.c.b);
         state.setXYZW(i, r.occupied ? 0 : 1, r.lit, r.region, 0);
       });
       flagged.forEach((r, i) => {
-        flags!.setMatrixAt(i, this.m.makeTranslation(r.x + FLAG_LOCAL.x, GROUND_Y, r.z + FLAG_LOCAL.z));
+        flags!.setMatrixAt(i, this.place(r, FLAG_LOCAL.x, FLAG_LOCAL.z, GROUND_Y, FLAG_SCALE));
         flags!.setColorAt(i, this.c.set(REGIONS[r.region]?.color ?? '#9aa3ad'));
       });
       far.castShadow = this.farShadows;
@@ -250,8 +311,13 @@ export class HouseLayer {
       this.group.add(far);
       const c = zoneCenter(zone);
       // 구역 범위 (화면에 안 걸리면 이 구역의 집과 깃발을 통째로 건너뛴다)
-      const box = new THREE.Box3(new THREE.Vector3(c.x - 50, -1, c.z - 54), new THREE.Vector3(c.x + 50, 12, c.z + 54));
-      this.zones.set(zone, { zone, cx: c.x, cz: c.z, list, far, state, flags, box });
+      const box = new THREE.Box3(
+        new THREE.Vector3(c.x - ZONE.halfX, -1, c.z - ZONE.halfZ),
+        new THREE.Vector3(c.x + ZONE.halfX, 12, c.z + ZONE.halfZ),
+      );
+      const nbTint = this.buildTint(list, c);
+      this.group.add(nbTint);
+      this.zones.set(zone, { zone, cx: c.x, cz: c.z, list, far, state, flags, tint: nbTint, box });
     }
     this.near = [];
     this.dirty = true;
@@ -264,6 +330,72 @@ export class HouseLayer {
 
   has(houseNo: number) {
     return this.recs.has(houseNo);
+  }
+
+  house(houseNo: number): House | undefined {
+    return this.recs.get(houseNo)?.house;
+  }
+
+  /** 그 집에 놓인 꾸미기 아이템 (걷기 충돌용) */
+  itemsOf(houseNo: number): YardItem[] | undefined {
+    return this.yardItems.get(houseNo);
+  }
+
+  /** 걷기 모드: 내 고양이 위치를 알려주면 그 둘레의 집을 자세히 그린다. null 이면 원래대로 */
+  setWalkFocus(at: { x: number; z: number } | null) {
+    if (!!at !== !!this.walkAt) this.dirty = true;
+    this.walkAt = at;
+    this.labels.setFocus(at);
+  }
+
+  /** 자세히 그리는 집 수 상한 (성능이 모자라면 줄인다) */
+  setNearLimit(n: number) {
+    n = Math.max(8, Math.min(NEAR_MAX, Math.floor(n)));
+    if (n !== this.nearLimit) this.dirty = true;
+    this.nearLimit = n;
+  }
+
+  /** 집 기준 좌표 (lx, lz) 에 놓는 행렬 */
+  private place(r: Rec, lx: number, lz: number, y: number, scale = 1) {
+    this.q.setFromAxisAngle(HouseLayer.UP, r.rot);
+    this.v.set(r.x + lx * r.cos + lz * r.sin, y, r.z - lx * r.sin + lz * r.cos);
+    return this.m.compose(this.v, this.q, this.s.setScalar(scale));
+  }
+
+  /** 동네마다 가장 많은 지역의 색을 옅게 까는 원 (전체 시점용) */
+  private buildTint(list: Rec[], c: { x: number; z: number }) {
+    const n = NEIGHBORHOODS.length;
+    const geo = this.tintGeometry.clone();
+    const color = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
+    const region = new THREE.InstancedBufferAttribute(new Float32Array(n), 1);
+    geo.setAttribute('iColor', color);
+    geo.setAttribute('iRegion', region);
+    const mesh = new THREE.InstancedMesh(geo, this.tintMaterial, n);
+    const votes = NEIGHBORHOODS.map(() => new Map<number, number>());
+    for (const r of list) if (r.occupied && r.region >= 0) votes[r.nb].set(r.region, (votes[r.nb].get(r.region) ?? 0) + 1);
+    NEIGHBORHOODS.forEach((nb, i) => {
+      let best = -2;
+      let bestN = 0;
+      for (const [reg, cnt] of votes[i]) {
+        if (cnt > bestN || (cnt === bestN && reg < best)) {
+          best = reg;
+          bestN = cnt;
+        }
+      }
+      const on = best >= 0;
+      this.m.compose(
+        this.v.set(c.x + nb.x, GROUND_Y + 0.5, c.z + nb.z + 1),
+        this.q.identity(),
+        this.s.set(on ? nb.rx + 8 : 0, 1, on ? nb.rz + 9 : 0),
+      );
+      mesh.setMatrixAt(i, this.m);
+      this.c.set(REGIONS[best]?.color ?? '#9aa3ad');
+      color.setXYZ(i, this.c.r, this.c.g, this.c.b);
+      region.setX(i, best);
+    });
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 5;
+    return mesh;
   }
 
   /** 집이 있는 가장 큰 구역 번호 + 1 */
@@ -283,10 +415,14 @@ export class HouseLayer {
     frustum: THREE.Frustum,
   ) {
     const aspect = camera.aspect;
+    const tintOpacity = THREE.MathUtils.smoothstep(target.dist, 230, 400);
+    this.tintUniforms.uOpacity.value = tintOpacity;
     for (const zb of this.zones.values()) {
       const on = frustum.intersectsBox(zb.box);
       zb.far.visible = on;
-      if (zb.flags) zb.flags.visible = on;
+      // 깃발은 동네 시점에서만, 동네 색은 전체 시점에서만
+      if (zb.flags) zb.flags.visible = on && target.dist < 190;
+      zb.tint.visible = on && tintOpacity > 0.01;
     }
     const moved = Math.hypot(target.x - this.lastX, target.z - this.lastZ);
     const zoomed = Math.abs(target.dist - this.lastDist) > this.lastDist * 0.05;
@@ -314,13 +450,11 @@ export class HouseLayer {
     this.catOrder.forEach((cat, i) => {
       const b = cat.brain;
       b.update(dt);
-      this.flock.setPose(i, cat.rec.x + b.x, GROUND_Y + 0.035 + b.hop, cat.rec.z + b.z, b.yaw, CAT_SCALE);
+      const r = cat.rec;
+      this.flock.setPose(i, r.x + b.x * r.cos + b.z * r.sin, GROUND_Y + 0.035 + b.hop, r.z - b.x * r.sin + b.z * r.cos, b.yaw + r.rot, CAT_SCALE);
       this.flock.setAnim(i, b.phase, b.walk, b.sleep, b.happy);
     });
 
-    // 깃발: 멀어질수록 천을 키워서 지도에서도 색 점으로 보이게
-    const far = THREE.MathUtils.smoothstep(target.dist, 70, 300);
-    this.flagUniforms.uFlagScale.value = 1 + far * 3.0;
     // 아주 멀리서는 집 그림자도 끈다
     const farShadows = target.dist < 230;
     if (farShadows !== this.farShadows) {
@@ -331,19 +465,34 @@ export class HouseLayer {
     this.pools.update(this.shared.uNight.value);
     const labelOpacity = THREE.MathUtils.smoothstep(px, LABEL_PX, LABEL_PX + 3.5);
     const labelScale = THREE.MathUtils.lerp(0.78, 1, THREE.MathUtils.smoothstep(px, LABEL_PX, 40));
-    this.labels.update(viewport.w, viewport.h, labelScale, labelOpacity);
+    this.labels.update(viewport.w, viewport.h, this.walkAt ? 1 : labelScale, labelOpacity);
   }
 
   /** 화면에 가까이 보이는 집을 골라서 자세한 모델/고양이/이름표/아이템을 붙인다 */
   private refreshNear(camera: THREE.PerspectiveCamera, target: { x: number; z: number; dist: number }, nearOn: boolean) {
     const want: Rec[] = [];
-    if (nearOn) {
+    if (nearOn && this.walkAt) {
+      // 걷기 모드: 내 고양이에서 가까운 집부터
+      const w = this.walkAt;
+      for (const zb of this.zones.values()) {
+        if (Math.abs(zb.cx - w.x) > ZONE.halfX + WALK_NEAR_RADIUS || Math.abs(zb.cz - w.z) > ZONE.halfZ + WALK_NEAR_RADIUS) continue;
+        for (const r of zb.list) {
+          const d = Math.hypot(r.x - w.x, r.z - w.z);
+          if (d < WALK_NEAR_RADIUS) {
+            r.score = d;
+            want.push(r);
+          }
+        }
+      }
+      want.sort((a, b) => a.score - b.score);
+      want.length = Math.min(want.length, NEAR_PORTRAIT, this.nearLimit);
+    } else if (nearOn) {
       // 화면에 보이는 땅의 대략적인 크기
       const vfov = THREE.MathUtils.degToRad(camera.fov);
       const halfW = target.dist * Math.tan(vfov / 2) * camera.aspect + 4.5;
       const halfD = (target.dist * Math.tan(vfov / 2)) / 0.66 + 4.5;
       for (const zb of this.zones.values()) {
-        if (Math.abs(zb.cx - target.x) > 60 + halfW || Math.abs(zb.cz - target.z) > 62 + halfD) continue;
+        if (Math.abs(zb.cx - target.x) > ZONE.halfX + halfW || Math.abs(zb.cz - target.z) > ZONE.halfZ + halfD) continue;
         for (const r of zb.list) {
           const sx = Math.abs(r.x - target.x) / halfW;
           const sz = Math.abs(r.z - 1.5 - target.z) / halfD;
@@ -355,7 +504,7 @@ export class HouseLayer {
         }
       }
       want.sort((a, b) => a.score - b.score);
-      want.length = Math.min(want.length, camera.aspect < 0.8 ? NEAR_PORTRAIT : NEAR_MAX);
+      want.length = Math.min(want.length, camera.aspect < 0.8 ? NEAR_PORTRAIT : NEAR_MAX, this.nearLimit);
     }
 
     // 먼 집 메시에서 가까운 집은 숨기고, 빠진 집은 다시 보이게
@@ -381,8 +530,8 @@ export class HouseLayer {
 
     // 자세한 집과 마당
     want.forEach((r, i) => {
-      this.nearHouses.setMatrixAt(i, this.m.makeTranslation(r.x, GROUND_Y, r.z + HOUSE_OFFSET_Z));
-      this.nearYards.setMatrixAt(i, this.m.makeTranslation(r.x, GROUND_Y, r.z));
+      this.nearHouses.setMatrixAt(i, this.place(r, 0, HOUSE_OFFSET_Z, GROUND_Y));
+      this.nearYards.setMatrixAt(i, this.place(r, 0, 0, GROUND_Y));
       this.c.set(r.house.roofColor);
       this.nearTint.setXYZ(i, this.c.r, this.c.g, this.c.b);
       this.nearState.setXYZW(i, r.occupied ? 0 : 1, r.lit, r.region, 0);
@@ -416,7 +565,7 @@ export class HouseLayer {
     this.flock.count = this.catOrder.length;
 
     // 꾸미기 아이템
-    this.items.set(want.map((r) => ({ x: r.x, z: r.z, items: this.yardItems.get(r.house.houseNo) })));
+    this.items.set(want.map((r) => ({ x: r.x, z: r.z, rot: r.rot, items: this.yardItems.get(r.house.houseNo) })));
 
     // 이름표: 사는 사람이 있는 집만, 화면 가운데에서 가까운 순서로
     const entries: LabelEntry[] = [];
@@ -426,9 +575,9 @@ export class HouseLayer {
         houseNo: r.house.houseNo,
         handle: r.house.igHandle!,
         region: r.house.region,
-        x: r.x,
+        x: r.hx,
         y: GROUND_Y + HOUSE_DIM.labelY,
-        z: r.z + HOUSE_OFFSET_Z,
+        z: r.hz,
       });
     }
     this.labels.set(entries);
@@ -437,7 +586,8 @@ export class HouseLayer {
     const pools: Pool[] = [];
     for (const r of want) {
       if (r.lit < 0.9) continue;
-      pools.push({ x: r.x, y: GROUND_Y + 0.07, z: r.z + HOUSE_OFFSET_Z + HOUSE_DIM.depth / 2 + 1.1, sx: 5.4, sz: 3.6 });
+      const front = HOUSE_OFFSET_Z + HOUSE_DIM.depth / 2 + 1.1;
+      pools.push({ x: r.x + front * r.sin, y: GROUND_Y + 0.07, z: r.z + front * r.cos, sx: 4.6, sz: 4.6 });
     }
     this.pools.set(pools);
   }
@@ -455,7 +605,9 @@ export class HouseLayer {
     let best: NearCat | null = null;
     let bestD = 0.62;
     for (const cat of this.catOrder) {
-      this.v.set(cat.rec.x + cat.brain.x, GROUND_Y + 0.5, cat.rec.z + cat.brain.z);
+      const r = cat.rec;
+      const b = cat.brain;
+      this.v.set(r.x + b.x * r.cos + b.z * r.sin, GROUND_Y + 0.5, r.z - b.x * r.sin + b.z * r.cos);
       const d = ray.distanceToPoint(this.v);
       if (d < bestD) {
         bestD = d;
@@ -472,9 +624,8 @@ export class HouseLayer {
     let best: Rec | null = null;
     let bestT = Infinity;
     for (const r of this.near) {
-      const hz = r.z + HOUSE_OFFSET_Z;
-      this.box.min.set(r.x - 1.6, GROUND_Y, hz - 1.3);
-      this.box.max.set(r.x + 1.6, GROUND_Y + 3.3, hz + 1.3);
+      this.box.min.set(r.hx - 1.7, GROUND_Y, r.hz - 1.5);
+      this.box.max.set(r.hx + 1.7, GROUND_Y + 3.3, r.hz + 1.5);
       const hit = ray.intersectBox(this.box, this.v);
       if (!hit) continue;
       const t = hit.distanceTo(ray.origin);
@@ -490,6 +641,8 @@ export class HouseLayer {
     this.clearZones();
     this.farGeometry.dispose();
     this.flagGeometry.dispose();
+    this.tintGeometry.dispose();
+    this.tintMaterial.dispose();
     this.nearHouses.geometry.dispose();
     this.nearYards.geometry.dispose();
     this.material.dispose();
@@ -510,6 +663,9 @@ export class HouseLayer {
         this.group.remove(zb.flags);
         zb.flags.dispose();
       }
+      this.group.remove(zb.tint);
+      zb.tint.geometry.dispose();
+      zb.tint.dispose();
     }
     this.zones.clear();
     this.cats.clear();
