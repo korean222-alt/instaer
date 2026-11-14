@@ -32,7 +32,7 @@ export class ItemField {
   }
 
   /** 가까운 집들의 아이템으로 다시 채운다 */
-  set(yards: Array<{ x: number; z: number; items: YardItem[] | undefined }>) {
+  set(yards: Array<{ x: number; z: number; rot?: number; items: YardItem[] | undefined }>) {
     const counts = new Map<YardItemType, number>();
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -46,8 +46,11 @@ export class ItemField {
         if (!mesh) continue;
         const n = counts.get(item.type) ?? 0;
         if (n >= CAPACITY_PER_TYPE) continue;
-        q.setFromAxisAngle(up, (-item.rotation * Math.PI) / 180);
-        pos.set(yard.x + cellToLocal(item.x), GROUND_Y + 0.035, yard.z + cellToLocal(item.y));
+        const rot = yard.rot ?? 0;
+        const lx = cellToLocal(item.x);
+        const lz = cellToLocal(item.y);
+        q.setFromAxisAngle(up, rot - (item.rotation * Math.PI) / 180);
+        pos.set(yard.x + lx * Math.cos(rot) + lz * Math.sin(rot), GROUND_Y + 0.035, yard.z - lx * Math.sin(rot) + lz * Math.cos(rot));
         mesh.setMatrixAt(n, m.compose(pos, q, one));
         counts.set(item.type, n + 1);
       }

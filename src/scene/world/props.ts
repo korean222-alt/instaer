@@ -304,3 +304,88 @@ export function plazaBench(): Pieces {
   for (const sx of [-1, 1]) out.push(p(new THREE.BoxGeometry(0.1, 0.42, 0.42).translate(sx * 0.6, 0.21, 0), '#a2734c'));
   return out;
 }
+
+/** 동네 가운데의 큰 나무 (광장 귤나무보다 크고, 열매 없이 잎만 풍성하다) */
+export function bigTree(): Pieces {
+  const out: Pieces = [];
+  const trunk = new THREE.CylinderGeometry(0.42, 0.78, 3.0, 10, 3);
+  trunk.translate(0, 1.5, 0);
+  out.push(pg(trunk, '#86593a', '#b08253'));
+  // 땅 위로 드러난 뿌리
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + 0.3;
+    const root = new THREE.SphereGeometry(0.34, 7, 5);
+    root.scale(1.5, 0.55, 0.8);
+    root.rotateY(-a);
+    root.translate(Math.cos(a) * 0.75, 0.12, Math.sin(a) * 0.75);
+    out.push(pg(root, '#7c5235', '#a57a4f'));
+  }
+  const leaves: Array<[number, number, number, number]> = [
+    [2.2, 0, 4.9, 0],
+    [1.7, 1.75, 4.1, 0.5],
+    [1.75, -1.7, 4.2, 0.35],
+    [1.55, 0.2, 4.15, -1.65],
+    [1.5, 0.15, 3.9, 1.7],
+    [1.35, -1.0, 5.6, -0.5],
+    [1.25, 1.1, 5.5, 0.4],
+  ];
+  for (const [r, x, y, z] of leaves) out.push(blob(r, x, y, z, 0.84, '#4fa860', '#a3dc78'));
+  return out;
+}
+
+/** 연못: 얕은 물, 돌 테두리, 연잎 몇 장. radius 는 물의 반지름 */
+export function pond(radius: number, seed: number): Pieces {
+  const rnd = mulberry32(seed);
+  const out: Pieces = [];
+  const rim = new THREE.TorusGeometry(radius + 0.08, 0.26, 6, 28).rotateX(Math.PI / 2);
+  rim.scale(1, 0.55, 1);
+  rim.translate(0, 0.06, 0);
+  out.push(pg(rim, '#cfc4b2', '#efe6d6'));
+  const water = new THREE.CircleGeometry(radius, 28).rotateX(-Math.PI / 2).translate(0, 0.07, 0);
+  // 가운데는 깊은 색, 가장자리는 얕은 색
+  {
+    const pos = water.attributes.position;
+    const a = new THREE.Color('#58bfe0');
+    const b = new THREE.Color('#aee8f2');
+    const arr = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const t = Math.min(1, Math.hypot(pos.getX(i), pos.getZ(i)) / radius);
+      arr[i * 3] = a.r + (b.r - a.r) * t;
+      arr[i * 3 + 1] = a.g + (b.g - a.g) * t;
+      arr[i * 3 + 2] = a.b + (b.b - a.b) * t;
+    }
+    water.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+    fillAttr(water, 'aMask', [0, 0]);
+  }
+  out.push(water);
+  for (let i = 0; i < 6; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = radius * (0.25 + rnd() * 0.6);
+    const pad = new THREE.CircleGeometry(0.3 + rnd() * 0.16, 9, 0.5, Math.PI * 2 - 0.9).rotateX(-Math.PI / 2);
+    pad.rotateY(rnd() * 6);
+    pad.translate(Math.cos(a) * d, 0.085, Math.sin(a) * d);
+    out.push(p(pad, '#7cc76a'));
+    if (i % 3 === 0) {
+      const bud = new THREE.IcosahedronGeometry(0.11, 0);
+      bud.scale(1, 0.7, 1);
+      bud.translate(Math.cos(a) * d, 0.15, Math.sin(a) * d);
+      out.push(p(bud, '#ffc2d4'));
+    }
+  }
+  return out;
+}
+
+/** 풀 한 포기 (아주 가볍다) */
+export function tuft(seed: number): Pieces {
+  const rnd = mulberry32(seed);
+  const out: Pieces = [];
+  for (let i = 0; i < 3; i++) {
+    const g = new THREE.ConeGeometry(0.07, 0.3 + rnd() * 0.16, 3, 1, true);
+    g.translate(0, 0.17, 0);
+    g.rotateZ((rnd() - 0.5) * 0.7);
+    g.rotateY(rnd() * 6);
+    g.translate((rnd() - 0.5) * 0.3, 0, (rnd() - 0.5) * 0.3);
+    out.push(pg(g, '#7cc468', '#b6e88a'));
+  }
+  return out;
+}

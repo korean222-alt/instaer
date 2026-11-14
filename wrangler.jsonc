@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // 프론트(dist 정적 파일)와 API(/api/*)를 Worker 하나로 배포한다.
+  // 같은 주소에서 나가므로 로그인 쿠키가 인스타 앱 안 브라우저에서도 막히지 않고,
+  // 나중에 실시간용 Durable Object 도 이 Worker 에 같이 넣을 수 있다.
+  "name": "cat-island",
+  "main": "api/index.ts",
+  "compatibility_date": "2026-11-13",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cat-island-db",
+      "database_id": "41e3ba65-ec4e-424e-938b-64f5324d9330",
+      "migrations_dir": "db/migrations"
+    }
+  ],
+  // 실시간: 구역/미니게임 방 하나 = 객체 하나. 무료 플랜은 SQLite 방식 객체만 쓸 수 있다
+  "durable_objects": {
+    "bindings": [{ "name": "REALTIME", "class_name": "RealtimeRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RealtimeRoom"] }],
+  // 요청 속도 제한 (지역마다 따로 세는 근사값). namespace_id 는 계정 안에서만 겹치지 않으면 된다
+  "ratelimits": [
+    { "name": "RL_MOVE_IN", "namespace_id": "4101", "simple": { "limit": 5, "period": 60 } },
+    { "name": "RL_WRITE", "namespace_id": "4102", "simple": { "limit": 40, "period": 60 } },
+    { "name": "RL_CONNECT", "namespace_id": "4103", "simple": { "limit": 20, "period": 60 } }
+  ],
+  "observability": { "enabled": true }
+}
