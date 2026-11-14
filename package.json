@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p api",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
-    "deploy": "vite build && wrangler deploy"
+    "deploy": "vite build && wrangler deploy",
+    "seed:local": "node scripts/seed-local.mjs 64 > .wrangler/seed.sql && wrangler d1 execute DB --local --file .wrangler/seed.sql",
+    "loadtest": "node scripts/loadtest.mjs 100 20"
   },
   "dependencies": {
     "three": "^0.187.0"

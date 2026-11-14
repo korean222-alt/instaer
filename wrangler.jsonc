@@ -16,10 +16,20 @@
     {
       "binding": "DB",
       "database_name": "cat-island-db",
-      // Cloudflare 에서 D1 을 만든 뒤 그 ID 를 여기에 적는다 (README.md 2단계).
-      // 비워 두면 로컬 개발은 그대로 되고, 배포할 때는 wrangler 가 새로 만든다.
+      "database_id": "41e3ba65-ec4e-424e-938b-64f5324d9330",
       "migrations_dir": "db/migrations"
     }
+  ],
+  // 실시간: 구역/미니게임 방 하나 = 객체 하나. 무료 플랜은 SQLite 방식 객체만 쓸 수 있다
+  "durable_objects": {
+    "bindings": [{ "name": "REALTIME", "class_name": "RealtimeRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RealtimeRoom"] }],
+  // 요청 속도 제한 (지역마다 따로 세는 근사값). namespace_id 는 계정 안에서만 겹치지 않으면 된다
+  "ratelimits": [
+    { "name": "RL_MOVE_IN", "namespace_id": "4101", "simple": { "limit": 5, "period": 60 } },
+    { "name": "RL_WRITE", "namespace_id": "4102", "simple": { "limit": 40, "period": 60 } },
+    { "name": "RL_CONNECT", "namespace_id": "4103", "simple": { "limit": 20, "period": 60 } }
   ],
   "observability": { "enabled": true }
 }

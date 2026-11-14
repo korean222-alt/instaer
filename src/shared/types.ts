@@ -1,7 +1,6 @@
-// 공통 타입. 씬(src/scene)은 읽기만 한다.
-// (앱 쪽 작업이 아직 없어서 씬 작업에서 지시문의 "공통 약속" 그대로 임시 생성함)
+// 공통 타입. Opus 담당이고 씬(src/scene)은 읽기만 한다. 모양은 CLAUDE.md "공통 타입"과 같다.
 
-import type { REGIONS } from './config';
+import type { REGIONS, YARD_ITEMS } from './config';
 
 /** 지역 id ('seoul', 'busan', ... 'other') */
 export type RegionId = (typeof REGIONS)[number]['id'];
@@ -30,15 +29,7 @@ export interface House {
   verified: boolean;
 }
 
-export type YardItemType =
-  | 'cat_tower'
-  | 'hammock'
-  | 'plant'
-  | 'sign'
-  | 'fish_rack'
-  | 'cushion'
-  | 'lantern'
-  | 'bench';
+export type YardItemType = (typeof YARD_ITEMS)[number]['type'];
 
 export interface YardItem {
   type: YardItemType;
@@ -47,4 +38,30 @@ export interface YardItem {
   /** 마당 칸 0~5 */
   y: number;
   rotation: 0 | 90 | 180 | 270;
+}
+
+export type PlayerAnim = 'idle' | 'walk' | 'sit' | 'jump';
+
+/** 내 주변의 다른 유저 (실시간) */
+export interface RemotePlayer {
+  /** 접속이 이어지는 동안 바뀌지 않는 값 */
+  id: string;
+  houseNo: number | null;
+  /** 인스타 아이디 ('@' 없이) */
+  handle: string;
+  x: number;
+  z: number;
+  /** 바라보는 방향 (라디안, LocalState.rotY 와 같은 기준) */
+  rotY: number;
+  anim: PlayerAnim;
+  /** null 이면 기본 고양이 */
+  cat: House['cat'];
+}
+
+/** 걷기 모드에서 내 고양이 상태 */
+export interface LocalState {
+  x: number;
+  z: number;
+  rotY: number;
+  anim: PlayerAnim;
 }
