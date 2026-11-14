@@ -47,3 +47,12 @@ export function isBlockedText(text: string): boolean {
   const flat = lower.replace(/[\s._\-*~0-9]/g, '');
   return BLOCKED.some((w) => flat.includes(w));
 }
+
+/** 아이디 숨기기: mochi_nyang → mo*******ng. 가린 아이디에는 항상 '*' 가 들어간다 */
+export function maskHandle(handle: string): string {
+  if (handle.length <= 3) return `${handle[0] ?? ''}**`;
+  const keep = handle.length <= 5 ? 1 : 2;
+  return handle.slice(0, keep) + '*'.repeat(Math.min(6, handle.length - keep * 2)) + handle.slice(-keep);
+}
+/** 가린 아이디인지 (진짜 인스타 아이디에는 '*' 를 쓸 수 없다) */
+export const isMaskedHandle = (h: string | null | undefined) => !!h && h.includes('*');

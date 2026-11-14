@@ -5,7 +5,7 @@ import type { House, RegionId } from '../../src/shared/types';
 import type { Env } from '../env';
 import { clientIp, error, json, readJson, weekStartKst } from '../http';
 import { invalidate } from '../lib/cache';
-import { HOUSE_COLS, isRegion, regionStats, toHouse, type HouseRow } from '../lib/houses';
+import { bumpRegion, HOUSE_COLS, isRegion, markZoneDirty, regionStats, toHouse, type HouseRow } from '../lib/houses';
 import { allow } from '../lib/rateLimit';
 import { createSession, isSecure, sessionCookie, sessionHouse } from '../lib/session';
 import { REGIONS_KEY } from './regions';
@@ -14,6 +14,7 @@ import { VILLAGE_KEY } from './village';
 export interface MoveInResponse {
   ok: true;
   house: House;
+  hideHandle: boolean;
   founder: boolean;
   /** 화면 쪽 localStorage 에 두는 예비 로그인 표시 */
   token: string;
@@ -22,7 +23,7 @@ export interface MoveInResponse {
 
 /** POST /api/move-in {handle, region} : 지금은 아이디 입력만으로 입주(미인증). 나중에 DM 코드 인증으로 바꾼다 */
 export async function moveIn(request: Request, env: Env): Promise<Response> {
-  const body = await readJson<{ handle?: unknown; region?: unknown }>(request);
+  const body = await readJson<{ handle?: unknown; region?: unknown; hideHandle?: unknown }>(request);
   if (!body || typeof body.handle !== 'string') return error(400, 'bad_request', '아이디를 적어 주세요');
   const handle = normalizeHandle(body.handle);
   const problem = handleProblem(handle);
@@ -46,11 +47,11 @@ export async function moveIn(request: Request, env: Env): Promise<Response> {
   for (let attempt = 0; attempt < 4 && !row; attempt++) {
     try {
       row = await env.DB.prepare(
-        `INSERT INTO houses (house_no, ig_handle, region, roof_color)
-         VALUES ((SELECT COALESCE(MAX(house_no), 0) + 1 FROM houses), ?, ?, ?)
+        `INSERT INTO houses (house_no, ig_handle, region, roof_color, hide_handle)
+         VALUES ((SELECT COALESCE(MAX(house_no), 0) + 1 FROM houses), ?, ?, ?, ?)
          RETURNING ${HOUSE_COLS}`,
       )
-        .bind(handle, region, defaultRoofColor(handle))
+        .bind(handle, region, defaultRoofColor(handle), body.hideHandle === true ? 1 : 0)
         .first<HouseRow>();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -61,14 +62,17 @@ export async function moveIn(request: Request, env: Env): Promise<Response> {
   if (!row) return error(503, 'busy', '입주하는 사람이 많아요. 잠시 후에 다시 해 주세요');
 
   const token = await createSession(env.DB, row.id);
+  const week = weekStartKst();
+  await env.DB.batch([...bumpRegion(env.DB, region, week), markZoneDirty(env.DB, row.house_no, 2)]);
   invalidate(VILLAGE_KEY, REGIONS_KEY);
 
-  const stats = await regionStats(env.DB, weekStartKst());
+  const stats = await regionStats(env.DB, week);
   const me = stats.find((s) => s.id === region)!;
   const first = Math.max(...stats.map((s) => s.total));
   const res: MoveInResponse = {
     ok: true,
-    house: toHouse(row),
+    house: toHouse(row, true),
+    hideHandle: row.hide_handle === 1,
     founder: row.house_no <= FOUNDER_MAX,
     token,
     region: { id: region, rank: me.rankTotal, total: me.total, toFirst: Math.max(0, first - me.total) },
@@ -83,5 +87,26 @@ export async function me(request: Request, env: Env): Promise<Response> {
   // 쿠키가 지워졌고 헤더로 왔으면 쿠키를 다시 심는다
   const hadCookie = (request.headers.get('cookie') ?? '').includes('ci_s=');
   const headers: HeadersInit = hadCookie ? {} : { 'set-cookie': sessionCookie(mine.token, isSecure(request)) };
-  return json({ house: toHouse(mine.house), founder: mine.house.house_no <= FOUNDER_MAX }, { headers });
+  return json(
+    { house: toHouse(mine.house, true), hideHandle: mine.house.hide_handle === 1, founder: mine.house.house_no <= FOUNDER_MAX },
+    { headers },
+  );
+}
+
+/** PUT /api/me/privacy {hideHandle} : 다른 사람에게 내 아이디를 가려서 보여 줄지 */
+export async function setPrivacy(request: Request, env: Env): Promise<Response> {
+  if (!(await allow(env.RL_WRITE, `write:${clientIp(request)}`, 40))) return error(429, 'rate_limited', '잠시 후에 다시 해 주세요');
+  const mine = await sessionHouse(env.DB, request);
+  if (!mine) return error(401, 'no_session', '입주한 사람만 바꿀 수 있어요');
+  const body = await readJson<{ hideHandle?: unknown }>(request);
+  if (!body || typeof body.hideHandle !== 'boolean') return error(400, 'bad_request', '내용이 이상해요');
+  const v = body.hideHandle ? 1 : 0;
+  if (v !== mine.house.hide_handle) {
+    await env.DB.batch([
+      env.DB.prepare('UPDATE houses SET hide_handle = ? WHERE id = ?').bind(v, mine.house.id),
+      markZoneDirty(env.DB, mine.house.house_no, 2),
+    ]);
+    invalidate(VILLAGE_KEY);
+  }
+  return json({ ok: true, hideHandle: body.hideHandle });
 }

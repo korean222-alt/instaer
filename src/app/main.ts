@@ -10,6 +10,8 @@ import { houseScreen, openHouse } from './screens/house';
 import { moveInScreen } from './screens/moveIn';
 import { rankScreen } from './screens/rank';
 import { searchScreen } from './screens/search';
+import { settingsScreen } from './screens/settings';
+import { initSound, play, setMusicMood } from './audio/sound';
 import type { Screen } from './screens/types';
 import {
   initState,
@@ -36,6 +38,7 @@ const ICON: Record<string, string> = {
   walk: '<circle cx="13" cy="4.5" r="2"/><path d="m9 21 2.5-6 2.5 2.5V21M8 11l3-3.5 3.5 1L17 12M11 8.5 9.5 15"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   star: '<path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
 };
 const icon = (name: string) =>
@@ -47,6 +50,7 @@ const SCREENS: Record<Exclude<ScreenId, 'map'>, Screen> = {
   decorate: decorateScreen,
   house: houseScreen,
   search: searchScreen,
+  settings: settingsScreen,
 };
 const TABS: Array<{ id: ScreenId; label: string }> = [
   { id: 'map', label: '지도' },
@@ -66,7 +70,10 @@ const scene = createIslandScene(canvas);
 initState(scene);
 pushHousesToScene(true);
 const hour = new Date().getHours();
-scene.setTimeOfDay(hour >= 19 || hour < 6 ? 'night' : 'day');
+const isNight = hour >= 19 || hour < 6;
+scene.setTimeOfDay(isNight ? 'night' : 'day');
+initSound();
+setMusicMood(isNight);
 
 // ── 화면 뼈대 ──
 const app = document.getElementById('app')!;
@@ -74,7 +81,10 @@ app.innerHTML = `
   <header class="hud">
     <div class="hud-row">
       <div class="pill brand"><b>고양이섬</b><span id="hud-count">불러오는 중</span></div>
-      <button class="round" id="btn-search" aria-label="아이디로 집 찾기">${icon('search')}</button>
+      <div class="hud-btns">
+        <button class="round" id="btn-search" aria-label="아이디로 집 찾기">${icon('search')}</button>
+        <button class="round" id="btn-settings" aria-label="설정">${icon('gear')}</button>
+      </div>
     </div>
     <div class="hud-row left">
       <div class="pill soft" id="hud-next" hidden></div>
@@ -104,7 +114,7 @@ let cleanup: (() => void) | void;
 let ready = false;
 
 function show(route: Route) {
-  const tabId = route.id === 'house' || route.id === 'search' ? 'map' : route.id;
+  const tabId = route.id === 'house' || route.id === 'search' || route.id === 'settings' ? 'map' : route.id;
   for (const a of app.querySelectorAll<HTMLAnchorElement>('[data-tab]')) {
     const on = a.dataset.tab === tabId;
     a.classList.toggle('on', on);
@@ -113,7 +123,9 @@ function show(route: Route) {
   }
   cleanup?.();
   cleanup = undefined;
+  const wasOpen = sheet.classList.contains('open');
   if (route.id === 'map' || !ready) {
+    if (wasOpen) play('close');
     sheet.classList.remove('open');
     sheet.setAttribute('aria-hidden', 'true');
     return;
@@ -129,14 +141,19 @@ function show(route: Route) {
     setTitle: (t) => ($('sheet-title').textContent = t),
     close: () => go('map'),
   });
+  if (!wasOpen) play('open');
   sheet.classList.add('open');
   sheet.setAttribute('aria-hidden', 'false');
 }
 
 $('sheet-close').addEventListener('click', () => go('map'));
 $('btn-search').addEventListener('click', () => go('search'));
+$('btn-settings').addEventListener('click', () => go('settings'));
 onRoute(show);
-scene.onHouseTap((no) => openHouse(no));
+scene.onHouseTap((no) => {
+  play('meow');
+  openHouse(no);
+});
 
 // ── 상단 HUD ──
 function drawHud() {
@@ -175,10 +192,15 @@ function drawStatus() {
 }
 
 // ── 걷기 (단계 B) ──
+let lastAnim = 'idle';
 const realtime = createRealtime(scene, {
   onSolo(solo) {
     rtSolo = solo;
     drawStatus();
+  },
+  onLocalMove(s) {
+    if (s.anim === 'jump' && lastAnim !== 'jump') play('jump');
+    lastAnim = s.anim;
   },
 });
 
@@ -191,6 +213,7 @@ if (testRoom) realtime.joinRoom(testRoom);
 function setWalking(on: boolean) {
   if (walking === on) return;
   walking = on;
+  play('tap');
   document.body.classList.toggle('walking', on);
   $('btn-walk').setAttribute('aria-pressed', String(on));
   $('btn-walk-end').hidden = !on;
@@ -220,6 +243,7 @@ scene.onNearHouse((no) => {
   nearHouse = no;
   const btn = $('btn-near');
   const h = no !== null ? state.houses.get(no) : null;
+  if (no !== null && btn.hidden && walking) play('ding');
   btn.hidden = no === null || !walking;
   if (no !== null) btn.querySelector('span')!.textContent = h?.igHandle ? `@${h.igHandle} 집 구경하기` : '이 집 구경하기';
 });
@@ -229,6 +253,7 @@ $('btn-near').addEventListener('click', () => nearHouse !== null && go('house', 
 async function boot() {
   const [meRes] = await Promise.allSettled([fetchMe(), refreshVillage()]);
   if (meRes.status === 'fulfilled' && meRes.value.house) {
+    state.hideHandle = !!meRes.value.hideHandle;
     setMe(meRes.value.house);
     pushHousesToScene();
   }

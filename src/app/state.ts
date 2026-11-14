@@ -10,6 +10,8 @@ type Listener = () => void;
 export interface AppState {
   scene: IslandScene;
   me: House | null;
+  /** 내 아이디를 다른 사람에게 가려서 보여 주는지 */
+  hideHandle: boolean;
   /** 입주한 집 (빈 집 제외), 번지 → 집 */
   houses: Map<number, House>;
   yards: Map<number, YardItem[]>;
@@ -35,6 +37,7 @@ export function initState(scene: IslandScene): AppState {
   state = {
     scene,
     me: null,
+    hideHandle: false,
     houses: new Map(),
     yards: new Map(),
     todayTop: null,
@@ -132,6 +135,7 @@ export function searchHouses(query: string, limit = 8): House[] {
   const contains: House[] = [];
   for (const h of state.houses.values()) {
     const handle = h.igHandle ?? '';
+    if (handle.includes('*')) continue; // 아이디를 숨긴 집은 찾기에 안 나온다
     if (handle.startsWith(q)) starts.push(h);
     else if (handle.includes(q)) contains.push(h);
     if (starts.length >= limit) break;

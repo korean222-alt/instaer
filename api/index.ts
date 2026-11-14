@@ -4,7 +4,7 @@ import type { Env } from './env';
 import { error } from './http';
 import { health } from './routes/health';
 import { like } from './routes/like';
-import { me, moveIn } from './routes/moveIn';
+import { me, moveIn, setPrivacy } from './routes/moveIn';
 import { regions } from './routes/regions';
 import { village } from './routes/village';
 import { realtimeConnect, realtimeUsage } from './routes/realtime';
@@ -33,6 +33,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (method === 'GET' && path === '/api/regions') return regions(env, ctx);
   if (method === 'GET' && path === '/api/me') return me(request, env);
   if (method === 'POST' && path === '/api/move-in') return moveIn(request, env);
+  if (method === 'PUT' && path === '/api/me/privacy') return setPrivacy(request, env);
 
   let m = path.match(/^\/api\/rt\/(zone|room)\/([A-Za-z0-9%-]{1,64})$/);
   if (m && method === 'GET') return realtimeConnect(m[1], m[2], request, env);

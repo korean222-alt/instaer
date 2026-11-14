@@ -4,6 +4,7 @@ import { gameRoomName, ROOM_ID_RE, RT_PROTOCOL, zoneRoomName } from '../../src/s
 import type { Env } from '../env';
 import { clientIp, error } from '../http';
 import { allow } from '../lib/rateLimit';
+import { publicHandle } from '../lib/houses';
 import { houseByToken, readToken } from '../lib/session';
 import type { RtUser } from '../realtime/RealtimeRoom';
 
@@ -39,9 +40,10 @@ export async function realtimeConnect(kind: string, id: string, request: Request
     const token = readToken(request) ?? protocols.find((p) => p.startsWith('tok.'))?.slice(4) ?? null;
     const mine = token ? await houseByToken(env.DB, token) : null;
     if (!mine) return error(401, 'no_session', '입주한 사람만 함께 걸을 수 있어요');
-    const h = mine.house.ig_handle;
-    if (isBlockedText(h)) return error(403, 'blocked', '이 아이디로는 함께 걸을 수 없어요');
-    const look = catLook(h);
+    const real = mine.house.ig_handle;
+    if (isBlockedText(real)) return error(403, 'blocked', '이 아이디로는 함께 걸을 수 없어요');
+    const h = publicHandle(mine.house); // 숨기기를 켰으면 이름표에도 가린 아이디
+    const look = catLook(real);
     user = { uid: `h:${mine.house.id}`, h, n: mine.house.house_no, c: [look.fur, look.pattern, look.eyeColor] };
   }
 

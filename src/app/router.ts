@@ -5,15 +5,16 @@
 //   #/decorate    마당 꾸미기
 //   #/house/12    12번지 구경 팝업
 //   #/search      내 집 찾기 (아이디 검색)
+//   #/settings    설정 (소리, 아이디 숨기기)
 // 지도(씬)는 항상 뒤에 깔려 있고, 다른 화면은 아래에서 올라오는 판으로 그 위에 뜬다. 뒤로 가기로 닫힌다.
 
-export type ScreenId = 'map' | 'move-in' | 'rank' | 'decorate' | 'house' | 'search';
+export type ScreenId = 'map' | 'move-in' | 'rank' | 'decorate' | 'house' | 'search' | 'settings';
 export interface Route {
   id: ScreenId;
   param: string | null;
 }
 
-const IDS: readonly ScreenId[] = ['map', 'move-in', 'rank', 'decorate', 'house', 'search'];
+const IDS: readonly ScreenId[] = ['map', 'move-in', 'rank', 'decorate', 'house', 'search', 'settings'];
 const isScreen = (v: string): v is ScreenId => (IDS as readonly string[]).includes(v);
 
 export function currentRoute(): Route {

@@ -1,3 +1,5 @@
+import { isMaskedHandle } from '../../shared/handle';
+import { play } from '../audio/sound';
 import { ApiError, like } from '../net/api';
 import { go } from '../router';
 import { emit, isFounder, regionColor, regionLabel, state } from '../state';
@@ -42,7 +44,11 @@ export const houseScreen: Screen = {
             ? '<a class="btn primary" href="#/decorate">내 마당 꾸미기</a>'
             : '<button class="btn primary" data-act="like"><span aria-hidden="true">♥</span> 예뻐요</button>'
         }
-        <a class="btn" href="https://www.instagram.com/${encodeURIComponent(handle)}/" target="_blank" rel="noopener noreferrer">인스타 보러 가기</a>
+        ${
+          isMaskedHandle(handle)
+            ? '<span class="btn ghost" aria-disabled="true">아이디 비공개</span>'
+            : `<a class="btn" href="https://www.instagram.com/${encodeURIComponent(handle)}/" target="_blank" rel="noopener noreferrer">인스타 보러 가기</a>`
+        }
       </div>
       <div class="row-end"><button class="link small" data-act="report">신고하기</button></div>`;
 
@@ -56,10 +62,12 @@ export const houseScreen: Screen = {
           house.likes = res.likes;
           root.querySelector('[data-likes]')!.textContent = res.likes.toLocaleString();
           btn.classList.add('liked');
+          play('like');
           toast('예뻐요를 눌렀어요');
           emit();
         } else {
           toast(res.message ?? '오늘은 이미 눌렀어요');
+          play('tap');
         }
       } catch (err) {
         toast(err instanceof ApiError ? err.message : '잠시 문제가 생겼어요');

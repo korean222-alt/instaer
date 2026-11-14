@@ -1,5 +1,6 @@
 import { HOUSE_CELLS, ROOF_COLORS, YARD_ITEM_MAX, YARD_ITEMS, YARD_SIZE } from '../../shared/config';
 import type { YardItem, YardItemType } from '../../shared/types';
+import { play } from '../audio/sound';
 import { ApiError, saveYard } from '../net/api';
 import { pushHousesToScene, setMe, state } from '../state';
 import { toast } from '../ui/toast';
@@ -111,6 +112,7 @@ export const decorateScreen: Screen = {
         const type = t.dataset.type as YardItemType;
         placing = placing === type ? null : type;
         selected = null;
+        play('tap');
       } else if (t.dataset.x !== undefined) {
         const x = Number(t.dataset.x);
         const y = Number(t.dataset.y);
@@ -118,23 +120,33 @@ export const decorateScreen: Screen = {
         if (idx >= 0) {
           selected = selected === idx ? null : idx;
           placing = null;
+          play('tap');
         } else if (selected !== null) {
           items[selected] = { ...items[selected], x, y };
+          play('place');
         } else if (placing) {
-          if (items.length >= YARD_ITEM_MAX) toast(`아이템은 ${YARD_ITEM_MAX}개까지 놓을 수 있어요`);
-          else items = [...items, { type: placing, x, y, rotation: 0 }];
+          if (items.length >= YARD_ITEM_MAX) {
+            toast(`아이템은 ${YARD_ITEM_MAX}개까지 놓을 수 있어요`);
+            play('error');
+          } else {
+            items = [...items, { type: placing, x, y, rotation: 0 }];
+            play('place');
+          }
         }
         preview();
       } else if (t.dataset.roof) {
         roof = t.dataset.roof;
+        play('tap');
         preview();
       } else if (t.dataset.act === 'rotate' && selected !== null) {
         const it = items[selected];
         items[selected] = { ...it, rotation: (((it.rotation + 90) % 360) as YardItem['rotation']) };
+        play('rotate');
         preview();
       } else if (t.dataset.act === 'remove' && selected !== null) {
         items = items.filter((_, i) => i !== selected);
         selected = null;
+        play('remove');
         preview();
       } else if (t.dataset.act === 'reset') {
         items = savedItems.map((i) => ({ ...i }));
@@ -151,8 +163,10 @@ export const decorateScreen: Screen = {
           state.yards.set(houseNo, res.items);
           setMe({ ...state.me!, roofColor: res.roofColor });
           savedRoofRef.value = res.roofColor;
+          play('save');
           toast('마당을 저장했어요');
         } catch (err) {
+          play('error');
           toast(err instanceof ApiError ? err.message : '저장하지 못했어요');
         }
         saving = false;

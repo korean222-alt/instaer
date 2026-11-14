@@ -3,7 +3,7 @@ import type { YardItem } from '../../src/shared/types';
 import type { Env } from '../env';
 import { clientIp, error, json, readJson } from '../http';
 import { invalidate } from '../lib/cache';
-import { houseByNo } from '../lib/houses';
+import { houseByNo, markZoneDirty } from '../lib/houses';
 import { allow } from '../lib/rateLimit';
 import { sessionHouse } from '../lib/session';
 import { VILLAGE_KEY } from './village';
@@ -72,6 +72,7 @@ export async function putYard(houseNo: number, request: Request, env: Env): Prom
     const args = checked.items.flatMap((i) => [id, i.type, i.x, i.y, i.rotation]);
     stmts.push(env.DB.prepare(`INSERT INTO yard_items (house_id, item_type, x, y, rotation) VALUES ${values}`).bind(...args));
   }
+  stmts.push(markZoneDirty(env.DB, houseNo, 2));
   if (roof !== mine.house.roof_color) stmts.push(env.DB.prepare('UPDATE houses SET roof_color = ? WHERE id = ?').bind(roof, id));
   await env.DB.batch(stmts);
   invalidate(VILLAGE_KEY);
