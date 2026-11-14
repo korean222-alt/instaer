@@ -2,6 +2,7 @@ import { catLook } from '../../shared/catLook';
 import { REGIONS } from '../../shared/config';
 import { handleProblem, HANDLE_MAX, HANDLE_PROBLEM_TEXT, normalizeHandle } from '../../shared/handle';
 import type { RegionId } from '../../shared/types';
+import { play } from '../audio/sound';
 import { ApiError, moveIn, saveToken } from '../net/api';
 import { go } from '../router';
 import { isFounder, refreshRegions, regionLabel, setMe, state } from '../state';
@@ -71,6 +72,7 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
           ${options}
         </select>
       </label>
+      <label class="check"><input type="checkbox" name="hide" /> <span>인스타 아이디 숨기기<small>다른 사람에게는 가린 아이디(mo***ng)만 보여요. 설정에서 바꿀 수 있어요.</small></span></label>
       <button class="btn primary" type="submit" disabled>입주하기</button>
     </form>
     <p class="note">같은 아이디로는 한 번만 입주할 수 있어요. 남의 아이디로 입주하면 나중에 본인 확인을 열 때 정리될 수 있어요.</p>`;
@@ -105,8 +107,11 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
     button.disabled = true;
     button.textContent = '입주하는 중...';
     try {
-      const res = await moveIn(handle, select.value as RegionId);
+      const hide = form.querySelector<HTMLInputElement>('input[name="hide"]')!.checked;
+      const res = await moveIn(handle, select.value as RegionId, hide);
       saveToken(res.token);
+      state.hideHandle = res.hideHandle;
+      play('fanfare');
       setMe(res.house);
       refreshRegions();
       state.scene.focusHouse(res.house.houseNo);
@@ -115,6 +120,7 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : '잠시 문제가 생겼어요';
       toast(msg, 3000);
+      play('error');
       hint.textContent = msg;
       hint.classList.add('bad');
       button.textContent = '입주하기';

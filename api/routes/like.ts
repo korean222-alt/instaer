@@ -1,7 +1,7 @@
 import type { Env } from '../env';
 import { clientIp, error, json, sha256, utcDay } from '../http';
 import { invalidate } from '../lib/cache';
-import { houseByNo } from '../lib/houses';
+import { houseByNo, markZoneDirty } from '../lib/houses';
 import { allow } from '../lib/rateLimit';
 import { readToken } from '../lib/session';
 import { VILLAGE_KEY } from './village';
@@ -50,7 +50,12 @@ export async function like(houseNo: number, request: Request, env: Env): Promise
 
   const [, updated] = await env.DB.batch([
     env.DB.prepare('INSERT OR IGNORE INTO likes_log (house_id, voter_key, day, ip_hash) VALUES (?, ?, ?, ?)').bind(house.id, voter, day, ipHash),
-    env.DB.prepare('UPDATE houses SET likes = likes + 1 WHERE id = ? RETURNING likes').bind(house.id),
+    env.DB.prepare(
+      `UPDATE houses SET likes = likes + 1,
+         likes_today = CASE WHEN likes_day = ? THEN likes_today + 1 ELSE 1 END, likes_day = ?
+       WHERE id = ? RETURNING likes`,
+    ).bind(day, day, house.id),
+    markZoneDirty(env.DB, houseNo, 1),
   ]);
   invalidate(VILLAGE_KEY);
   const likes = (updated.results[0] as { likes: number } | undefined)?.likes ?? house.likes + 1;

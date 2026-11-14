@@ -25,6 +25,8 @@ export interface RealtimeHooks {
   onSolo?(solo: boolean): void;
   /** 방 안 메시지 */
   onRoomMessage?(from: string, data: unknown): void;
+  /** 내 고양이가 움직일 때 (씬은 onLocalMove 를 하나만 받으므로 여기서 나눠 준다) */
+  onLocalMove?(s: LocalState): void;
 }
 
 export interface Realtime {
@@ -78,6 +80,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
   };
 
   scene.onLocalMove((s) => {
+    hooks.onLocalMove?.(s);
     latest = s;
     if (!running || gameRoom) return;
     // 구역이 바뀌었으면 잠깐(0.6초) 그대로인지 보고 옮긴다

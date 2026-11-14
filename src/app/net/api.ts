@@ -35,6 +35,7 @@ export interface Regions {
 export interface MoveInResult {
   ok: true;
   house: House;
+  hideHandle: boolean;
   founder: boolean;
   token: string;
   region: { id: RegionId; rank: number; total: number; toFirst: number };
@@ -111,8 +112,10 @@ export async function fetchHealth(): Promise<Health> {
 
 export const fetchVillage = () => call<Village>('GET', '/api/village');
 export const fetchRegions = () => call<Regions>('GET', '/api/regions');
-export const fetchMe = () => call<{ house: House | null; founder?: boolean }>('GET', '/api/me');
-export const moveIn = (handle: string, region: RegionId) => call<MoveInResult>('POST', '/api/move-in', { handle, region });
+export const fetchMe = () => call<{ house: House | null; founder?: boolean; hideHandle?: boolean }>('GET', '/api/me');
+export const moveIn = (handle: string, region: RegionId, hideHandle: boolean) =>
+  call<MoveInResult>('POST', '/api/move-in', { handle, region, hideHandle });
+export const setPrivacy = (hideHandle: boolean) => call<{ ok: true; hideHandle: boolean }>('PUT', '/api/me/privacy', { hideHandle });
 export const saveYard = (houseNo: number, items: YardItem[], roofColor: string) =>
   call<{ ok: true; items: YardItem[]; roofColor: string }>('PUT', `/api/yard/${houseNo}`, { items, roofColor });
 export const like = (houseNo: number) =>

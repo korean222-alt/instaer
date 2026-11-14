@@ -49,7 +49,8 @@ createIslandScene(canvas) → IslandScene
 - 집, 고양이, 아이템은 같은 모양을 복제해서 그리는 방식(InstancedMesh). 멀리서는 LOD로 단순화한다.
 - 걷기는 섬 전체를 자유롭게 걸어 다니는 3인칭이다(바다, 집 몸체, 큰 나무만 막는다). 점프 버튼이 있다.
 - 멀티플레이: 내 주변의 몇 명(NEARBY_MAX)만 실시간으로 보인다. 미니게임 방 안에서는 참가자가 거리와 상관없이 모두 보인다. (아래 "멀티플레이 방침")
-- 이번 버전에서 하지 않는 것: 채팅, 상점, 미니게임 본체(방 인프라만 준비), 개인 땅 구매, 그림 그리기, 인스타 DM 자동 인증, 사람 캐릭터.
+- 이번 버전에서 하지 않는 것: 채팅, 상점, 미니게임 본체(방 인프라만 준비), 개인 땅 구매, 인스타 DM 자동 인증, 사람 캐릭터.
+- 다음에 할 것 (2026-11-15 사용자 요청): 집 안 들어가기, 끌어서 놓는 자유 배치, 직접 그린 그림(32x32 픽셀, 16색). 씬 먼저: `tasks/페이블-4-집안과자유꾸미기.md`. 그다음 Opus 가 DB/그리기 화면을 붙인다.
 
 ## 멀티플레이 방침
 - 로블록스 같은 완전 오픈 월드가 아니라, **내 주변 몇 명만 보이는** 방식이다. 서버가 각 유저에게 가까운 최대 NEARBY_MAX 명의 위치만 보낸다.
@@ -74,4 +75,4 @@ createIslandScene(canvas) → IslandScene
 ## 현재 상태
 (작업이 끝날 때마다 `src/scene/README-scene.md`(씬) 또는 `README.md`(앱, 서버)에 적고, 여기에는 한 줄 요약만 남긴다)
 - 씬(Fable): 작업 1(동네 단위 배치), 작업 2(3인칭 걷기: `setWalkMode`, `onNearHouse`), 작업 3a(다른 유저 고양이 표시: `setRemotePlayers`, `onLocalMove`, `getLocalState`) 완료. 실제 폰 fps 는 미측정.
-- 앱(Opus): 단계 0, A(입주, 입양 카드, 지역 대항전, 꾸미기, 예뻐요, 오늘의 특이한 집, HUD), B(걷기 버튼, 구경하기), C(Durable Object 실시간 주변 20명, 미니게임 방 인프라, 부하 시험) 완료 (2026-11-14). 원격 D1 `cat-island-db` 생성과 스키마 적용 완료. 실제 배포(GitHub 연결)와 실제 폰 시험은 아직. 자세한 내용은 README.md, README-realtime.md. `src/shared` 에 RemotePlayer/LocalState 와 실시간 상수가 생겼으니 씬의 임시 타입은 shared 로 바꿀 것(README.md "Fable 에게 요청").
+- 앱(Opus): 단계 0, A(입주, 입양 카드, 지역 대항전, 꾸미기, 예뻐요, 오늘의 특이한 집, HUD), B(걷기 버튼, 구경하기), C(Durable Object 실시간 주변 20명, 미니게임 방 인프라, 부하 시험) 완료 (2026-11-14). 원격 D1 `cat-island-db` 생성과 스키마 적용 완료. 실제 배포(GitHub 연결)와 실제 폰 시험은 아직. 소리(배경 음악/효과음, 설정), 아이디 숨기기, 사람 많아져도 D1 무료 한도에 맞게 구역별 요약 표(zone_cache, region_counts) 추가(2026-11-15). 자세한 내용은 README.md, README-realtime.md. `src/shared` 에 RemotePlayer/LocalState 와 실시간 상수가 생겼으니 씬의 임시 타입은 shared 로 바꿀 것(README.md "Fable 에게 요청").

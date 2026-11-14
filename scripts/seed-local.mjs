@@ -11,7 +11,7 @@ let seed = 7;
 const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const pick = (l) => l[Math.floor(rnd() * l.length)];
 const now = Math.floor(Date.now() / 1000);
-const out = ['DELETE FROM yard_items; DELETE FROM likes_log; DELETE FROM sessions; DELETE FROM houses;'];
+const out = ['DELETE FROM yard_items; DELETE FROM likes_log; DELETE FROM sessions; DELETE FROM houses; DELETE FROM zone_cache; DELETE FROM region_counts;'];
 const used = new Set();
 for (let i = 1; i <= n; i++) {
   let h;
@@ -28,4 +28,7 @@ for (let i = 1; i <= n; i++) {
     out.push(`INSERT INTO yard_items (house_id, item_type, x, y, rotation) VALUES (${i}, '${pick(ITEMS)}', ${x}, ${y}, ${pick([0, 90, 180, 270])});`);
   }
 }
+// 지역 수 다시 세기 (전체 + 주별, 한국 시간 월요일 0시 기준)
+out.push(`INSERT INTO region_counts (region, week, n) SELECT region, 0, COUNT(*) FROM houses GROUP BY region;`);
+out.push(`INSERT INTO region_counts (region, week, n) SELECT region, CAST(strftime('%s', date(created_at + 32400, 'unixepoch', 'weekday 0', '-6 days')) AS INTEGER) - 32400 AS wk, COUNT(*) FROM houses GROUP BY region, wk;`);
 console.log(out.join('\n'));
