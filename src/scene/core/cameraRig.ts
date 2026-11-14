@@ -27,6 +27,8 @@ export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
   private readonly dom: HTMLElement;
   private opts: RigOptions;
+  /** 꺼 두면 손가락 조작과 update 를 무시한다 (걷기 모드에서 다른 카메라가 쓸 때) */
+  private on = true;
   // 현재 값과 목표 값
   private tx = 0;
   private tz = 0;
@@ -66,6 +68,15 @@ export class CameraRig {
     on('contextmenu', (e: Event) => e.preventDefault());
     dom.style.touchAction = 'none';
     this.place();
+  }
+
+  set enabled(v: boolean) {
+    this.on = v;
+    this.pointers.clear();
+    this.vx = this.vz = 0;
+  }
+  get enabled() {
+    return this.on;
   }
 
   setLimits(partial: Partial<RigOptions>) {
@@ -120,6 +131,7 @@ export class CameraRig {
   }
 
   update(dt: number) {
+    if (!this.on) return;
     const b = this.opts.bounds;
     if (this.pointers.size === 0) {
       // 손을 뗀 뒤에도 살짝 미끄러진다
@@ -161,6 +173,7 @@ export class CameraRig {
   }
 
   private onDown(e: PointerEvent) {
+    if (!this.on) return;
     this.dom.setPointerCapture?.(e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 1) {
@@ -218,7 +231,7 @@ export class CameraRig {
   private onUp(e: PointerEvent, cancelled = false) {
     if (!this.pointers.has(e.pointerId)) return;
     this.pointers.delete(e.pointerId);
-    this.dom.releasePointerCapture?.(e.pointerId);
+    if (this.dom.hasPointerCapture?.(e.pointerId)) this.dom.releasePointerCapture(e.pointerId);
     if (this.pointers.size === 1) this.pinchDist = 0;
     if (this.pointers.size === 0) {
       const quick = performance.now() - this.downAt < 400;
@@ -232,6 +245,7 @@ export class CameraRig {
 
   private onWheel(e: WheelEvent) {
     e.preventDefault();
+    if (!this.on) return;
     const scale = Math.exp(THREE.MathUtils.clamp(e.deltaY, -120, 120) * 0.0016);
     this.gdist = THREE.MathUtils.clamp(this.gdist * scale, this.opts.minDist, this.opts.maxDist);
   }

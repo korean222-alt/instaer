@@ -118,6 +118,8 @@ export interface Collider {
   sin: number;
   /** 높이. 카메라를 가리는지 볼 때 쓴다 (낮은 울타리는 가리지 않는다) */
   h: number;
+  /** 카메라를 가리는 범위: 원이면 반지름(나무는 잎이 줄기보다 넓다), 네모면 여유 폭. 0이면 가리지 않는다 */
+  occ: number;
   /** 집에 딸린 것이면 구역 안 집 순번(0~99), 아니면 -1. 집이 없는 자리는 막지 않는다 */
   lot: number;
 }
@@ -473,15 +475,15 @@ export const ZONE_SCENERY: readonly Scenery[] = buildScenery();
 
 function buildColliders(): Collider[] {
   const out: Collider[] = [];
-  const circle = (x: number, z: number, r: number, h: number) => out.push({ x, z, r, hx: 0, hz: 0, cos: 1, sin: 0, h, lot: -1 });
-  const box = (x: number, z: number, hx: number, hz: number, rot: number, h: number, lot = -1) =>
-    out.push({ x, z, r: 0, hx, hz, cos: Math.cos(rot), sin: Math.sin(rot), h, lot });
+  const circle = (x: number, z: number, r: number, h: number, occ = 0) => out.push({ x, z, r, hx: 0, hz: 0, cos: 1, sin: 0, h, occ, lot: -1 });
+  const box = (x: number, z: number, hx: number, hz: number, rot: number, h: number, lot = -1, occ = 0) =>
+    out.push({ x, z, r: 0, hx, hz, cos: Math.cos(rot), sin: Math.sin(rot), h, occ, lot });
 
   LOCAL_SLOTS.forEach((lot, i) => {
-    const at = (lx: number, lz: number, hx: number, hz: number, h: number) =>
-      box(lot.x + rotX(lx, lz, lot.rot), lot.z + rotZ(lx, lz, lot.rot), hx, hz, lot.rot, h, i);
+    const at = (lx: number, lz: number, hx: number, hz: number, h: number, occ = 0) =>
+      box(lot.x + rotX(lx, lz, lot.rot), lot.z + rotZ(lx, lz, lot.rot), hx, hz, lot.rot, h, i, occ);
     // 집 몸체
-    at(0, HOUSE_BACK, 1.5, 1.2, 3.1);
+    at(0, HOUSE_BACK, 1.5, 1.2, 3.4, 0.3);
     // 울타리: 뒤와 양옆 (앞쪽은 열려 있다)
     const e = YARD_HALF - 0.12;
     at(0, -e, e, 0.1, 0.5);
@@ -489,11 +491,11 @@ function buildColliders(): Collider[] {
     for (const sx of [-e, e]) at(sx, (-e + sideEnd) / 2, 0.1, (e + sideEnd) / 2, 0.5);
   });
   for (const s of ZONE_SCENERY) {
-    if (s.kind === 'plazaTree') circle(s.x, s.z, 1.25 * s.scale, 4.5);
-    else if (s.kind === 'bigTree') circle(s.x, s.z, 1.0 * s.scale, 6);
+    if (s.kind === 'plazaTree') circle(s.x, s.z, 1.25 * s.scale, 5.2, 2.3 * s.scale);
+    else if (s.kind === 'bigTree') circle(s.x, s.z, 1.0 * s.scale, 7, 3.3 * s.scale);
     else if (s.kind === 'pond') circle(s.x, s.z, POND_R * s.scale + 0.15, 0);
-    else if (s.kind === 'roundTree') circle(s.x, s.z, 0.34 * s.scale, 2.4 * s.scale);
-    else if (s.kind === 'coneTree') circle(s.x, s.z, 0.5 * s.scale, 2.3 * s.scale);
+    else if (s.kind === 'roundTree') circle(s.x, s.z, 0.34 * s.scale, 2.5 * s.scale, 1.0 * s.scale);
+    else if (s.kind === 'coneTree') circle(s.x, s.z, 0.5 * s.scale, 2.4 * s.scale, 0.75 * s.scale);
     else if (s.kind === 'rock') circle(s.x, s.z, 0.5 * s.scale, 0.4);
     else if (s.kind === 'lantern') circle(s.x, s.z, 0.2, 0.4);
     else if (s.kind === 'bench') box(s.x, s.z, 0.78, 0.26, s.rot, 0.5);

@@ -118,6 +118,8 @@ export class World {
   /** 열린 구역 수 / 그려진 구역 수(열린 구역 + 맛보기로 보이는 잠긴 구역) */
   unlocked = 0;
   built = 0;
+  /** 지금 화면에 걸려서 그리는 구역 수 (확인용) */
+  visibleZones = 0;
   bounds: WorldBounds = { minX: -60, maxX: 60, minZ: -60, maxZ: 60 };
   /** 놓인 다리 (걷기에서 바다를 건널 수 있는 곳) */
   bridges: Array<{ x: number; z: number; axis: 'x' | 'z' }> = [];
@@ -304,7 +306,11 @@ export class World {
   }
 
   update(focusX: number, focusZ: number, dist: number, frustum: THREE.Frustum) {
-    for (const z of this.zoneGroups) z.group.visible = frustum.intersectsBox(z.box);
+    this.visibleZones = 0;
+    for (const z of this.zoneGroups) {
+      z.group.visible = frustum.intersectsBox(z.box);
+      if (z.group.visible) this.visibleZones++;
+    }
     const t = this.atmosphere.shared.uTime.value;
     const night = this.atmosphere.shared.uNight.value;
     this.seaUniforms.uFocus.value.set(focusX, focusZ);

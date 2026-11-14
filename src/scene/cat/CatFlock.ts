@@ -71,6 +71,13 @@ export class CatFlock {
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 
+  /** 앉은 정도(식빵 자세)와 하품 (0~1). 내가 조작하는 고양이에만 쓴다 */
+  setMood(slot: number, sit: number, yawn: number) {
+    this.pat.setZ(slot, sit);
+    this.pat.setW(slot, yawn);
+    this.pat.needsUpdate = true;
+  }
+
   /** 움직임 상태 */
   setAnim(slot: number, walkPhase: number, walk: number, sleep: number, happy = 0) {
     this.anim.setXYZW(slot, walkPhase, walk, sleep, happy);

@@ -45,8 +45,11 @@ const CAT_SCALE = 1.12;
 const FLAG_LOCAL = { x: -1.55, z: YARD_WORLD / 2 - 0.02 };
 const FLAG_SCALE = 0.8;
 /** 걷기 모드에서 자세히 그리는 범위 (내 고양이 기준) */
-const WALK_NEAR_RADIUS = 46;
+const WALK_NEAR_RADIUS = 40;
+const WALK_NEAR_MAX = 26;
 /** 고양이가 돌아다니는 범위 (마당 가운데 기준): 집 앞 잔디밭 */
+/** 걸어서 지나갈 수 없는 큰 아이템과 그 반지름 (나머지는 작아서 지나간다) */
+const BLOCKING_ITEMS: Partial<Record<YardItem['type'], number>> = { cat_tower: 0.42, bench: 0.48, hammock: 0.5, fish_rack: 0.42 };
 const CAT_AREA = { minX: -2.2, maxX: 2.2, minZ: 0.7, maxZ: 2.45 };
 
 interface Rec {
@@ -106,6 +109,8 @@ export class HouseLayer {
   /** 걷기 모드에서 내 고양이 위치 (없으면 null) */
   private walkAt: { x: number; z: number } | null = null;
   private nearLimit = NEAR_MAX;
+  /** 걷기 모드에서 내가 조작 중인 고양이의 집 (마당에는 그리지 않는다) */
+  private awayCat: number | null = null;
   private readonly nearHouses: THREE.InstancedMesh;
   private readonly nearYards: THREE.InstancedMesh;
   private readonly nearTint: THREE.InstancedBufferAttribute;
@@ -348,6 +353,35 @@ export class HouseLayer {
     this.labels.setFocus(at);
   }
 
+  /** 이 집의 고양이는 마당에 그리지 않는다 (내가 데리고 걷는 중). null 이면 해제 */
+  setAwayCat(houseNo: number | null) {
+    if (houseNo !== this.awayCat) this.dirty = true;
+    this.awayCat = houseNo;
+  }
+
+  /** (x, z) 가까이에 있는 큰 꾸미기 아이템을 막힌 곳으로 알려준다 (작은 아이템은 지나갈 수 있다) */
+  blockersNear(x: number, z: number, out: Array<{ x: number; z: number; r: number }>) {
+    let n = 0;
+    for (const r of this.near) {
+      if (Math.abs(r.x - x) > 5.5 || Math.abs(r.z - z) > 5.5) continue;
+      const items = this.yardItems.get(r.house.houseNo);
+      if (!items) continue;
+      for (const it of items) {
+        const size = BLOCKING_ITEMS[it.type];
+        if (!size) continue;
+        const lx = cellToLocal(it.x);
+        const lz = cellToLocal(it.y);
+        const b = (this.blockerPool[n] ??= { x: 0, z: 0, r: 0 });
+        n++;
+        b.x = r.x + lx * r.cos + lz * r.sin;
+        b.z = r.z - lx * r.sin + lz * r.cos;
+        b.r = size;
+        out.push(b);
+      }
+    }
+  }
+  private readonly blockerPool: Array<{ x: number; z: number; r: number }> = [];
+
   /** 자세히 그리는 집 수 상한 (성능이 모자라면 줄인다) */
   setNearLimit(n: number) {
     n = Math.max(8, Math.min(NEAR_MAX, Math.floor(n)));
@@ -429,7 +463,8 @@ export class HouseLayer {
     // 마당 한 칸이 화면에서 몇 픽셀인가 (확대 정도)
     const px = viewport.h / (2 * target.dist * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
     const nearOn = px >= NEAR_PX;
-    const wantFlock = px >= CAT_HI_PX ? this.flockHi : this.flockLo;
+    // 걷기 모드에서는 내 고양이만 자세한 모델이고, 마당 고양이들은 가벼운 모델로 그린다
+    const wantFlock = px >= CAT_HI_PX && !this.walkAt ? this.flockHi : this.flockLo;
     if (wantFlock !== this.flock) {
       this.flock.mesh.visible = false;
       this.flock = wantFlock;
@@ -485,7 +520,7 @@ export class HouseLayer {
         }
       }
       want.sort((a, b) => a.score - b.score);
-      want.length = Math.min(want.length, NEAR_PORTRAIT, this.nearLimit);
+      want.length = Math.min(want.length, WALK_NEAR_MAX, this.nearLimit);
     } else if (nearOn) {
       // 화면에 보이는 땅의 대략적인 크기
       const vfov = THREE.MathUtils.degToRad(camera.fov);
@@ -552,7 +587,7 @@ export class HouseLayer {
     }
     this.catOrder = [];
     for (const r of want) {
-      if (!r.house.cat) continue;
+      if (!r.house.cat || r.house.houseNo === this.awayCat) continue;
       let cat = this.cats.get(r.house.houseNo);
       if (!cat || cat.rec !== r) {
         cat = { brain: new CatBrain(CAT_AREA, r.house.houseNo), rec: r };

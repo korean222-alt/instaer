@@ -3,7 +3,7 @@
 import { REGIONS } from '../../shared/config';
 import type { House, RegionId } from '../../shared/types';
 import { mockHouses, mockYardItems } from '../dev/mockHouses';
-import { createIslandScene, debugSetCamera, getSceneStats, houseSlot } from '../index';
+import { createIslandScene, debugPlaceWalker, debugSetCamera, debugSetQuality, getSceneStats, houseSlot } from '../index';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
@@ -75,6 +75,32 @@ $('btn-top')?.addEventListener('click', () => {
   say(`오늘의 특이한 집 · ${top.houseNo}번지 · ♥ ${top.likes}`);
 });
 
+// ── 걷기 (setWalkMode / onNearHouse 확인용) ──
+let walking = false;
+let visitNo: number | null = null;
+const visit = $('visit') as HTMLButtonElement | null;
+function setWalking(on: boolean, houseNo?: number) {
+  walking = on;
+  // 내 집은 임의의 집 번호를 쓴다 (사는 사람이 있는 집 중 하나)
+  const lived = houses.filter((h) => !h.isNpc);
+  const mine = houseNo ?? lived[Math.floor(Math.random() * Math.min(lived.length, 30))]?.houseNo;
+  island.setWalkMode(on, mine);
+  document.body.classList.toggle('walking', on);
+  $('btn-walk')!.textContent = on ? '걷기 끝' : '걷기';
+  if (on) say(`${mine}번지 고양이로 걸어요 · 왼쪽 아래를 밀어서 이동`);
+}
+$('btn-walk')?.addEventListener('click', () => setWalking(!walking));
+island.onNearHouse((houseNo) => {
+  visitNo = houseNo;
+  if (!visit) return;
+  const h = houseNo === null ? undefined : byNo.get(houseNo);
+  visit.hidden = !h;
+  if (h) visit.textContent = h.igHandle ? `@${h.igHandle} 집 구경하기` : `${houseNo}번지 구경하기`;
+});
+visit?.addEventListener('click', () => {
+  if (visitNo !== null) say(`${visitNo}번지를 구경해요 (앱에서 팝업을 띄울 자리)`);
+});
+
 // ── 지역 버튼 (highlightRegion 확인용) ──
 const chips = $('regions');
 function setRegion(id: RegionId | null) {
@@ -116,7 +142,7 @@ function tick(now: number) {
     fpsLog.push(fps);
     const s = getSceneStats(island);
     if (fpsEl && s) {
-      fpsEl.textContent = `${Math.round(fps)} fps · 그리기 ${s.calls} · 삼각형 ${(s.triangles / 1000).toFixed(0)}k`;
+      fpsEl.textContent = `${Math.round(fps)} fps · 그리기 ${s.calls} · 삼각형 ${(s.triangles / 1000).toFixed(0)}k · 품질 ${s.quality}`;
     }
     frames = 0;
     lastT = now;
@@ -134,4 +160,15 @@ if (params.get('dist') || params.get('at')) {
   const s = houseSlot(Number(params.get('at') ?? 1));
   debugSetCamera(island, params.get('at') ? s.x : 0, params.get('at') ? s.z + 0.6 : 0, Number(params.get('dist') ?? 60));
 }
-(window as unknown as Record<string, unknown>).__island = { island, stats: () => getSceneStats(island), fpsLog, debugSetCamera };
+//   ?walk=12 (12번지 고양이로 걷기 시작)  ?q=0 (자동 품질 끄고 단계 고정)
+if (params.get('q')) debugSetQuality(island, Number(params.get('q')));
+if (params.get('walk')) setWalking(true, Number(params.get('walk')));
+(window as unknown as Record<string, unknown>).__island = {
+  island,
+  stats: () => getSceneStats(island),
+  fpsLog,
+  debugSetCamera,
+  placeWalker: (x: number, z: number, yaw?: number) => debugPlaceWalker(island, x, z, yaw),
+  setQuality: (level: number | 'auto') => debugSetQuality(island, level),
+  houseSlot,
+};

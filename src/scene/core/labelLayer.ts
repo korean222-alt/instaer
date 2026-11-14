@@ -109,7 +109,7 @@ export class LabelLayer {
           vUv = iUv.xy + uv * iUv.zw;
           vDim = step(0.5, abs(iRegion - uRegion.x)) * uRegion.y;
           vec4 clip = projectionMatrix * viewMatrix * vec4(iAnchor, 1.0);
-          vFade = smoothstep(0.5, 0.66, iGrow);
+          vFade = smoothstep(0.48, 0.6, iGrow);
           clip.xy += position.xy * iSize * uScale * iGrow * 2.0 / uViewport * clip.w;
           gl_Position = clip;
         }`,
@@ -190,7 +190,7 @@ export class LabelLayer {
       for (let i = 0; i < n; i++) {
         const d = Math.hypot(this.anchor.getX(i) - this.focus.x, this.anchor.getZ(i) - this.focus.z);
         const t = Math.min(1, Math.max(0, (d - 6) / 30));
-        this.grow.setX(i, 1.12 - 0.62 * t * t * (3 - 2 * t));
+        this.grow.setX(i, 0.94 - 0.46 * t * t * (3 - 2 * t));
       }
       this.grow.needsUpdate = true;
     } else if (this.focusDirty) {

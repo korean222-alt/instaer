@@ -45,6 +45,12 @@
       .chips button.on { background: var(--ink); color: var(--on-dark); }
       #toast { position: fixed; left: 50%; bottom: calc(112px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 8px); max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; background: var(--toast); color: var(--on-dark); font-weight: 700; font-size: 13px; padding: 9px 16px; border-radius: 999px; opacity: 0; transition: opacity 0.2s ease, transform 0.2s ease; pointer-events: none; white-space: nowrap; }
       #toast.show { opacity: 1; transform: translate(-50%, 0); }
+      /* 걷기 모드: 조이스틱 자리를 비우려고 "걷기 끝" 버튼만 위쪽에 남긴다 */
+      body.walking #regions, body.walking .bar button:not(#btn-walk), body.walking .hint { display: none; }
+      body.walking .dock { bottom: auto; top: calc(58px + env(safe-area-inset-top, 0px)); padding-bottom: 0; }
+      body.walking .bar { justify-content: flex-end; }
+      #visit { position: fixed; left: 50%; bottom: calc(190px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 6; appearance: none; border: 0; cursor: pointer; font: inherit; font-weight: 700; font-size: 14px; color: var(--on-dark); background: var(--accent); border-radius: 999px; padding: 12px 20px; box-shadow: 0 4px 14px var(--shadow); white-space: nowrap; }
+      #visit[hidden] { display: none; }
       @media (prefers-reduced-motion: reduce) { .bar button, .chips button, #toast { transition: none; } .hint { animation: none; } }
     </style>
     <!--/demo-style-->
@@ -58,6 +64,7 @@
     </div>
     <div class="hint">드래그로 이동 · 두 손가락으로 확대 · 집이나 고양이를 눌러 보세요</div>
     <div id="toast"></div>
+    <button id="visit" hidden>구경하기</button>
     <div class="dock">
       <div id="regions" class="chips" aria-label="지역 강조"></div>
       <div class="bar">
@@ -65,6 +72,7 @@
         <button id="btn-count">집 100채</button>
         <button id="btn-find">아무 집 가기</button>
         <button id="btn-top">특이한 집</button>
+        <button id="btn-walk">걷기</button>
       </div>
     </div>
     <!--/demo-body-->
