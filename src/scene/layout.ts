@@ -96,7 +96,9 @@ export type SceneryKind =
   | 'bench'
   | 'npcHome'
   | 'caveHill'
-  | 'hill';
+  | 'hill'
+  | 'townBoard'
+  | 'stall';
 export interface Scenery {
   kind: SceneryKind;
   x: number;
@@ -332,6 +334,39 @@ export const HILLS: ReadonlyArray<{ x: number; z: number; r: number; h: number; 
   { x: 84, z: 79, r: 2.2, h: 1.8, seed: 17 },
 ];
 
+// ───────────── 마을 광장 (2026-11-15): 섬 한가운데 큰길과 갈림길이 만나는 곳 ─────────────
+
+/**
+ * 마을 광장 (구역 가운데 기준). 마을 게시판, 이장, 장터 가판대 둘(잡화점, 오락실), 벤치.
+ * 1줄 큰길과 2줄로 내려가는 갈림길(x = -23)이 만나는 자리라 어디서든 찾아오기 쉽다.
+ */
+export const TOWN_SQUARE = {
+  x: -24,
+  z: 22.5,
+  r: 7.4,
+  /** 마을 게시판 (앞이 +z) */
+  board: { x: -24, z: 17.2, rot: 0 },
+  /** 이장이 서 있는 자리 */
+  mayor: { x: -21.3, z: 18.9 },
+  /** 장터 가판대: 0 잡화점, 1 오락실. rot 은 가판대 앞이 보는 쪽 */
+  stalls: [
+    { x: -30.2, z: 20.5, rot: 0.6, kind: 'shop' as const },
+    { x: -17.8, z: 20.5, rot: -0.6, kind: 'arcade' as const },
+  ],
+  benches: [
+    { x: -27.6, z: 29.8, rot: Math.PI },
+    { x: -20.4, z: 29.8, rot: Math.PI },
+  ],
+  lanterns: [
+    [-28.5, 16.5],
+    [-18.8, 17.6],
+    [-30.6, 27.2],
+    [-17.4, 27.2],
+  ] as Array<[number, number]>,
+} as const;
+/** 가판대 앞 (주인이 서는 자리) */
+export const stallFront = (st: { x: number; z: number; rot: number }, dist = 1.55) => ({ x: st.x + Math.sin(st.rot) * dist, z: st.z + Math.cos(st.rot) * dist });
+
 function buildCornerPaths(base: PathSeg[]): PathSeg[] {
   const out: PathSeg[] = [];
   const r = ZONE.pathR * 0.9;
@@ -522,6 +557,14 @@ function buildScenery(): Scenery[] {
   add('lantern', CAVE_MOUTH.x + Math.cos(CAVE_HILL.rot) * 2.2, CAVE_MOUTH.z - Math.sin(CAVE_HILL.rot) * 2.2);
   add('lantern', CAVE_MOUTH.x - Math.cos(CAVE_HILL.rot) * 2.2, CAVE_MOUTH.z + Math.sin(CAVE_HILL.rot) * 2.2);
   for (const hl of HILLS) out.push({ kind: 'hill', x: hl.x, z: hl.z, rot: hl.seed * 1.7, scale: hl.r, seed: hl.seed });
+  // 마을 광장
+  {
+    const T = TOWN_SQUARE;
+    out.push({ kind: 'townBoard', x: T.board.x, z: T.board.z, rot: T.board.rot, scale: 1, seed: 1 });
+    T.stalls.forEach((st, i) => out.push({ kind: 'stall', x: st.x, z: st.z, rot: st.rot, scale: 1, seed: i }));
+    for (const b of T.benches) add('bench', b.x, b.z, b.rot);
+    for (const [lx, lz] of T.lanterns) add('lantern', lx, lz);
+  }
 
   // 줄 길을 따라 등불
   for (let row = 0; row < 3; row++) {
@@ -541,6 +584,7 @@ function buildScenery(): Scenery[] {
     if (Math.hypot(x - CAVE_HILL.x, z - CAVE_HILL.z) < CAVE_HILL.r + 1.2 + margin) return false;
     if (Math.hypot(x - CAVE_MOUTH.x, z - CAVE_MOUTH.z) < 2.6 + margin) return false;
     for (const hl of HILLS) if (Math.hypot(x - hl.x, z - hl.z) < hl.r + 0.6 + margin) return false;
+    if (Math.hypot(x - TOWN_SQUARE.x, z - TOWN_SQUARE.z) < TOWN_SQUARE.r + 1.6 + margin) return false;
     for (const l of LOCAL_SLOTS) if (Math.hypot(x - l.x, z - l.z) < 4.7 + margin) return false;
     for (const s of ZONE_PATHS) if (segDist(x, z, s) < 0.55 + margin) return false;
     return true;
@@ -605,6 +649,8 @@ function buildColliders(): Collider[] {
         circle(s.x + Math.sin(a) * 4, s.z + Math.cos(a) * 4, CAVE_HILL.r * 0.6, 6, 0);
       }
     } else if (s.kind === 'hill') circle(s.x, s.z, s.scale * 0.95, 3, s.scale * 0.6);
+    else if (s.kind === 'townBoard') box(s.x, s.z, 1.95, 0.32, s.rot, 2.6, -1, 0.2);
+    else if (s.kind === 'stall') box(s.x, s.z, 1.35, 0.75, s.rot, 2.4, -1, 0.2);
   }
   return out;
 }
@@ -897,4 +943,111 @@ export function mapHills(zoneCount: number): { hills: Array<{ x: number; z: numb
     for (const nb of NEIGHBORHOODS) if (nb.feature === 'pond') ponds.push({ x: c.x + nb.x, z: c.z + nb.z, r: POND_R });
   }
   return { hills, ponds };
+}
+
+/** 열린 구역의 마을 광장 (세계 좌표) */
+export function townSquares(zoneCount: number): Array<{
+  zone: number;
+  x: number;
+  z: number;
+  r: number;
+  board: { x: number; z: number; rot: number };
+  mayor: { x: number; z: number };
+  stalls: Array<{ kind: 'shop' | 'arcade'; x: number; z: number; rot: number; front: { x: number; z: number } }>;
+}> {
+  const out = [];
+  for (let zone = 0; zone < Math.max(1, zoneCount); zone++) {
+    const c = zoneCenter(zone);
+    const T = TOWN_SQUARE;
+    out.push({
+      zone,
+      x: c.x + T.x,
+      z: c.z + T.z,
+      r: T.r,
+      board: { x: c.x + T.board.x, z: c.z + T.board.z, rot: T.board.rot },
+      mayor: { x: c.x + T.mayor.x, z: c.z + T.mayor.z },
+      stalls: T.stalls.map((st) => {
+        const f = stallFront(st);
+        return { kind: st.kind, x: c.x + st.x, z: c.z + st.z, rot: st.rot, front: { x: c.x + f.x, z: c.z + f.z } };
+      }),
+    });
+  }
+  return out;
+}
+
+/** (x, z) 둘레 reach 안의 가장 가까운 벤치 (세계 좌표, rot 은 앉는 쪽이 보는 방향). 없으면 null */
+export function benchNear(x: number, z: number, reach = 1.8): { x: number; z: number; rot: number } | null {
+  const zone = zoneAt(x, z);
+  if (zone < 0) return null;
+  const c = zoneCenter(zone);
+  let best: { x: number; z: number; rot: number } | null = null;
+  let bestD = reach;
+  for (const s of ZONE_SCENERY) {
+    if (s.kind !== 'bench') continue;
+    const d = Math.hypot(c.x + s.x - x, c.z + s.z - z);
+    if (d < bestD) {
+      bestD = d;
+      best = { x: c.x + s.x, z: c.z + s.z, rot: s.rot };
+    }
+  }
+  return best;
+}
+
+// ───────────── 길 찾기용 (2026-11-15, 앱의 지도 길 안내) ─────────────
+
+const costNear: Collider[] = [];
+/** 구역 장식 안의 길 자리 (1 단위 칸, 구역 가운데 기준). 처음 부를 때 한 번 만든다 */
+let pathMask: Uint8Array | null = null;
+const MASK_W = Math.ceil(ZONE.halfX * 2) + 2;
+const MASK_H = Math.ceil(ZONE.halfZ * 2) + 2;
+function buildPathMask() {
+  const m = new Uint8Array(MASK_W * MASK_H);
+  for (const s of ZONE_PATHS) {
+    const x0 = Math.floor(Math.min(s.ax, s.bx) - s.r - 1);
+    const x1 = Math.ceil(Math.max(s.ax, s.bx) + s.r + 1);
+    const z0 = Math.floor(Math.min(s.az, s.bz) - s.r - 1);
+    const z1 = Math.ceil(Math.max(s.az, s.bz) + s.r + 1);
+    for (let z = z0; z <= z1; z++)
+      for (let x = x0; x <= x1; x++) {
+        if (segDist(x, z, s) > 0.4) continue;
+        const gx = x + Math.ceil(ZONE.halfX) + 1;
+        const gz = z + Math.ceil(ZONE.halfZ) + 1;
+        if (gx >= 0 && gz >= 0 && gx < MASK_W && gz < MASK_H) m[gz * MASK_W + gx] = 1;
+      }
+  }
+  return m;
+}
+
+/**
+ * (x, z) 를 걸어서 지나는 비용 (세계 좌표). 걸을 수 없으면 Infinity, 길 위는 싸게(0.55), 풀밭은 1, 다리와 부두는 0.7.
+ * hasHouse: 그 번지에 집이 있는지 (빈 자리의 집/울타리는 막지 않는다). pad: 막힌 것에서 띄울 거리
+ */
+export function walkCost(x: number, z: number, zoneCount: number, hasHouse: (houseNo: number) => boolean, pad = 0.55): number {
+  for (let k = 1; k < zoneCount; k++) {
+    const b = bridgeOf(k);
+    if (!b) continue;
+    const along = b.axis === 'x' ? x - b.x : z - b.z;
+    const across = b.axis === 'x' ? z - b.z : x - b.x;
+    if (Math.abs(along) < BRIDGE.length / 2 && Math.abs(across) < BRIDGE.width / 2 - 0.25) return 0.7;
+  }
+  if (onDock(x, z)) return 0.7;
+  const zone = zoneAt(x, z);
+  if (zone < 0 || zone >= Math.max(1, zoneCount)) return Infinity;
+  const c = zoneCenter(zone);
+  const lx = x - c.x;
+  const lz = z - c.z;
+  if (zoneLandLocal(zone, lx, lz) < 0.7) return Infinity;
+  for (const col of collidersNear(lx, lz, pad + 0.3, costNear)) {
+    if (col.lot >= 0 && !hasHouse(zone * ZONE_CAPACITY + col.lot + 1)) continue;
+    const dx = lx - col.x;
+    const dz = lz - col.z;
+    if (col.r > 0) {
+      if (Math.hypot(dx, dz) < col.r + pad) return Infinity;
+    } else if (Math.abs(dx * col.cos - dz * col.sin) < col.hx + pad && Math.abs(dx * col.sin + dz * col.cos) < col.hz + pad) return Infinity;
+  }
+  pathMask ??= buildPathMask();
+  const gx = Math.round(lx) + Math.ceil(ZONE.halfX) + 1;
+  const gz = Math.round(lz) + Math.ceil(ZONE.halfZ) + 1;
+  if (gx >= 0 && gz >= 0 && gx < MASK_W && gz < MASK_H && pathMask[gz * MASK_W + gx]) return 0.55;
+  return 1;
 }

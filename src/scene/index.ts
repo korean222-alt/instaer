@@ -19,6 +19,7 @@ import type { Drawing, InteriorItem, PlacedItem } from './free/types';
 import { Interior, ROOM_CAM_YAW, ROOM_EXIT_Z, ROOM_START, ROOM_WALK } from './interior/Interior';
 import { Npcs, type SceneNpc } from './npc/Npcs';
 import { RemotePlayers } from './remote/RemotePlayers';
+import { danceMotion } from './cat/dance';
 import type { LocalState, RemotePlayer } from './remote/types';
 import {
   collidersNear,
@@ -59,7 +60,7 @@ export type { SceneNpc } from './npc/Npcs';
 export type { CatPreviewOptions } from './cat/catPreview';
 export type { CaveNode } from './cave/Cave';
 export { CAVE_DEEPER } from './cave/Cave';
-export { landAt, npcHomes, caveMouths, mapHills } from './layout';
+export { landAt, npcHomes, caveMouths, mapHills, townSquares, benchNear, TOWN_SQUARE, walkCost } from './layout';
 
 /**
  * 고양이섬 3D 씬.
@@ -193,6 +194,20 @@ export interface IslandScene {
   /** 꾸미기 아이템 하나를 그림으로 찍는다 (상점, 꾸미기 줄). 배경이 투명한 PNG data URL */
   renderItemPreview(type: string, size?: number): string;
 
+  // ── 2026-11-15: 춤, 말풍선 자리, 다른 유저 누르기, 앉기 ──
+
+  /** 내 고양이 춤 (src/shared/social.ts 의 DANCES id). null 이면 멈춤. 걷는 동안은 멈춰 보이고 서면 다시 춘다 */
+  setDance(danceId: string | null): void;
+  /** 가만히 있으면 바로 앉는다 (벤치, 앉기 버튼). 걸어도 다시 서면 또 앉으니 앱이 꺼 준다 */
+  setSitting(on: boolean): void;
+  /**
+   * 고양이 머리 위의 화면 자리 (캔버스 기준 px). id 가 null 이면 내 고양이, 아니면 다른 유저(RemotePlayer.id).
+   * 걷기 모드가 아니거나 화면 밖/안 보이면 null. 말풍선, 이모티콘을 띄울 때 매 프레임 부른다
+   */
+  catScreenPos(id: string | null): { x: number; y: number } | null;
+  /** 다른 유저 고양이를 눌렀을 때 그 id 를 알린다 (프로필) */
+  onRemoteTap(cb: (id: string) => void): void;
+
   /** 캔버스 크기가 바뀌면 부른다 */
   resize(): void;
   dispose(): void;
@@ -303,6 +318,24 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   /** 낚시를 시작하면 이 시간(초) 동안 카메라를 고양이 뒤로 돌려 물 쪽을 보게 한다 */
   let fishCamTurn = 0;
   let npcTapCb: ((id: string) => void) | null = null;
+  let remoteTapCb: ((id: string) => void) | null = null;
+  let dance: string | null = null;
+  let danceT = 0;
+  const projV = new THREE.Vector3();
+  /** 세계 → 캔버스 px (카메라 뒤나 화면 밖이면 null) */
+  const project = (x: number, y: number, z: number) => {
+    projV.set(x, y, z).project(camera);
+    if (projV.z > 1 || projV.z < -1 || Math.abs(projV.x) > 1.1 || Math.abs(projV.y) > 1.1) return null;
+    return { x: (projV.x + 1) * 0.5 * viewportW, y: (1 - projV.y) * 0.5 * viewportH };
+  };
+  /** 내 고양이 그리기 (춤 포함). yOff: 땅에서 띄우는 값 */
+  const drawPlayer = (dt: number, yOff: number, happy = 0, allowDance = true) => {
+    const dm = allowDance && dance && walker.walk < 0.15 && walker.air <= 0 ? danceMotion(dance, (danceT += dt)) : null;
+    if (!dm) danceT = 0;
+    player.setPose(0, walker.x, walker.y + yOff + (dm?.dy ?? 0), walker.z, walker.yaw + (dm?.dyaw ?? 0), PLAYER_SCALE * (dm?.scale ?? 1));
+    player.setAnim(0, dm && dm.walk ? dm.phase : walker.phase, dm && dm.walk ? dm.walk : walker.walk, 0, dm ? dm.happy : happy);
+    return dm;
+  };
   let preview: CatPreview | null = null;
   // 꾸미기(끌어 놓기)와 집 안. 집 안은 처음 들어갈 때 만든다
   const placer = new Placer(canvas, camera, geometries, drawings, atmosphere.shared);
@@ -463,6 +496,15 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   observer?.observe(canvas);
 
   const onTap = (cx: number, cy: number) => {
+    // 다른 유저 고양이를 누르면 프로필 (꾸미는 중에는 빼고)
+    if (remoteTapCb && walking && !placer.active && remotes.shown > 0) {
+      const rect = canvas.getBoundingClientRect();
+      const id = remotes.pickScreen(cx - rect.left, cy - rect.top, project);
+      if (id !== null) {
+        remoteTapCb(id);
+        return;
+      }
+    }
     // 주민을 누르면 그것부터 알린다 (꾸미는 중에는 빼고)
     if (npcTapCb && !placer.active && npcs.shown > 0) {
       const id = npcs.pick(rig.rayFrom(cx, cy));
@@ -705,9 +747,8 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       walker.update(dt, controls.moveX, controls.moveY, 0, controls.takeJump());
       cave.updateCamera(camera, dt, walker.x, walker.z);
       cave.update(dt);
-      player.setPose(0, walker.x, walker.y + 0.01, walker.z, walker.yaw, PLAYER_SCALE);
-      player.setAnim(0, walker.phase, walker.walk, 0, 0);
-      player.setMood(0, walker.sit, walker.yawn);
+      const dmc = drawPlayer(dt, 0.01);
+      player.setMood(0, dmc ? 0 : walker.sit, walker.yawn);
       notifyMove(now);
       remoteView.focusX = walker.x;
       remoteView.focusZ = walker.z;
@@ -736,9 +777,8 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       walker.update(dt, controls.moveX, controls.moveY, ROOM_CAM_YAW, controls.takeJump());
       interior.updateCamera(camera, dt, walker.x, walker.z);
       interior.update();
-      player.setPose(0, walker.x, walker.y + 0.01, walker.z, walker.yaw, PLAYER_SCALE);
-      player.setAnim(0, walker.phase, walker.walk, 0, 0);
-      player.setMood(0, walker.sit, walker.yawn);
+      const dmi = drawPlayer(dt, 0.01);
+      player.setMood(0, dmi ? 0 : walker.sit, walker.yawn);
       notifyMove(now);
       remoteView.focusX = walker.x;
       remoteView.focusZ = walker.z;
@@ -774,10 +814,9 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
         }
       } else walker.update(dt, controls.moveX, controls.moveY, walkCam.yaw, jump);
       walkCam.update(dt, camera, walker.x, walker.groundY, walker.air, walker.z, controls.takeLook());
-      player.setPose(0, walker.x, walker.y + 0.035, walker.z, walker.yaw, PLAYER_SCALE);
       // 물고기를 낚으면 눈웃음을 짓는다
-      player.setAnim(0, walker.phase, walker.walk, 0, fishing === 'caught' ? 1 : 0);
-      player.setMood(0, walker.sit, fishing !== null ? 0 : walker.yawn);
+      const dmw = drawPlayer(dt, 0.035, fishing === 'caught' ? 1 : 0, fishing === null);
+      player.setMood(0, dmw ? 0 : walker.sit, fishing !== null ? 0 : walker.yawn);
       fishRig.update(dt, walker.x, walker.y + 0.035, walker.z, walker.yaw, PLAYER_SCALE);
       walkFocus.x = walker.x;
       walkFocus.z = walker.z;
@@ -1141,6 +1180,22 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     },
     setNpcs(list) {
       npcs.set(Array.isArray(list) ? list : []);
+    },
+    setDance(id) {
+      if (dance !== id) danceT = 0;
+      dance = id;
+    },
+    setSitting(on) {
+      walker.holdSit = on;
+    },
+    catScreenPos(id) {
+      if (!walking) return null;
+      if (id === null) return project(walker.x, walker.y + PLAYER_SCALE * 1.05 + 0.1, walker.z);
+      const v = remotes.headOf(id, new THREE.Vector3());
+      return v ? project(v.x, v.y + 0.05, v.z) : null;
+    },
+    onRemoteTap(cb) {
+      remoteTapCb = cb;
     },
     onNpcTap(cb) {
       npcTapCb = cb;

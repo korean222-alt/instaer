@@ -22,6 +22,8 @@ import {
   type ServerMsg,
 } from '../../src/shared/realtime';
 import type { Env } from '../env';
+import { CHAT_GAP_MS, CHAT_MAX, DANCES, EMOTES, EMOTE_GAP_MS } from '../../src/shared/social';
+import { cleanChat } from '../../src/shared/handle';
 
 /** 연결한 유저 (Worker 가 세션을 확인하고 넘겨준다) */
 export interface RtUser {
@@ -52,6 +54,10 @@ interface Att extends RtUser {
   q: number;
   p: number[];
   i: number;
+  /** 춤 번호 (0 = 안 춤), 마지막 채팅/이모티콘 시각 */
+  d?: number;
+  cl?: number;
+  el?: number;
 }
 
 interface Usage {
@@ -202,6 +208,28 @@ export class RealtimeRoom extends DurableObject<Env> {
       att.i = trail.length ? step : 0;
       ws.serializeAttachment(att);
       this.schedule();
+    } else if (msg.t === 'c' || msg.t === 'e') {
+      // 주변 채팅, 이모티콘: 너무 잦으면 버린다. 둘레 NEARBY_RADIUS 안(방이면 방 안 모두)에만 보낸다
+      let out: string | null = null;
+      if (msg.t === 'c') {
+        if (typeof msg.s === 'string' && now - (att.cl ?? 0) >= CHAT_GAP_MS) {
+          const text = cleanChat(msg.s, CHAT_MAX);
+          if (text) {
+            att.cl = now;
+            out = JSON.stringify({ t: 'c', from: att.id, s: text } satisfies ServerMsg);
+          }
+        }
+      } else if (Number.isInteger(msg.e) && msg.e >= 0 && msg.e < EMOTES.length && now - (att.el ?? 0) >= EMOTE_GAP_MS) {
+        att.el = now;
+        out = JSON.stringify({ t: 'e', from: att.id, e: msg.e } satisfies ServerMsg);
+      }
+      ws.serializeAttachment(att);
+      if (out) this.relayNear(ws, att, out);
+    } else if (msg.t === 'd') {
+      const d = Number.isInteger(msg.d) && msg.d >= 0 && msg.d <= DANCES.length ? msg.d : 0;
+      att.d = d;
+      ws.serializeAttachment(att);
+      this.schedule();
     } else if (msg.t === 'room') {
       ws.serializeAttachment(att);
       if (!att.room.startsWith('room:')) return;
@@ -226,6 +254,23 @@ export class RealtimeRoom extends DurableObject<Env> {
   async webSocketError(ws: WebSocket): Promise<void> {
     this.forget(ws);
     this.schedule();
+  }
+
+  /** 보낸 사람 둘레 NEARBY_RADIUS 안의 사람에게만 (방이면 방 안 모두) */
+  private relayNear(from: WebSocket, att: Att, out: string) {
+    const isGame = att.room.startsWith('room:');
+    for (const other of this.ctx.getWebSockets()) {
+      if (other === from || other.readyState !== WebSocket.OPEN) continue;
+      if (!isGame) {
+        const o = other.deserializeAttachment() as Att;
+        if (!o.t || (o.x - att.x) ** 2 + (o.z - att.z) ** 2 > R * R) continue;
+      }
+      try {
+        other.send(out);
+      } catch {
+        /* 닫히는 중 */
+      }
+    }
   }
 
   private forget(ws: WebSocket) {
@@ -315,7 +360,7 @@ export class RealtimeRoom extends DurableObject<Env> {
       }
       const p = near
         .filter(({ e }) => e.a.t > 0 || isGame)
-        .map(({ e }): PlayerTuple => [e.a.id, e.a.x, e.a.z, e.a.r, e.a.a, e.a.f, e.a.q ?? 0, e.a.i ?? 0, e.a.p ?? []]);
+        .map(({ e }): PlayerTuple => [e.a.id, e.a.x, e.a.z, e.a.r, e.a.a, e.a.f, e.a.q ?? 0, e.a.i ?? 0, e.a.p ?? [], e.a.d ?? 0]);
       const sig = JSON.stringify(p);
       if (sig === this.lastSig.get(me.ws)) continue;
       this.lastSig.set(me.ws, sig);

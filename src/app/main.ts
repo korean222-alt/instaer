@@ -15,6 +15,7 @@ import { drawScreen } from './screens/draw';
 import { npcScreen } from './screens/npc';
 import { questsScreen } from './screens/quests';
 import { shopScreen } from './screens/shop';
+import { boardScreen, friendsScreen, newsUnseen } from './screens/social';
 import { debugPlaceWalker, houseSlot } from '../scene';
 import { CURRENCY, type FishWhere } from '../shared/economy';
 import { loadMyDrawings, setArtCenter, syncArt } from './art';
@@ -25,6 +26,7 @@ import { startFishing } from './play/fishing';
 import { pondsOf, townNpcs } from './play/npcs';
 import { createPlacement } from './play/placement';
 import { createMinimap } from './play/minimap';
+import { createSocial, type Social } from './play/social';
 import { claimableCount, coins, refreshWallet } from './wallet';
 import { initSound, play, setMusicMood } from './audio/sound';
 import type { Screen } from './screens/types';
@@ -62,6 +64,10 @@ const ICON: Record<string, string> = {
   pick: '<path d="M4 20 14 10"/><path d="M9.5 5.5c4-2.5 8.5-1.5 11 1-3-.8-6.5 0-9 2.5"/><path d="m12.5 7.5 4 4"/>',
   zoom: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   cat: '<path d="M5 20v-8l-1-7 4.5 3h7L20 5l-1 7v8z"/><path d="M9.5 13h.01M14.5 13h.01"/>',
+  friends: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3 19.5c.6-3.4 3-5.3 6-5.3s5.4 1.9 6 5.3"/><circle cx="17" cy="9.5" r="2.5"/><path d="M16 14.4c2.6.1 4.4 1.8 5 4.6"/>',
+  board: '<path d="M4 5h16v11H4z"/><path d="M8 20l1.5-4M16 20l-1.5-4M8 9h4M8 12h7"/>',
+  news: '<path d="M4 10v4l3 .5L15 19V5L7 9.5z"/><path d="M18 9.5c1.2.9 1.2 4.1 0 5"/>',
+  sit: '<path d="M6 12h12v3H6z"/><path d="M7 15v5M17 15v5M8 12V6"/>',
 };
 const icon = (name: string) =>
   `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[name]}</svg>`;
@@ -77,6 +83,8 @@ const SCREENS: Record<Exclude<ScreenId, 'map'>, Screen> = {
   shop: shopScreen,
   draw: drawScreen,
   npc: npcScreen,
+  board: boardScreen,
+  friends: friendsScreen,
 };
 // 2026-11-15: 입주 탭은 뺐다 (입주 전에는 위쪽 "입주하기" 버튼, 내 고양이 카드는 설정에서)
 const TABS: Array<{ id: ScreenId; label: string }> = [
@@ -84,6 +92,7 @@ const TABS: Array<{ id: ScreenId; label: string }> = [
   { id: 'rank', label: '순위' },
   { id: 'decorate', label: '꾸미기' },
   { id: 'quests', label: '퀘스트' },
+  { id: 'friends', label: '친구' },
 ];
 
 // ── 화면 높이: 인스타 앱 안 브라우저는 dvh 를 늦게 반영할 때가 있어서 innerHeight 도 같이 쓴다 ──
@@ -119,6 +128,7 @@ app.innerHTML = `
       <div class="pill soft" id="hud-next" hidden></div>
       <button class="pill chip-top" id="hud-top" hidden></button>
       <button class="pill chip-region" id="hud-region" hidden></button>
+      <button class="pill chip-news" id="hud-news" hidden>${icon('news')}<span>이장님 새 소식</span></button>
     </div>
   </header>
   <div class="status" id="status" hidden></div>
@@ -142,7 +152,7 @@ const sheetBody = $('sheet-body');
 let cleanup: (() => void) | void;
 let ready = false;
 
-const TAB_OF: Partial<Record<ScreenId, ScreenId>> = { house: 'map', search: 'map', settings: 'map', npc: 'map', shop: 'decorate', draw: 'decorate', 'move-in': 'map' };
+const TAB_OF: Partial<Record<ScreenId, ScreenId>> = { house: 'map', search: 'map', settings: 'map', npc: 'map', board: 'map', shop: 'decorate', draw: 'decorate', 'move-in': 'map' };
 function show(route: Route) {
   const tabId = TAB_OF[route.id] ?? route.id;
   for (const a of app.querySelectorAll<HTMLAnchorElement>('[data-tab]')) {
@@ -217,9 +227,13 @@ function drawHud() {
   dot.hidden = ready === 0;
   dot.textContent = String(ready);
   $('hud-movein').hidden = !!state.me || state.offline;
+  $('hud-news').hidden = !newsUnseen() || state.offline;
+  const fr = app.querySelector<HTMLElement>('[data-tab="friends"]');
+  fr?.classList.toggle('dot', state.friendRequests > 0);
   drawStatus();
 }
 $('hud-movein').addEventListener('click', () => go('move-in'));
+$('hud-news').addEventListener('click', () => go('npc', 'mayor'));
 $('hud-coin').addEventListener('click', () => go('quests'));
 $('hud-top').addEventListener('click', () => state.todayTop && openHouse(state.todayTop.houseNo));
 $('hud-region').addEventListener('click', () => setHighlightedRegion(null));
@@ -260,8 +274,12 @@ const realtime = createRealtime(rtScene, {
   onLocalMove(s) {
     if (s.anim === 'jump' && lastAnim !== 'jump') play('jump');
     lastAnim = s.anim;
+    social?.onLocalMove(s);
   },
+  onChat: (id, text) => social?.onChat(id, text),
+  onEmote: (id, e) => social?.onEmote(id, e),
 });
+let social: Social | undefined;
 
 // 미니게임 방 시험: 주소에 ?room=test 를 붙이고 걷기를 누르면 방 'test' 에 들어간다 (방 안은 거리와 상관없이 모두 보임)
 const testRoom = new URLSearchParams(location.search).get('room');
@@ -274,6 +292,7 @@ explore = createExplore(scene, realtime, {
     $('btn-walk-end').hidden = !on;
     $('btn-zoom').hidden = !on;
     minimap.setVisible(on);
+    social?.setWalking(on);
     if (on) {
       go('map');
       if (state.me && testRoom) toast(`미니게임 시험 방 '${testRoom}' 에 들어왔어요`);
@@ -310,7 +329,23 @@ function fishHere(where: FishWhere) {
   explore.refresh();
 }
 ctl.explore = explore;
-const minimap = createMinimap(scene, () => netPlayers);
+social = createSocial(scene, realtime, icon);
+// 지나가는 고양이를 누르면 그 고양이의 집(프로필)
+scene.onRemoteTap((id) => {
+  const info = realtime.playerInfo(id);
+  if (!info || info.houseNo === null) return;
+  play('meow');
+  go('house', info.houseNo);
+});
+const minimap = createMinimap(scene, () => netPlayers, {
+  walking: () => explore.walking(),
+  startWalking: () => explore.setWalking(true),
+  openHouse: (no) => go('house', no),
+});
+// "지도" 탭을 누르면 (판을 닫고) 섬 지도를 크게 연다. 걷지 않을 때도 된다
+app.querySelector('[data-tab="map"]')?.addEventListener('click', () => {
+  if (ready) setTimeout(() => minimap.open(), 0);
+});
 // 시야 넓히기: 보통 → 넓게 → 더 넓게 (이 브라우저에 기억)
 const ZOOMS = [
   { v: 0, label: '보통' },
@@ -355,6 +390,7 @@ async function boot() {
   const [meRes] = await Promise.allSettled([fetchMe(), refreshVillage()]);
   if (meRes.status === 'fulfilled' && meRes.value.house) {
     state.hideHandle = !!meRes.value.hideHandle;
+    state.friendRequests = meRes.value.friendRequests ?? 0;
     setMe(meRes.value.house);
     pushHousesToScene();
     const s = houseSlot(meRes.value.house.houseNo);

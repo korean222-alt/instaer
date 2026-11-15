@@ -35,6 +35,7 @@ import {
   type Wallet,
 } from '../../src/shared/economy';
 import type { Env } from '../env';
+import { danceDef, danceItem } from '../../src/shared/social';
 import { clientIp, error, json, readJson } from '../http';
 import { allow } from '../lib/rateLimit';
 import { sessionHouse } from '../lib/session';
@@ -58,6 +59,17 @@ async function withWallet(request: Request, env: Env, fn: Handler): Promise<Resp
 /** POST /api/shop/buy {type} */
 export const buy = (request: Request, env: Env) =>
   withWallet(request, env, (w, body) => {
+    // 춤 (2026-11-15): 'dance:hop' 처럼 사고, 지갑 owned 에 같은 이름으로 넣는다
+    if (typeof body.type === 'string' && body.type.startsWith('dance:')) {
+      const dd = danceDef(body.type.slice(6));
+      if (!dd) return error(400, 'not_for_sale', '없는 춤이에요');
+      const key = danceItem(dd.id);
+      if (w.data.owned.includes(key)) return error(400, 'owned', '이미 배운 춤이에요');
+      if (w.coins < dd.price) return error(400, 'no_coins', `츄르가 ${dd.price - w.coins}개 모자라요`);
+      w.coins -= dd.price;
+      w.data.owned.push(key);
+      return { bought: key };
+    }
     const def = typeof body.type === 'string' ? decorItem(body.type) : undefined;
     if (!def || def.price === null) return error(400, 'not_for_sale', '파는 물건이 아니에요');
     if (owns(w.data, def.type)) return error(400, 'owned', '이미 가지고 있어요');

@@ -61,6 +61,8 @@ export interface RemotePlayer {
   cat: House['cat'];
   /** 낚시 중이면 그 단계 (없거나 null 이면 낚시 안 함). 이때 anim 은 'sit' 이다 */
   fishing?: FishingPose | null;
+  /** 추고 있는 춤 id (src/shared/social.ts 의 DANCES). 없거나 null 이면 춤 안 춤. 걷는 동안은 씬이 멈춘다 */
+  dance?: string | null;
 }
 
 /** 걷기 모드에서 내 고양이 상태 */

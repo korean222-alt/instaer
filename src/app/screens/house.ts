@@ -7,6 +7,7 @@ import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
 import { chooseHouse, pickingHouse } from './moveIn';
 import type { Screen } from './types';
+import { mountHouseSocial } from './social';
 
 /** 집을 탭했을 때 아래에서 올라오는 구경 팝업 */
 export const houseScreen: Screen = {
@@ -15,7 +16,7 @@ export const houseScreen: Screen = {
   render(root, param, ctx) {
     const no = Number(param);
     const house = state.houses.get(no);
-    ctx.setTitle(`${no}번지`);
+    ctx.setTitle(house?.igHandle ? `${house.igHandle}의 집 · ${no}번지` : `${no}번지`);
     if (!house || !house.igHandle) {
       // 입주 전이면 이 빈 집을 바로 내 집으로 고를 수 있다
       root.innerHTML = `
@@ -48,7 +49,9 @@ export const houseScreen: Screen = {
             : '<button class="btn primary" data-act="like"><span aria-hidden="true">♥</span> 예뻐요</button>'
         }
       </div>
+      <div class="house-social"></div>
       <div class="row-end"><button class="link small" data-act="report">신고하기</button></div>`;
+    mountHouseSocial(root.querySelector<HTMLElement>('.house-social')!, no);
 
     state.scene.highlightHouse(no);
     root.querySelector('[data-act="like"]')?.addEventListener('click', async (e) => {

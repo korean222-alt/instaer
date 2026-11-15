@@ -4,7 +4,8 @@ import { bagDef, CURRENCY, DAILY_GAME_CAP, NPC_INFO, VISIT_COINS, VISIT_MAX, typ
 import { play } from '../audio/sound';
 import { ApiError, sellItems } from '../net/api';
 import { ctl } from '../play/ctl';
-import { npcLook, npcName } from '../play/npcs';
+import { MAYOR_NAME, npcLook, npcName } from '../play/npcs';
+import { markNewsSeen, newsHtml } from './social';
 import { state } from '../state';
 import { catSvg } from '../ui/catSvg';
 import { esc } from '../ui/dom';
@@ -85,6 +86,17 @@ export const npcScreen: Screen = {
   title: '주민',
   render(root, param, ctx) {
     const p = param ?? '';
+    if (p === 'mayor') {
+      ctx.setTitle(MAYOR_NAME);
+      root.innerHTML = `
+        <div class="npc-head">${face(npcLook('mayor', -1), 'mayor')}
+          <p class="bubble">${state.me ? `${esc(state.me.igHandle ?? '')} 주민, 반가워요! 섬에 새로 생긴 소식을 알려 줄게요.` : '어서 와요! 고양이섬 이장이에요. 입주하면 이웃들이 반겨 줄 거예요.'}</p></div>
+        <div class="row two"><a class="btn primary" href="#/board">마을 게시판</a><a class="btn" href="#/friends">친구</a></div>
+        <h3 class="sub">업데이트 소식</h3>
+        ${newsHtml()}`;
+      markNewsSeen();
+      return;
+    }
     if (p.startsWith('resident-')) {
       const id = Number(p.slice(9));
       ctx.setTitle(npcName('resident', id));

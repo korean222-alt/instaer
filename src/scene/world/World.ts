@@ -10,6 +10,7 @@ import {
   NEIGHBORHOODS,
   PLAZA_R,
   POND_R,
+  TOWN_SQUARE,
   ZONE,
   ZONE_PATHS,
   ZONE_SCENERY,
@@ -93,6 +94,12 @@ function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
         break;
       case 'hill':
         pieces = props.hill(s.seed);
+        break;
+      case 'townBoard':
+        pieces = props.townBoard();
+        break;
+      case 'stall':
+        pieces = props.stall(s.seed);
         break;
       case 'tuft':
         pieces = props.tuft(s.seed);
@@ -220,7 +227,7 @@ export class World {
           bz: s.bz + c.z,
           r: s.r,
         })),
-        plazas: NEIGHBORHOODS.filter((n) => n.feature === 'plaza').map((n) => ({ x: c.x + n.x, z: c.z + n.z, r: PLAZA_R })),
+        plazas: [...NEIGHBORHOODS.filter((n) => n.feature === 'plaza').map((n) => ({ x: c.x + n.x, z: c.z + n.z, r: PLAZA_R })), { x: c.x + TOWN_SQUARE.x, z: c.z + TOWN_SQUARE.z, r: TOWN_SQUARE.r }],
         locked: zone >= unlocked,
       };
       shapes.push(shape);

@@ -156,6 +156,8 @@ const ROLE_PARTS: Record<string, { worn: () => Piece[]; prop?: () => Piece[] }> 
   gardener: { worn: () => strawHat('#ff9ec2', '#ff8fa3'), prop: wateringCan },
   resident: { worn: () => scarf('#8fd3e8') },
   explorer: { worn: () => cap('#f4c95d', '#9a6645') },
+  // 이장 (2026-11-15): 금색 목도리 + 남색 모자
+  mayor: { worn: () => [...scarf('#f4c95d', true), ...cap('#3d5a80', '#f4c95d')] },
 };
 
 interface Batch {

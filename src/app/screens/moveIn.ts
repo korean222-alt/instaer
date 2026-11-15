@@ -106,11 +106,35 @@ function renderFollow(root: HTMLElement, ctx: { setTitle(t: string): void }) {
       <a class="btn primary" data-act="follow" href="${followUrl()}" target="_blank" rel="noopener noreferrer">@${h} 팔로우하러 가기</a>
       <p class="note">팔로우하고 이 화면으로 돌아오면 고양이와 집을 고를 수 있어요.</p>
     </div>`;
-  root.querySelector('[data-act="follow"]')!.addEventListener('click', () => {
-    markFollowAsked();
+  const btn = root.querySelector<HTMLAnchorElement>('[data-act="follow"]')!;
+  let checking = false;
+  btn.addEventListener('click', (e) => {
+    // 이미 확인 중이면 인스타를 다시 열지 않는다
+    if (checking) {
+      e.preventDefault();
+      return;
+    }
+    checking = true;
     play('tap');
-    // 링크가 먼저 열리게 두고, 곧 입주 화면으로 넘어간다 (인스타 앱에서 돌아오면 입주 화면이 기다리고 있다)
-    window.setTimeout(() => root.isConnected && renderForm(root, ctx), 400);
+    // 링크(인스타 프로필)가 먼저 열리게 두고, 버튼은 "확인 중" 으로 바꾼다.
+    // 팔로우 여부를 실제로 확인할 수는 없어서(사업자 인증 필요) 15초 뒤에 입주 화면으로 넘어간다 (2026-11-15 사용자 요청)
+    window.setTimeout(() => {
+      btn.classList.add('checking');
+      btn.removeAttribute('href');
+      btn.innerHTML = '<i class="spin" aria-hidden="true"></i>확인 중이에요 (최대 10초)';
+      root.querySelector('.note')!.textContent = '팔로우를 확인하는 동안 잠시만 기다려 주세요.';
+    }, 50);
+    window.setTimeout(() => {
+      if (!root.isConnected) return;
+      btn.innerHTML = '확인됐어요!';
+      btn.classList.remove('checking');
+      play('ding');
+    }, 14_200);
+    window.setTimeout(() => {
+      if (!root.isConnected) return;
+      markFollowAsked();
+      renderForm(root, ctx);
+    }, 15_000);
   });
 }
 

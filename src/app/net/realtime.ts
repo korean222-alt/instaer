@@ -22,6 +22,7 @@ import {
 } from '../../shared/realtime';
 import type { CatPattern, FishingPose, LocalState, RemotePlayer } from '../../shared/types';
 import { loadToken } from './api';
+import { DANCES } from '../../shared/social';
 
 export interface RealtimeHooks {
   /** 단독 모드로 바뀌거나 돌아왔을 때 */
@@ -30,6 +31,10 @@ export interface RealtimeHooks {
   onRoomMessage?(from: string, data: unknown): void;
   /** 내 고양이가 움직일 때 (씬은 onLocalMove 를 하나만 받으므로 여기서 나눠 준다) */
   onLocalMove?(s: LocalState): void;
+  /** 주변 채팅이 왔을 때 (정보를 받은 유저 것만. 화면에 안 불러온 사람 말은 오지 않는다) */
+  onChat?(id: string, text: string): void;
+  /** 이모티콘이 왔을 때 */
+  onEmote?(id: string, emote: number): void;
 }
 
 export interface Realtime {
@@ -40,6 +45,15 @@ export interface Realtime {
   sendRoom(data: unknown): void;
   /** 내 낚시 단계 (다른 유저에게 낚시하는 모습이 보이게). null 이면 낚시 끝 */
   setFishing(pose: FishingPose | null): void;
+  /** 주변에 채팅 보내기. 연결이 없으면 false */
+  sendChat(text: string): boolean;
+  sendEmote(emote: number): boolean;
+  /** 내 춤 (DANCES id, null 이면 멈춤) */
+  setDance(id: string | null): void;
+  /** 받은 유저 정보 (이름, 번지) */
+  playerInfo(id: string): { handle: string; houseNo: number | null } | null;
+  /** 지금 연결되어 있는지 */
+  connected(): boolean;
   /** 확인용 */
   debug(): { room: string | null; open: boolean; solo: boolean; players: number; sent: number; received: number };
 }
@@ -75,6 +89,8 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
   /** 내 낚시 단계 번호 (FISH_POSES), 마지막으로 보낸 값 */
   let fishPose = 0;
   let sentPose = 0;
+  /** 내 춤 번호 */
+  let danceNo = 0;
   let sent = 0;
   let received = 0;
   const info = new Map<string, { handle: string; houseNo: number | null; cat: RemotePlayer['cat'] }>();
@@ -92,6 +108,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     pts: Array<{ t: number; x: number; z: number; r: number }>;
     a: number;
     f: number;
+    d: number;
   }
   const tracks = new Map<string, Track>();
   let visibleIds: string[] = [];
@@ -182,6 +199,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
         old?.ws.close(1000, 'moved');
       }
       sendNow(true);
+      if (danceNo) send({ t: 'd', d: danceNo });
       return;
     }
     if (c !== conn) return; // 옮기는 중인 연결의 위치는 아직 쓰지 않는다
@@ -204,12 +222,14 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
         const q = (tup[6] as number | undefined) ?? -1;
         const step = (tup[7] as number | undefined) ?? 0;
         const p = (tup[8] as number[] | undefined) ?? [];
+        const d = (tup[9] as number | undefined) ?? 0;
         if (!info.has(id)) continue;
         visibleIds.push(id);
         let tr = tracks.get(id);
-        if (!tr) tracks.set(id, (tr = { q: -2, pts: [], a, f }));
+        if (!tr) tracks.set(id, (tr = { q: -2, pts: [], a, f, d }));
         tr.a = a;
         tr.f = f;
+        tr.d = d;
         if (q === tr.q) continue;
         tr.q = q;
         const n = step ? Math.floor(p.length / 3) : 0;
@@ -222,6 +242,10 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       }
       for (const id of [...tracks.keys()]) if (!visibleIds.includes(id)) tracks.delete(id);
       playback();
+    } else if (msg.t === 'c') {
+      if (typeof msg.s === 'string' && info.has(msg.from)) hooks.onChat?.(msg.from, msg.s);
+    } else if (msg.t === 'e') {
+      if (Number.isInteger(msg.e) && info.has(msg.from)) hooks.onEmote?.(msg.from, msg.e);
     } else if (msg.t === 'room') {
       hooks.onRoomMessage?.(msg.from, msg.d);
     } else if (msg.t === 'cfg') {
@@ -326,6 +350,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
         anim: fishing ? 'sit' : moving ? 'walk' : done ? (ANIMS[tr.a] ?? 'idle') : 'idle',
         cat: meta.cat,
         fishing,
+        dance: tr.d > 0 ? (DANCES[tr.d - 1]?.id ?? null) : null,
       });
     }
     players = list;
@@ -419,6 +444,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       conn = pending = null;
       players = [];
       fishPose = sentPose = 0;
+      danceNo = 0;
       scene.setRemotePlayers([]);
       setSolo(false);
     },
@@ -442,6 +468,23 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       fishPose = n;
       if (running) sendNow(true);
     },
+    sendChat(text) {
+      return send({ t: 'c', s: text });
+    },
+    sendEmote(e) {
+      return send({ t: 'e', e });
+    },
+    setDance(id) {
+      const n = id ? DANCES.findIndex((d) => d.id === id) + 1 : 0;
+      if (n === danceNo) return;
+      danceNo = n;
+      send({ t: 'd', d: n });
+    },
+    playerInfo(id) {
+      const m = info.get(id);
+      return m ? { handle: m.handle, houseNo: m.houseNo } : null;
+    },
+    connected: () => !!conn?.open,
     debug() {
       return { room: conn?.room ?? null, open: !!conn?.open, solo, players: players.length, sent, received };
     },

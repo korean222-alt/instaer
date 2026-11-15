@@ -2,7 +2,7 @@
 // 연못과 항구 부두에서 낚시, 동굴 탐험(광석 캐기, 더 깊이).
 // 씬과는 공개 함수(setWalkMode, onNearHouse, onDoor, enterHouse, enterNpcHome, enterCave, setCaveNodes,
 // exitHouse, exitCave, onExitHouse, onExitCave, setRemotePlayers, setNpcs, onNpcTap, getLocalState, fishingSpotAt)로만 주고받는다.
-import { CAVE_DEEPER, caveMouths, fishingSpotAt, type CaveNode, type IslandScene } from '../../scene';
+import { CAVE_DEEPER, caveMouths, fishingSpotAt, townSquares, type CaveNode, type IslandScene } from '../../scene';
 import { CAVE_LEVELS, CAVE_NODES, oreDef, rollOre, type FishWhere } from '../../shared/economy';
 import type { HouseDecor, InteriorItem, RemotePlayer } from '../../shared/types';
 import { pinDrawings, setArtCenter, surfaceDrawing } from '../art';
@@ -127,6 +127,8 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
   let nearNpc: Npc | null = null;
   let nearHome: Home | null = null;
   let nearCave = false;
+  /** 마을 게시판 앞 */
+  let nearBoard = false;
   /** 동굴 깊이 (0 = 밖) */
   let cave = 0;
   let ores: Ore[] = [];
@@ -192,6 +194,8 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       for (const h of townHomes(state.unlockedZones)) if (Math.hypot(h.door.x - me.x, h.door.z - me.z) < 1.7) home = h;
       caveHere = caveMouths(state.unlockedZones).some((m) => Math.hypot(m.x - me.x, m.z - me.z) < 2.6);
     }
+    const boardHere =
+      inside === null && !cave && townSquares(state.unlockedZones).some((q) => Math.abs(me.x - q.board.x) < 2.6 && me.z - q.board.z > 0 && me.z - q.board.z < 3.4);
     let ore: Ore | null = null;
     let deeper = false;
     if (cave) {
@@ -201,7 +205,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     }
     const spot = inside === null && !cave ? fishingSpotAt(me.x, me.z) : null;
     const fishHere: FishWhere | null = spot ? (spot.kind === 'pier' ? 'sea' : 'pond') : null;
-    if (best?.id !== nearNpc?.id || fishHere !== nearFish || home?.id !== nearHome?.id || caveHere !== nearCave || ore?.id !== nearOre?.id || deeper !== nearDeeper) {
+    if (best?.id !== nearNpc?.id || fishHere !== nearFish || home?.id !== nearHome?.id || caveHere !== nearCave || ore?.id !== nearOre?.id || deeper !== nearDeeper || boardHere !== nearBoard) {
       if ((best && !nearNpc) || (fishHere && !nearFish) || (home && !nearHome) || (caveHere && !nearCave) || (ore && !nearOre)) play('ding');
       if (ore?.id !== nearOre?.id) hits = 0;
       nearNpc = best;
@@ -210,6 +214,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       nearCave = caveHere;
       nearOre = ore;
       nearDeeper = deeper;
+      nearBoard = boardHere;
       draw();
     }
     if (inside === null && !cave) setArtCenter(me.x, me.z);
@@ -223,6 +228,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       if (nearDeeper) btns.push(`<button class="act-btn" data-act="deeper">${hooks.icon('door')}<span>더 깊이 들어가기 (${cave + 1}층)</span></button>`);
       if (nearNpc) btns.push(`<button class="act-btn primary" data-act="talk">${hooks.icon('chat')}<span>${esc(nearNpc.name)}에게 말 걸기</span></button>`);
       if (nearFish && !nearNpc) btns.push(`<button class="act-btn primary" data-act="fish">${hooks.icon('fish')}<span>${nearFish === 'sea' ? '바다 낚시하기' : '낚시하기'}</span></button>`);
+      if (nearBoard && !nearNpc) btns.push(`<button class="act-btn primary" data-act="board">${hooks.icon('board')}<span>마을 게시판 보기</span></button>`);
       if (nearCave) btns.push(`<button class="act-btn primary" data-act="cave">${hooks.icon('door')}<span>동굴 들어가기</span></button>`);
       if (nearHome) btns.push(`<button class="act-btn" data-act="home">${hooks.icon('door')}<span>${esc(nearHome.label)} 들어가기</span></button>`);
       if (inside === null && !cave && doorNo !== null && state.houses.has(doorNo)) {
@@ -265,6 +271,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     else if (act === 'enter' && doorNo !== null) void api.enter(doorNo);
     else if (act === 'home' && nearHome) api.enterHome(nearHome.id);
     else if (act === 'cave') enterCave(1);
+    else if (act === 'board') go('board');
     else if (act === 'deeper' && cave < CAVE_LEVELS) enterCave(cave + 1);
     else if (act === 'mine') mineHit();
     else if (act === 'look' && nearNo !== null) go('house', nearNo);
@@ -409,6 +416,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
         nearNpc = null;
         nearHome = null;
         nearCave = false;
+        nearBoard = false;
         nearFish = null;
         net = [];
         shownNpcs = [];

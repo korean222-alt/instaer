@@ -524,3 +524,86 @@ body:has(.sheet.open) .decor-dock { display: none; }
 .fg-step b { display: block; font-size: 13px; line-height: 1.4; }
 .fg-step em { font-style: normal; color: var(--accent); }
 .fg-step small { display: block; font-size: 11.5px; line-height: 1.4; }
+
+/* ── 소통: 채팅, 이모티콘, 춤 (2026-11-15) ── */
+.bubble-layer { position: absolute; inset: 0; pointer-events: none !important; overflow: hidden; z-index: 5; }
+.bub { position: absolute; left: 0; top: 0; will-change: transform; transition: opacity 0.2s; }
+.bub.chat { max-width: 180px; padding: 6px 10px; border-radius: 14px; background: #fffdf8; color: var(--ink); font-size: 13px; font-weight: 700; line-height: 1.3; box-shadow: 0 2px 8px var(--shadow); word-break: break-all; }
+.bub.chat::after { content: ''; position: absolute; left: 50%; bottom: -6px; margin-left: -6px; border: 6px solid transparent; border-top-color: #fffdf8; border-bottom: 0; }
+.bub.emote { font-size: 30px; line-height: 1; animation: emo-pop 0.35s ease-out; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.2)); }
+@keyframes emo-pop { from { scale: 0.3; } 70% { scale: 1.2; } to { scale: 1; } }
+.social-btn {
+  position: absolute; right: var(--gutter-r); bottom: calc(env(safe-area-inset-bottom, 0px) + 136px);
+  appearance: none; border: 0; cursor: pointer; display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
+  width: 58px; height: 58px; justify-content: center; border-radius: 50%; background: var(--card-solid); color: var(--accent);
+  font-weight: 800; font-size: 11px; box-shadow: 0 4px 14px var(--shadow);
+}
+.social-btn svg { width: 22px; height: 22px; }
+.social-btn span { color: var(--ink); }
+.social-btn.new::after { content: ''; position: absolute; top: 4px; right: 6px; width: 11px; height: 11px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; }
+body.playing .social-btn, body.decorating .social-btn, body:has(.sheet.open) .social-btn { display: none; }
+.social { position: absolute; left: 8px; right: 8px; top: calc(56px + env(safe-area-inset-top, 0px)); z-index: 20; background: var(--card-solid); border-radius: 18px; box-shadow: 0 6px 22px var(--shadow); padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: 48%; }
+.social[hidden] { display: none; }
+body.social-open .minimap, body.social-open .walk-zoom, body.social-open .inside-bar { visibility: hidden; }
+body.playing .social, body.decorating .social, body:has(.sheet.open) .social { display: none; }
+.social-head { display: flex; align-items: center; gap: 8px; }
+.social-head .seg { flex: 1; margin: 0; }
+.social-head .close { flex: none; }
+.chat-log { list-style: none; margin: 0; padding: 6px 8px; overflow-y: auto; min-height: 60px; max-height: 150px; background: var(--field); border-radius: 12px; font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
+.chat-log b { color: var(--accent); margin-right: 2px; }
+.chat-log .mine b { color: var(--ink-soft); }
+.chat-log .empty-log { color: var(--ink-soft); font-size: 12px; }
+.chat-form { display: flex; gap: 6px; }
+.chat-in { flex: 1; min-width: 0; border: 2px solid var(--field); border-radius: 12px; padding: 9px 10px; font: inherit; font-size: 16px; background: #fff; color: var(--ink); }
+.chat-note { margin: 0; font-size: 11px; color: var(--ink-soft); line-height: 1.35; }
+.emote-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.emote { appearance: none; border: 0; background: var(--field); border-radius: 12px; font-size: 22px; aspect-ratio: 1; cursor: pointer; padding: 0; }
+.emote:active { transform: scale(0.9); }
+.dance-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.dance-list li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--field); border-radius: 12px; }
+.dance-list li > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dance-list small { color: var(--ink-soft); font-size: 11px; }
+.tabbar { grid-template-columns: repeat(5, 1fr); }
+.tabbar a { position: relative; }
+.tabbar a.dot::after { content: ''; position: absolute; top: 6px; right: calc(50% - 16px); width: 9px; height: 9px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; }
+.chip-news { background: #fff3c4 !important; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; gap: 4px; }
+.chip-news svg { width: 15px; height: 15px; color: var(--accent); }
+h3.sub { font-size: 14px; margin: 14px 0 6px; }
+.news { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.news li { background: var(--field); border-radius: 14px; padding: 10px 12px; }
+.news li.new { background: #fff3c4; }
+.news small { color: var(--ink-soft); font-size: 11px; font-weight: 700; display: block; }
+.news b { font-size: 14px; }
+.news p { margin: 4px 0 0; font-size: 13px; line-height: 1.55; }
+.posts, .people { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.posts li { background: var(--field); border-radius: 14px; padding: 8px 10px; }
+.posts p { margin: 4px 0 2px; font-size: 14px; line-height: 1.45; word-break: break-all; }
+.posts small { color: var(--ink-soft); font-size: 11px; }
+.people li { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--field); border-radius: 14px; padding: 6px 8px; }
+.who { appearance: none; border: 0; background: none; padding: 0; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--ink); font: inherit; min-width: 0; }
+.who svg { flex: none; background: #fff6e6; border-radius: 10px; }
+.who b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friend-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.board-form { margin-bottom: 4px; }
+/* 섬 지도 (2026-11-15 개편) */
+.bigmap-card { width: min(100%, 592px); display: flex; flex-direction: column; }
+.bigmap-head { gap: 8px; }
+.map-hint { flex: 1; font-size: 11px; color: var(--ink-soft); font-weight: 700; }
+.map-wrap { position: relative; touch-action: none; }
+.map-wrap canvas { touch-action: none; cursor: grab; }
+.map-zoom { position: absolute; right: 8px; top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.map-zoom button { appearance: none; border: 0; width: 38px; height: 38px; border-radius: 12px; background: var(--card-solid); color: var(--ink); font-size: 20px; font-weight: 800; box-shadow: 0 2px 8px var(--shadow); cursor: pointer; }
+.map-info { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 10px; background: #fff3c4; border-radius: 14px; }
+.map-info[hidden] { display: none; }
+.map-info > div:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.map-info b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-info small { font-size: 12px; color: var(--ink-soft); }
+.legend i.home { background: #ff7a59; border-radius: 4px; }
+.route-pill { position: absolute; left: var(--gutter-l); top: calc(186px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; gap: 6px; max-width: calc(100% - 32px); background: var(--card-solid); border-radius: 999px; padding: 6px 6px 6px 12px; box-shadow: 0 3px 12px var(--shadow); font-size: 12px; font-weight: 800; z-index: 4; }
+.route-pill[hidden] { display: none; }
+.route-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-pill button { appearance: none; border: 0; background: var(--field); border-radius: 999px; padding: 5px 10px; font-weight: 800; font-size: 12px; cursor: pointer; color: var(--ink); }
+body.decorating .route-pill, body.playing .route-pill, body:has(.sheet.open) .route-pill, body.social-open .route-pill { display: none; }
+.btn.checking { opacity: 0.85; pointer-events: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,0.45); border-top-color: #fff; animation: spin 0.8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }

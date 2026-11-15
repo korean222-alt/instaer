@@ -116,7 +116,7 @@ export async function fetchHealth(): Promise<Health> {
 
 export const fetchVillage = () => call<Village>('GET', '/api/village');
 export const fetchRegions = () => call<Regions>('GET', '/api/regions');
-export const fetchMe = () => call<{ house: House | null; founder?: boolean; hideHandle?: boolean }>('GET', '/api/me');
+export const fetchMe = () => call<{ house: House | null; founder?: boolean; hideHandle?: boolean; friendRequests?: number }>('GET', '/api/me');
 /** cat: 고른 고양이 (CAT_CHOICES / EYE_CHOICES 안의 값). houseNo: 고른 빈 집 (null 이면 빈 집 중 앞 번호) */
 export const moveIn = (handle: string, region: RegionId, hideHandle: boolean, cat: CatLook, houseNo: number | null = null) =>
   call<MoveInResult>('POST', '/api/move-in', { handle, region, hideHandle, cat, houseNo });
@@ -158,3 +158,27 @@ export const reportVisit = (home: number) =>
   call<WithWallet<{ coins: number; already?: boolean; full?: boolean }>>('POST', '/api/game/visit', { home });
 export const like = (houseNo: number) =>
   call<{ ok: boolean; likes: number; code?: string; message?: string }>('POST', `/api/like/${houseNo}`);
+
+// ── 소통 (2026-11-15): 게시판, 친구, 방명록 ──
+export interface Person {
+  houseNo: number;
+  handle: string;
+  cat: CatLook;
+}
+export interface Post extends Person {
+  id: number;
+  text: string;
+  /** unix 초 */
+  at: number;
+}
+export type FriendState = 'self' | 'none' | 'friends' | 'sent' | 'received';
+export const fetchBoard = () => call<{ posts: Post[] }>('GET', '/api/board');
+export const postBoard = (text: string) => call<{ ok: true }>('POST', '/api/board', { text });
+export const deleteBoardPost = (id: number) => call<{ ok: true }>('DELETE', `/api/board/${id}`);
+export const fetchFriends = () => call<{ friends: Person[]; incoming: Person[]; outgoing: Person[] }>('GET', '/api/friends');
+export const friendAction = (houseNo: number, action: 'request' | 'accept' | 'decline' | 'remove') =>
+  call<{ ok: true; state: FriendState }>('POST', `/api/friends/${houseNo}`, { action });
+export const fetchHouseSocial = (houseNo: number) =>
+  call<{ guestbook: Post[]; friendState: FriendState; friendCount: number }>('GET', `/api/house/${houseNo}/social`);
+export const postGuestbook = (houseNo: number, text: string) => call<{ ok: true }>('POST', `/api/house/${houseNo}/guestbook`, { text });
+export const deleteGuestbook = (id: number) => call<{ ok: true }>('DELETE', `/api/guestbook/${id}`);

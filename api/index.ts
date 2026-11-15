@@ -10,6 +10,7 @@ import { village } from './routes/village';
 import { realtimeConnect, realtimeUsage } from './routes/realtime';
 import { deleteDrawing, getDecor, getDrawings, getWallet, myDrawings, postDrawing, putDecor } from './routes/decor';
 import { accept, arcade, buy, claim, fish, mine, sell, visit } from './routes/game';
+import { deleteBoard, deleteGuestbook, friendAction, getBoard, getFriends, houseSocial, postBoard, postGuestbook } from './routes/social';
 
 export { RealtimeRoom } from './realtime/RealtimeRoom';
 
@@ -50,6 +51,10 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (method === 'POST' && path === '/api/game/arcade') return arcade(request, env);
   if (method === 'POST' && path === '/api/game/visit') return visit(request, env);
 
+  if (method === 'GET' && path === '/api/board') return getBoard(env, ctx);
+  if (method === 'POST' && path === '/api/board') return postBoard(request, env);
+  if (method === 'GET' && path === '/api/friends') return getFriends(request, env);
+
   let m = path.match(/^\/api\/rt\/(zone|room)\/([A-Za-z0-9%-]{1,64})$/);
   if (m && method === 'GET') return realtimeConnect(m[1], m[2], request, env);
   m = path.match(/^\/api\/rt\/usage\/(zone|room)\/([a-z0-9-]{1,32})$/);
@@ -62,6 +67,21 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (method === 'GET') return getDecor(no, env);
     if (method === 'PUT') return putDecor(no, request, env);
   }
+  m = path.match(/^\/api\/house\/(\d+)\/(social|guestbook)$/);
+  if (m) {
+    const no = houseNoOf(m[1]);
+    if (!no) return error(400, 'bad_house', '번지가 이상해요');
+    if (m[2] === 'social' && method === 'GET') return houseSocial(no, request, env);
+    if (m[2] === 'guestbook' && method === 'POST') return postGuestbook(no, request, env);
+  }
+  m = path.match(/^\/api\/friends\/(\d+)$/);
+  if (m && method === 'POST') {
+    const no = houseNoOf(m[1]);
+    if (!no) return error(400, 'bad_house', '번지가 이상해요');
+    return friendAction(no, request, env);
+  }
+  m = path.match(/^\/api\/(board|guestbook)\/(\d{1,12})$/);
+  if (m && method === 'DELETE') return m[1] === 'board' ? deleteBoard(Number(m[2]), request, env) : deleteGuestbook(Number(m[2]), request, env);
   m = path.match(/^\/api\/drawings\/([A-Za-z0-9_-]{1,24})$/);
   if (m && method === 'DELETE') return deleteDrawing(m[1], request, env);
   m = path.match(/^\/api\/like\/(\d+)$/);

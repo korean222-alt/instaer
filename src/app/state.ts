@@ -30,6 +30,8 @@ export interface AppState {
   offline: boolean;
   /** 씬에서 강조 중인 지역 */
   highlightedRegion: RegionId | null;
+  /** 받은 친구 신청 수 (친구 탭 빨간 점) */
+  friendRequests: number;
 }
 
 const listeners = new Set<Listener>();
@@ -56,6 +58,7 @@ export function initState(scene: IslandScene): AppState {
     regions: null,
     offline: false,
     highlightedRegion: null,
+    friendRequests: 0,
   };
   return state;
 }

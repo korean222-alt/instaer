@@ -39,13 +39,20 @@ export type ClientMsg =
    */
   | { t: 'm'; x: number; z: number; r: number; a: number; f?: number; p?: number[]; i?: number }
   /** 방 안 메시지 (방에서만) */
-  | { t: 'room'; d: unknown };
+  | { t: 'room'; d: unknown }
+  /** 주변 채팅 (CHAT_MAX 자까지). 내 둘레 NEARBY_RADIUS 안의 사람에게만 간다 (방에서는 방 안 모두) */
+  | { t: 'c'; s: string }
+  /** 이모티콘 (EMOTES 번호) */
+  | { t: 'e'; e: number }
+  /** 춤 (DANCES 번호 + 1, 0 = 멈춤) */
+  | { t: 'd'; d: number };
 
-/** 유저 한 명의 위치: [id, x, z, r, a, f, q, i, p] (q: 위치 순번, 바뀌었을 때만 새 위치. i, p: 지난 위치 묶음) */
+/** 유저 한 명의 위치: [id, x, z, r, a, f, q, i, p, d] (q: 위치 순번, 바뀌었을 때만 새 위치. i, p: 지난 위치 묶음. d: 춤 번호) */
 export type PlayerTuple =
   | [string, number, number, number, number]
   | [string, number, number, number, number, number]
-  | [string, number, number, number, number, number, number, number, number[]];
+  | [string, number, number, number, number, number, number, number, number[]]
+  | [string, number, number, number, number, number, number, number, number[], number];
 
 /** 서버 → 화면 */
 export type ServerMsg =
@@ -61,6 +68,10 @@ export type ServerMsg =
   | { t: 'fix'; x: number; z: number }
   /** 방 안 메시지 */
   | { t: 'room'; from: string; d: unknown }
+  /** 주변 채팅 (from: 보낸 사람 연결 id) */
+  | { t: 'c'; from: string; s: string }
+  /** 이모티콘 */
+  | { t: 'e'; from: string; e: number }
   /** 연결을 끊는 이유 (full: 꽉 참, replaced: 다른 창에서 접속, limit: 너무 많이 보냄) */
   | { t: 'bye'; reason: 'full' | 'replaced' | 'limit' | 'bad' };
 

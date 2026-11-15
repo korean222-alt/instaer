@@ -11,15 +11,17 @@
 //   #/draw/new    그림 그리기 (#/draw/그림id 는 따라 그리기)
 //   #/npc/shop    주민에게 말 걸기 (shop, arcade, fisher, gardener, resident-12)
 //   #/decorate/room  바로 집 안 꾸미기 (yard 는 마당)
+//   #/board       마을 게시판 (2026-11-15)
+//   #/friends     친구 목록, 받은 신청 (2026-11-15)
 // 지도(씬)는 항상 뒤에 깔려 있고, 다른 화면은 아래에서 올라오는 판으로 그 위에 뜬다. 뒤로 가기로 닫힌다.
 
-export type ScreenId = 'map' | 'move-in' | 'rank' | 'decorate' | 'house' | 'search' | 'settings' | 'quests' | 'shop' | 'draw' | 'npc';
+export type ScreenId = 'map' | 'move-in' | 'rank' | 'decorate' | 'house' | 'search' | 'settings' | 'quests' | 'shop' | 'draw' | 'npc' | 'board' | 'friends';
 export interface Route {
   id: ScreenId;
   param: string | null;
 }
 
-const IDS: readonly ScreenId[] = ['map', 'move-in', 'rank', 'decorate', 'house', 'search', 'settings', 'quests', 'shop', 'draw', 'npc'];
+const IDS: readonly ScreenId[] = ['map', 'move-in', 'rank', 'decorate', 'house', 'search', 'settings', 'quests', 'shop', 'draw', 'npc', 'board', 'friends'];
 const isScreen = (v: string): v is ScreenId => (IDS as readonly string[]).includes(v);
 
 export function currentRoute(): Route {

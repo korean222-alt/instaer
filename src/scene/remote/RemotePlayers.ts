@@ -8,6 +8,7 @@ import { FishingRig, type FishingState } from '../fishing/FishingRig';
 import { hash01 } from '../util/rand';
 import { GRAVITY, groundHeightAt, JUMP_V, SPEED_FAST, STRIDE, type Bridge } from '../walk/Walker';
 import { NameTags } from './NameTags';
+import { danceMotion } from '../cat/dance';
 import type { PlayerAnim, RemotePlayer } from './types';
 
 /**
@@ -116,6 +117,9 @@ class Rec {
   fishing: FishingState | null = null;
   /** 맡은 낚싯대 번호 (-1 이면 없음) */
   rig = -1;
+  /** 춤 id 와 춤을 시작한 시각 (초) */
+  dance: string | null = null;
+  danceT = 0;
 
   push(t: number, x: number, z: number, rotY: number, anim: number) {
     if (this.n === SNAPS) {
@@ -229,6 +233,8 @@ export class RemotePlayers {
         r.lookKey = '';
         r.fishing = null;
         r.rig = -1;
+        r.dance = null;
+        r.danceT = 0;
         this.byId.set(id, r);
         this.active++;
         r.push(now, p.x, p.z, rotY, anim);
@@ -250,6 +256,11 @@ export class RemotePlayers {
       r.stamp = stamp;
       r.alive = true;
       r.fishing = p.fishing && FISH_STATES.has(p.fishing) ? p.fishing : null;
+      const dance = typeof p.dance === 'string' && p.dance ? p.dance : null;
+      if (dance !== r.dance) {
+        r.dance = dance;
+        r.danceT = 0;
+      }
       if (r.handle !== p.handle) {
         r.handle = String(p.handle ?? '');
         // 이름이 바뀌면 이름표를 새로 받는다
@@ -315,9 +326,11 @@ export class RemotePlayers {
         const flock = r.near ? this.near : this.far;
         const slot = r.near ? nNear++ : nFar++;
         const hop = r.air > 0 ? 0 : Math.abs(Math.sin(r.phase)) * 0.045 * r.walk;
-        flock.setLookRaw(slot, r.fur, r.eye, r.pattern, r.seed, r.sit, 0);
-        flock.setPose(slot, r.x, r.groundY + r.air + hop + 0.035, r.z, r.yaw, SCALE * Math.max(0.001, k));
-        flock.setAnim(slot, r.phase, r.walk, 0, 0);
+        // 춤: 서 있을 때만 (걷기 시작하면 멈춘다)
+        const dm = r.dance && r.walk < 0.15 && r.air <= 0 ? danceMotion(r.dance, (r.danceT += dt)) : null;
+        flock.setLookRaw(slot, r.fur, r.eye, r.pattern, r.seed, dm ? 0 : r.sit, 0);
+        flock.setPose(slot, r.x, r.groundY + r.air + hop + 0.035 + (dm?.dy ?? 0), r.z, r.yaw + (dm?.dyaw ?? 0), SCALE * Math.max(0.001, k) * (dm?.scale ?? 1));
+        flock.setAnim(slot, dm && dm.walk ? dm.phase : r.phase, dm && dm.walk ? dm.walk : r.walk, 0, dm ? dm.happy : 0);
       }
 
       // 이름표 후보: 가까운 순서로 TAG_MAX 명 (지금 보이는 이름표는 조금 더 버틴다)
@@ -425,6 +438,30 @@ export class RemotePlayers {
     this.rigs[r.rig].setState(null);
     this.rigOwner[r.rig] = null;
     r.rig = -1;
+  }
+
+  /** 그 유저 고양이의 머리 위 자리 (세계 좌표). 안 보이면 null */
+  headOf(id: string, out: THREE.Vector3): THREE.Vector3 | null {
+    const r = this.byId.get(id);
+    if (!r || !r.used || r.show < 0.3) return null;
+    return out.set(r.x, r.groundY + r.air + SCALE * 1.02 + 0.06, r.z);
+  }
+
+  /** 화면 좌표(px)로 누른 곳에 가장 가까운 유저 id. project: 세계 → 화면 px (안 보이면 null) */
+  pickScreen(cx: number, cy: number, project: (x: number, y: number, z: number) => { x: number; y: number } | null, radius = 40): string | null {
+    let best: string | null = null;
+    let bestD = radius;
+    for (const r of this.recs) {
+      if (!r.used || !r.alive || r.show < 0.5) continue;
+      const s = project(r.x, r.groundY + r.air + 0.45, r.z);
+      if (!s) continue;
+      const d = Math.hypot(s.x - cx, s.y - cy);
+      if (d < bestD) {
+        bestD = d;
+        best = r.id;
+      }
+    }
+    return best;
   }
 
   /** 모두 바로 지운다 (집 안팎을 오갈 때. 사라지는 모습 없이) */

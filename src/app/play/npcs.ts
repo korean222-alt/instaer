@@ -1,13 +1,18 @@
 // 섬 모서리의 주민 집에 사는 주민들 (2026-11-15).
 // 구역마다 주민 집 8채: 탐험가 두더지, 잡화점 보리, 오락실 콩이, 낚시꾼 멸치, 정원사 쑥이, 이웃 셋.
 // 주민은 자기 집 문 옆에 서 있다가 둘레를 조금 걷는다 (씬 setNpcs). 집 안에 들어가면 그 주민이 안에도 있다.
-import { mapHills, npcHomes, type SceneNpc } from '../../scene';
+import { mapHills, npcHomes, townSquares, type SceneNpc } from '../../scene';
 import { homeRole, NPC_INFO, residentName, type HomeRole } from '../../shared/economy';
 import type { CatLook } from '../../shared/types';
 
+/** 이장 (2026-11-15): 마을 광장 게시판 옆. 업데이트 소식을 알려 준다 */
+export type NpcKind = HomeRole | 'mayor';
+export const MAYOR_NAME = '이장 냥냥';
+const MAYOR_LOOK: CatLook = { fur: '#e9e2d6', pattern: 'tuxedo', eyeColor: '#f2c94c' };
+
 export interface Npc {
   id: string;
-  role: HomeRole;
+  role: NpcKind;
   name: string;
   x: number;
   z: number;
@@ -43,8 +48,8 @@ const RESIDENT_LOOKS: CatLook[] = [
   { fur: '#c9ccd4', pattern: 'gray', eyeColor: '#e0a13a' },
 ];
 
-export const npcName = (role: HomeRole, homeId: number) => (role === 'resident' ? `이웃 ${residentName(homeId)}` : `${NPC_INFO[role].title} ${NPC_INFO[role].name}`);
-export const npcLook = (role: HomeRole, homeId: number) => (role === 'resident' ? RESIDENT_LOOKS[homeId % RESIDENT_LOOKS.length] : LOOK[role]);
+export const npcName = (role: NpcKind, homeId: number) => (role === 'mayor' ? MAYOR_NAME : role === 'resident' ? `이웃 ${residentName(homeId)}` : `${NPC_INFO[role].title} ${NPC_INFO[role].name}`);
+export const npcLook = (role: NpcKind, homeId: number) => (role === 'mayor' ? MAYOR_LOOK : role === 'resident' ? RESIDENT_LOOKS[homeId % RESIDENT_LOOKS.length] : LOOK[role]);
 
 let cachedZones = -1;
 let cachedNpcs: Npc[] = [];
@@ -58,10 +63,16 @@ function build(zones: number) {
     const owner = role === 'resident' ? `이웃 ${residentName(h.id)}` : NPC_INFO[role].name;
     return { id: h.id, role, label: `${owner}네 집`, x: h.x, z: h.z, rot: h.rot, door: h.door };
   });
+  const squares = townSquares(zones);
   cachedNpcs = npcHomes(zones).map((h) => {
     const role = homeRole(h.id);
+    // 잡화점과 오락실 주인은 마을 광장 장터 가판대 앞에 있다 (집은 그대로 모서리에)
+    const sq = squares[h.zone];
+    const stall = sq?.stalls.find((st) => st.kind === role);
+    if (stall) return { id: `npc-${h.id}`, role, name: npcName(role, h.id), x: stall.front.x, z: stall.front.z, rotY: stall.rot, cat: npcLook(role, h.id), homeId: h.id };
     return { id: `npc-${h.id}`, role, name: npcName(role, h.id), x: h.stand.x, z: h.stand.z, rotY: h.rot, cat: npcLook(role, h.id), homeId: h.id };
   });
+  for (const sq of squares) cachedNpcs.push({ id: `mayor-${sq.zone}`, role: 'mayor', name: MAYOR_NAME, x: sq.mayor.x, z: sq.mayor.z, rotY: 0.3, cat: MAYOR_LOOK, homeId: -1 });
 }
 
 /** 열린 구역의 주민 전체 (섬 좌표) */

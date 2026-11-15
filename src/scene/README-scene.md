@@ -17,6 +17,8 @@
 
 | 2026-11-15 (Opus): 섬 네 모서리 땅(`CORNERS`), 주민 집 8채(`HOME_SPOTS`, `props.npcHome`, `enterNpcHome`), 바위 언덕 7개(`HILLS`), 동굴 산(`CAVE_HILL`)과 동굴 안 1~3층(`cave/Cave.ts`, `enterCave`, `setCaveNodes`, `exitCave`, `onExitCave`, `caveNodeNear`), 걷기 시야 넓히기(`setWalkZoom`), 아이템 그림 찍기(`renderItemPreview`), 지붕 그림을 지붕 앞면 전체로 키움(`ROOF_ART_SIZE` 3.0, 바탕색 투명 `DrawingStore.roofMaterial`), 꾸미기 중 아이템을 든 채 빈 곳을 짧게 누르면 그 자리로 옮김(`Placer.moveHeldTo`), 탐험가 모자 | 완료 (앱도 붙임) |
 
+| 2026-11-15 (Opus) 소통: 춤(`setDance`, `RemotePlayer.dance`, `cat/dance.ts` 로 높이/방향/크기/제자리 걸음만 움직임), 앉기(`setSitting`), 말풍선 자리(`catScreenPos`), 다른 유저 누르기(`onRemoteTap`), 마을 광장(`TOWN_SQUARE`, `props.townBoard`, `props.stall`, 광장 바닥은 mapField plaza 로 칠함), 이장 옷(`ROLE_PARTS.mayor`), 길 찾기 비용(`walkCost`) | 완료 (앱도 붙임). 춤은 걷거나 점프하면 멈춰 보인다. 말풍선은 앱이 DOM 으로 그린다 |
+
 **2026-11-15 추가 메모**
 
 - 동굴은 집 안처럼 섬과 따로 떨어진 장면이에요(좌표: 가운데 (0,0), 폭 ±7.2, 깊이 -9.5~7, 앞쪽이 나가는 길). 걷기는 `Walker.room` 으로 막고 바위/광석은 원으로 막아요. 횃불 점광원 3개, 그림자 없음.

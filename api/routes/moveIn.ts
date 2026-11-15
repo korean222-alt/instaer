@@ -13,6 +13,7 @@ import { loadWallet, saveWallet, walletView } from '../lib/wallet';
 import { CURRENCY, RENAME_COST } from '../../src/shared/economy';
 import { REGIONS_KEY } from './regions';
 import { VILLAGE_KEY } from './village';
+import { incomingCount } from './social';
 
 export interface MoveInResponse {
   ok: true;
@@ -115,8 +116,9 @@ export async function me(request: Request, env: Env): Promise<Response> {
   // 쿠키가 지워졌고 헤더로 왔으면 쿠키를 다시 심는다
   const hadCookie = (request.headers.get('cookie') ?? '').includes('ci_s=');
   const headers: HeadersInit = hadCookie ? {} : { 'set-cookie': sessionCookie(mine.token, isSecure(request)) };
+  const friendRequests = await incomingCount(env.DB, mine.house.id).catch(() => 0);
   return json(
-    { house: toHouse(mine.house, true), hideHandle: mine.house.hide_handle === 1, founder: mine.house.house_no <= FOUNDER_MAX },
+    { house: toHouse(mine.house, true), hideHandle: mine.house.hide_handle === 1, founder: mine.house.house_no <= FOUNDER_MAX, friendRequests },
     { headers },
   );
 }
