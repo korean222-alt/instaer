@@ -155,6 +155,7 @@ const ROLE_PARTS: Record<string, { worn: () => Piece[]; prop?: () => Piece[] }> 
   fisher: { worn: () => strawHat('#5cc2b5'), prop: rodStand },
   gardener: { worn: () => strawHat('#ff9ec2', '#ff8fa3'), prop: wateringCan },
   resident: { worn: () => scarf('#8fd3e8') },
+  explorer: { worn: () => cap('#f4c95d', '#9a6645') },
 };
 
 interface Batch {

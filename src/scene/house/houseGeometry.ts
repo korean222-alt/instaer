@@ -398,7 +398,9 @@ export function buildFlagGeometry(): THREE.BufferGeometry {
 }
 
 /** 지붕 그림 한 변의 길이 (지붕 폭 3.4 중 가운데만 덮는다) */
-export const ROOF_ART_SIZE = 1.24;
+export const ROOF_ART_SIZE = 3.0;
+/** 지붕 그림이 덮는 앞쪽 지붕 면의 가로:세로 (그리기 화면의 도화지 비율과 같다. src/app 의 ROOF_ART_ASPECT) */
+export const ROOF_ART_ASPECT = 1.6;
 
 /**
  * 지붕 그림을 붙이는 판: 지붕 앞면(대문 쪽 경사면)의 휜 모양을 그대로 따라가는 네모.
@@ -416,10 +418,11 @@ export function buildRoofArtGeometry(): THREE.BufferGeometry {
     y: (1 - t) * (1 - t) * p0.y + 2 * t * (1 - t) * p1.y + t * t * p2.y,
   });
   // 고양이 귀 아래(t0)에서 처마 위(t1)까지. 지붕 겉면은 단면보다 0.07 바깥이라 그만큼 띄운다
-  const t0 = 0.25;
-  const t1 = 0.87;
+  // 2026-11-15: 앞쪽 지붕 면을 거의 다 덮게 키웠다 (그림이 너무 작다는 요청)
+  const t0 = 0.1;
+  const t1 = 0.95;
   const lift = 0.07 + 0.016;
-  const rows = 10;
+  const rows = 14;
   const half = ROOF_ART_SIZE / 2;
   const pos: number[] = [];
   const nor: number[] = [];

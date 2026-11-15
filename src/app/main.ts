@@ -24,6 +24,7 @@ import { createExplore, type Explore } from './play/explore';
 import { startFishing } from './play/fishing';
 import { pondsOf, townNpcs } from './play/npcs';
 import { createPlacement } from './play/placement';
+import { createMinimap } from './play/minimap';
 import { claimableCount, coins, refreshWallet } from './wallet';
 import { initSound, play, setMusicMood } from './audio/sound';
 import type { Screen } from './screens/types';
@@ -58,6 +59,9 @@ const ICON: Record<string, string> = {
   fish: '<path d="M3 12c3-4.5 9-6 14-3l4-3v12l-4-3c-5 3-11 1.5-14-3z"/><path d="M8 11.5h.01"/>',
   door: '<path d="M6 21V4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21"/><path d="M4 21h16M14.5 12.5h.01"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  pick: '<path d="M4 20 14 10"/><path d="M9.5 5.5c4-2.5 8.5-1.5 11 1-3-.8-6.5 0-9 2.5"/><path d="m12.5 7.5 4 4"/>',
+  zoom: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  cat: '<path d="M5 20v-8l-1-7 4.5 3h7L20 5l-1 7v8z"/><path d="M9.5 13h.01M14.5 13h.01"/>',
 };
 const icon = (name: string) =>
   `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[name]}</svg>`;
@@ -74,9 +78,9 @@ const SCREENS: Record<Exclude<ScreenId, 'map'>, Screen> = {
   draw: drawScreen,
   npc: npcScreen,
 };
+// 2026-11-15: 입주 탭은 뺐다 (입주 전에는 위쪽 "입주하기" 버튼, 내 고양이 카드는 설정에서)
 const TABS: Array<{ id: ScreenId; label: string }> = [
   { id: 'map', label: '지도' },
-  { id: 'move-in', label: '입주' },
   { id: 'rank', label: '순위' },
   { id: 'decorate', label: '꾸미기' },
   { id: 'quests', label: '퀘스트' },
@@ -111,6 +115,7 @@ app.innerHTML = `
       </div>
     </div>
     <div class="hud-row left">
+      <button class="pill primary-pill" id="hud-movein" hidden>${icon('move-in')}<span>입주하기</span></button>
       <div class="pill soft" id="hud-next" hidden></div>
       <button class="pill chip-top" id="hud-top" hidden></button>
       <button class="pill chip-region" id="hud-region" hidden></button>
@@ -119,6 +124,7 @@ app.innerHTML = `
   <div class="status" id="status" hidden></div>
   <button class="walk-btn" id="btn-walk" aria-pressed="false">${icon('walk')}<span>걷기</span></button>
   <button class="walk-end" id="btn-walk-end" hidden>${icon('close')}<span>걷기 끝</span></button>
+  <button class="walk-zoom" id="btn-zoom" hidden aria-label="시야 넓히기">${icon('zoom')}<span>보통</span></button>
   <section class="sheet" id="sheet" aria-hidden="true" role="dialog" aria-labelledby="sheet-title">
     <div class="sheet-head">
       <h2 id="sheet-title"></h2>
@@ -136,7 +142,7 @@ const sheetBody = $('sheet-body');
 let cleanup: (() => void) | void;
 let ready = false;
 
-const TAB_OF: Partial<Record<ScreenId, ScreenId>> = { house: 'map', search: 'map', settings: 'map', npc: 'map', shop: 'decorate', draw: 'decorate' };
+const TAB_OF: Partial<Record<ScreenId, ScreenId>> = { house: 'map', search: 'map', settings: 'map', npc: 'map', shop: 'decorate', draw: 'decorate', 'move-in': 'map' };
 function show(route: Route) {
   const tabId = TAB_OF[route.id] ?? route.id;
   for (const a of app.querySelectorAll<HTMLAnchorElement>('[data-tab]')) {
@@ -210,8 +216,10 @@ function drawHud() {
   const dot = coin.querySelector('em')!;
   dot.hidden = ready === 0;
   dot.textContent = String(ready);
+  $('hud-movein').hidden = !!state.me || state.offline;
   drawStatus();
 }
+$('hud-movein').addEventListener('click', () => go('move-in'));
 $('hud-coin').addEventListener('click', () => go('quests'));
 $('hud-top').addEventListener('click', () => state.todayTop && openHouse(state.todayTop.houseNo));
 $('hud-region').addEventListener('click', () => setHighlightedRegion(null));
@@ -239,7 +247,11 @@ let lastAnim = 'idle';
 // 실시간이 받은 다른 유저는 explore 를 거쳐 주민(NPC)과 섞어서 씬에 넘긴다
 let explore: Explore;
 const rtScene = Object.create(scene) as typeof scene;
-rtScene.setRemotePlayers = (players) => explore?.setNetPlayers(players);
+let netPlayers: import('../shared/types').RemotePlayer[] = [];
+rtScene.setRemotePlayers = (players) => {
+  netPlayers = players;
+  explore?.setNetPlayers(players);
+};
 const realtime = createRealtime(rtScene, {
   onSolo(solo) {
     rtSolo = solo;
@@ -260,6 +272,8 @@ explore = createExplore(scene, realtime, {
   onWalking(on) {
     $('btn-walk').setAttribute('aria-pressed', String(on));
     $('btn-walk-end').hidden = !on;
+    $('btn-zoom').hidden = !on;
+    minimap.setVisible(on);
     if (on) {
       go('map');
       if (state.me && testRoom) toast(`미니게임 시험 방 '${testRoom}' 에 들어왔어요`);
@@ -269,11 +283,13 @@ explore = createExplore(scene, realtime, {
     }
     drawStatus();
   },
-  onInside() {
+  onInside(no) {
     if (ctl.placement?.active()) ctl.placement.cancel();
+    // 집 안이나 동굴 안에서는 섬 지도를 숨긴다
+    minimap.setVisible(explore.walking() && no === null && explore.caveLevel() === 0 && explore.inside() === null);
   },
   talk(npc) {
-    go('npc', npc.role === 'resident' ? `resident-${npc.houseNo}` : npc.role);
+    go('npc', npc.role === 'resident' ? `resident-${npc.homeId}` : npc.role);
   },
   fish(where) {
     play('tap');
@@ -294,6 +310,34 @@ function fishHere(where: FishWhere) {
   explore.refresh();
 }
 ctl.explore = explore;
+const minimap = createMinimap(scene, () => netPlayers);
+// 시야 넓히기: 보통 → 넓게 → 더 넓게 (이 브라우저에 기억)
+const ZOOMS = [
+  { v: 0, label: '보통' },
+  { v: 0.55, label: '넓게' },
+  { v: 1, label: '더 넓게' },
+];
+let zoomStep = 0;
+try {
+  zoomStep = Math.max(0, Math.min(2, Number(localStorage.getItem('ci_zoom') ?? 0) || 0));
+} catch {
+  /* 저장 막힘 */
+}
+const applyZoom = () => {
+  scene.setWalkZoom(ZOOMS[zoomStep].v);
+  $('btn-zoom').querySelector('span')!.textContent = ZOOMS[zoomStep].label;
+};
+applyZoom();
+$('btn-zoom').addEventListener('click', () => {
+  zoomStep = (zoomStep + 1) % ZOOMS.length;
+  play('tap');
+  applyZoom();
+  try {
+    localStorage.setItem('ci_zoom', String(zoomStep));
+  } catch {
+    /* 저장 막힘 */
+  }
+});
 ctl.placement = createPlacement(scene, explore);
 ctl.arcade = () => {
   startArcade(() => explore.refresh());
@@ -344,7 +388,7 @@ function welcomed(): boolean {
 // 화면에 돌아오면 (1분 넘게 지났으면) 마을을 새로 불러온다
 let lastRefresh = Date.now();
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && Date.now() - lastRefresh > 60_000) {
+  if (document.visibilityState === 'visible' && Date.now() - lastRefresh > 120_000) {
     lastRefresh = Date.now();
     refreshVillage();
   }
@@ -354,4 +398,4 @@ setInterval(() => {
     lastRefresh = Date.now();
     refreshVillage();
   }
-}, 120_000);
+}, 300_000);

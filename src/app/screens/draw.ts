@@ -14,11 +14,17 @@ import type { Screen } from './types';
 const N = DRAWING_SIZE;
 type Tool = 'pen' | 'eraser' | 'fill';
 
+/** 지붕 앞면의 가로:세로 (씬 houseGeometry 의 ROOF_ART_ASPECT 와 같다) */
+export const ROOF_ART_ASPECT = 1.6;
+
 let onSaved: ((d: Drawing) => void) | null = null;
-/** 그리기 화면을 연다. 저장하면 cb 로 새 그림을 알려 주고 판을 닫는다 */
-export function openDrawEditor(cb?: (d: Drawing) => void, copyFrom?: string) {
+/**
+ * 그리기 화면을 연다. 저장하면 cb 로 새 그림을 알려 주고 판을 닫는다.
+ * roof: 지붕에 붙일 그림 (도화지가 지붕 앞면 모양이고, 바탕은 지붕 색으로 보인다)
+ */
+export function openDrawEditor(cb?: (d: Drawing) => void, copyFrom?: string, roof = false) {
   onSaved = cb ?? null;
-  go('draw', copyFrom ?? 'new');
+  go('draw', roof ? `roof${copyFrom ? `-${copyFrom}` : ''}` : (copyFrom ?? 'new'));
 }
 
 export const drawScreen: Screen = {
@@ -34,21 +40,34 @@ export const drawScreen: Screen = {
     onSaved = null;
     const palette = [...DEFAULT_PALETTE];
     const px = new Uint8Array(N * N);
-    const src = param && param !== 'new' ? drawingById(param) : null;
+    const roof = !!param && param.startsWith('roof');
+    const copyId = roof ? (param!.length > 5 ? param!.slice(5) : null) : param && param !== 'new' ? param : null;
+    const src = copyId ? drawingById(copyId) : null;
     if (src) {
       const dec = decodeDrawing(src.pixels);
       if (dec) px.set(dec);
       ctx.setTitle('따라 그리기');
     }
+    if (roof) ctx.setTitle(src ? '지붕 그림 고치기' : '지붕 그림 그리기');
+    const roofColor = state.me?.roofColor ?? '#d9a37e';
     let color = 1;
     let tool: Tool = 'pen';
     const undo: Uint8Array[] = [];
     let saving = false;
 
     root.innerHTML = `
-      <div class="draw-wrap">
+      ${
+        roof
+          ? `<div class="roof-draw" style="--roof:${roofColor}">
+          <div class="roof-top"><i class="ear l"></i><i class="ear r"></i><i class="chim"></i></div>
+          <canvas class="draw-canvas roof" width="${N * 16}" height="${Math.round((N * 16) / ROOF_ART_ASPECT)}" aria-label="지붕 그림판"></canvas>
+          <div class="roof-wall"><i class="win"></i><i class="door"></i><i class="win"></i></div>
+        </div>
+        <p class="note">지붕 앞면 전체에 그대로 그려져요. 첫 번째 크림색(바탕)과 지우개로 지운 곳은 지붕 색으로 보여요.</p>`
+          : `<div class="draw-wrap">
         <canvas class="draw-canvas" width="${N * 10}" height="${N * 10}" aria-label="그림판 32x32"></canvas>
-      </div>
+      </div>`
+      }
       <div class="draw-tools">
         <button class="pill btn-pill on" data-tool="pen">펜</button>
         <button class="pill btn-pill" data-tool="fill">채우기</button>
@@ -65,20 +84,27 @@ export const drawScreen: Screen = {
     const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
     const g = canvas.getContext('2d')!;
     const S = canvas.width / N;
+    const SY = canvas.height / N;
 
     const paint = () => {
       for (let i = 0; i < px.length; i++) {
+        const x = (i % N) * S;
+        const y = Math.floor(i / N) * SY;
+        if (roof && px[i] === 0) {
+          g.clearRect(x, y, S, SY);
+          continue;
+        }
         g.fillStyle = palette[px[i]];
-        g.fillRect((i % N) * S, Math.floor(i / N) * S, S, S);
+        g.fillRect(x, y, S, SY);
       }
       g.strokeStyle = 'rgba(91,70,54,0.08)';
       g.lineWidth = 1;
       g.beginPath();
       for (let k = 1; k < N; k++) {
         g.moveTo(k * S + 0.5, 0);
-        g.lineTo(k * S + 0.5, N * S);
-        g.moveTo(0, k * S + 0.5);
-        g.lineTo(N * S, k * S + 0.5);
+        g.lineTo(k * S + 0.5, N * SY);
+        g.moveTo(0, k * SY + 0.5);
+        g.lineTo(N * S, k * SY + 0.5);
       }
       g.stroke();
     };

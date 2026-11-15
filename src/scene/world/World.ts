@@ -4,6 +4,7 @@ import { createGlowLambert, GLOW_ATTRS } from '../core/glowLambert';
 import {
   BRIDGE,
   bridgeOf,
+  CAVE_HILL,
   HARBOR,
   linkPaths,
   NEIGHBORHOODS,
@@ -83,6 +84,16 @@ function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
       case 'rock':
         pieces = props.rock(s.seed);
         break;
+      case 'npcHome':
+        pieces = props.npcHome(s.seed);
+        break;
+      case 'caveHill':
+        // 산은 반지름을 직접 받으므로 scale 은 1 로 둔다
+        pieces = props.caveHill(CAVE_HILL.r);
+        break;
+      case 'hill':
+        pieces = props.hill(s.seed);
+        break;
       case 'tuft':
         pieces = props.tuft(s.seed);
         list = low;
@@ -92,7 +103,11 @@ function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
         list = low;
         if (rnd() < 0.3) fireflies.push([s.x, GROUND_Y + 0.7 + rnd() * 1.2, s.z]);
     }
-    list.push(...props.place(pieces, s.x, GROUND_Y, s.z, s.rot, s.scale));
+    if (s.kind === 'hill') {
+      // 언덕은 옆으로 넓고 키는 덜 크게
+      for (const g of pieces) g.scale(s.scale, s.scale * 0.85, s.scale);
+      list.push(...props.place(pieces, s.x, GROUND_Y, s.z, s.rot, 1));
+    } else list.push(...props.place(pieces, s.x, GROUND_Y, s.z, s.rot, s.scale));
   }
   if (withHarbor) {
     const dockZ = ZONE.halfZ + 3.4;

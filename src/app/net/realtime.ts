@@ -5,10 +5,12 @@
 // - 구역(섬)을 넘어가면 새 구역에 먼저 붙은 다음 이전 연결을 닫는다 (끊김 없이).
 // - 미니게임 방에 들어가면 방 안 사람은 거리와 상관없이 모두 보인다.
 import { houseSlot, neighborhoodArea, neighborhoodAt, type IslandScene } from '../../scene';
-import { MOVE_SEND_HZ } from '../../shared/config';
 import {
   ANIMS,
   FISH_POSES,
+  SAMPLE_MS,
+  SEND_MS_MIN,
+  TRAIL_MAX,
   gameRoomName,
   POS_SCALE,
   ROOM_ID_RE,
@@ -66,7 +68,6 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
   let fails = 0;
   let solo = false;
   let retryTimer = 0;
-  let sendTimer = 0;
   let hiddenTimer = 0;
   let zoneTimer = 0;
   let latest: LocalState | null = null;
@@ -78,6 +79,22 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
   let received = 0;
   const info = new Map<string, { handle: string; houseNo: number | null; cat: RemotePlayer['cat'] }>();
   let players: RemotePlayer[] = [];
+  /** 서버가 정한 보내기 간격 (ms) */
+  let sendMs = SEND_MS_MIN;
+  /** 보내려고 찍어 둔 내 위치 (SAMPLE_MS 간격) */
+  let trail: Array<[number, number, number]> = [];
+  let lastFlush = 0;
+  let sampleTimer = 0;
+  let playTimer = 0;
+  /** 다른 유저마다 받은 위치 묶음 (시각, x, z, r) 과 마지막 순번, 동작, 낚시 */
+  interface Track {
+    q: number;
+    pts: Array<{ t: number; x: number; z: number; r: number }>;
+    a: number;
+    f: number;
+  }
+  const tracks = new Map<string, Track>();
+  let visibleIds: string[] = [];
 
   const setSolo = (v: boolean) => {
     if (solo === v) return;
@@ -178,26 +195,37 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
           cat: u.c ? { fur: u.c[0], pattern: u.c[1] as CatPattern, eyeColor: u.c[2] } : null,
         });
     } else if (msg.t === 's') {
-      players = [];
-      for (const [id, x, z, r, a, f] of msg.p) {
-        const meta = info.get(id);
-        if (!meta) continue;
-        const fishing = (f && FISH_POSES[f]) || null;
-        players.push({
-          id,
-          houseNo: meta.houseNo,
-          handle: meta.handle,
-          x: x / POS_SCALE,
-          z: z / POS_SCALE,
-          rotY: r / ROT_SCALE,
-          anim: fishing ? 'sit' : (ANIMS[a] ?? 'idle'),
-          cat: meta.cat,
-          fishing,
-        });
+      // 받은 위치 묶음을 유저마다 쌓아 두고, 화면에는 sendMs 만큼 늦게 되감아 보여 준다 (playback)
+      const now = performance.now();
+      visibleIds = [];
+      for (const tup of msg.p) {
+        const [id, x, z, r, a] = tup;
+        const f = (tup[5] as number | undefined) ?? 0;
+        const q = (tup[6] as number | undefined) ?? -1;
+        const step = (tup[7] as number | undefined) ?? 0;
+        const p = (tup[8] as number[] | undefined) ?? [];
+        if (!info.has(id)) continue;
+        visibleIds.push(id);
+        let tr = tracks.get(id);
+        if (!tr) tracks.set(id, (tr = { q: -2, pts: [], a, f }));
+        tr.a = a;
+        tr.f = f;
+        if (q === tr.q) continue;
+        tr.q = q;
+        const n = step ? Math.floor(p.length / 3) : 0;
+        // 처음 보는 유저는 지난 묶음 없이 지금 자리에서 시작
+        const fresh = tr.pts.length === 0;
+        for (let k = 0; k < n && !fresh; k++) tr.pts.push({ t: now - (n - k) * step, x: p[k * 3], z: p[k * 3 + 1], r: p[k * 3 + 2] });
+        tr.pts.push({ t: now, x, z, r });
+        tr.pts.sort((u, v) => u.t - v.t);
+        if (tr.pts.length > 40) tr.pts.splice(0, tr.pts.length - 40);
       }
-      scene.setRemotePlayers(players);
+      for (const id of [...tracks.keys()]) if (!visibleIds.includes(id)) tracks.delete(id);
+      playback();
     } else if (msg.t === 'room') {
       hooks.onRoomMessage?.(msg.from, msg.d);
+    } else if (msg.t === 'cfg') {
+      if (Number.isFinite(msg.si)) sendMs = Math.max(500, Math.min(5000, msg.si));
     } else if (msg.t === 'bye') {
       if (msg.reason === 'full' || msg.reason === 'limit') fails = SOLO_AFTER_FAILS; // 바로 단독 모드
     } else if (msg.t === 'fix') {
@@ -217,6 +245,8 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     const wasOpen = c.open;
     conn = null;
     players = [];
+    tracks.clear();
+    visibleIds = [];
     scene.setRemotePlayers([]);
     if (!running) return;
     if (!wasOpen) fails++;
@@ -233,6 +263,8 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
 
   /** 방을 옮길 때: 이전 방 유저는 좌표 기준이 다를 수 있으니 바로 지운다 */
   function clearPlayers() {
+    tracks.clear();
+    visibleIds = [];
     if (!players.length) return;
     players = [];
     scene.setRemotePlayers([]);
@@ -255,26 +287,87 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     }
   }
 
-  /** 움직임이 있을 때만 보낸다 */
+  /** 되감기: 지금보다 (보내기 간격 + 여유) 만큼 앞선 때의 자리를 계산해서 씬에 넘긴다 */
+  function playback() {
+    const at = performance.now() - (sendMs + 350);
+    const list: RemotePlayer[] = [];
+    for (const id of visibleIds) {
+      const tr = tracks.get(id);
+      const meta = info.get(id);
+      if (!tr || !meta || !tr.pts.length) continue;
+      const pts = tr.pts;
+      // 다 지난 점은 하나만 남기고 버린다
+      while (pts.length > 2 && pts[1].t < at) pts.shift();
+      let x = pts[0].x;
+      let z = pts[0].z;
+      let r = pts[0].r;
+      let moving = false;
+      if (pts.length > 1 && at > pts[0].t) {
+        const b = pts[1];
+        const k = Math.min(1, (at - pts[0].t) / Math.max(1, b.t - pts[0].t));
+        x = pts[0].x + (b.x - pts[0].x) * k;
+        z = pts[0].z + (b.z - pts[0].z) * k;
+        let dr = b.r - pts[0].r;
+        const full = Math.PI * 2 * ROT_SCALE;
+        dr -= full * Math.round(dr / full);
+        r = pts[0].r + dr * k;
+        moving = k < 1 && Math.hypot(b.x - pts[0].x, b.z - pts[0].z) > 0.5;
+      }
+      const last = pts[pts.length - 1];
+      const done = at >= last.t;
+      const fishing = (tr.f && FISH_POSES[tr.f]) || null;
+      list.push({
+        id,
+        houseNo: meta.houseNo,
+        handle: meta.handle,
+        x: x / POS_SCALE,
+        z: z / POS_SCALE,
+        rotY: r / ROT_SCALE,
+        anim: fishing ? 'sit' : moving ? 'walk' : done ? (ANIMS[tr.a] ?? 'idle') : 'idle',
+        cat: meta.cat,
+        fishing,
+      });
+    }
+    players = list;
+    scene.setRemotePlayers(players);
+  }
+
+  /** SAMPLE_MS 마다 내 위치를 찍어 둔다 (움직이는 동안만) */
+  function sample() {
+    if (document.visibilityState === 'hidden') return;
+    const s = latest ?? scene.getLocalState();
+    const cur: [number, number, number] = [Math.round(s.x * POS_SCALE), Math.round(s.z * POS_SCALE), Math.round(s.rotY * ROT_SCALE)];
+    const prev = trail[trail.length - 1] ?? (lastSent ? [Math.round(lastSent.x * POS_SCALE), Math.round(lastSent.z * POS_SCALE), Math.round(lastSent.rotY * ROT_SCALE)] : null);
+    const moved = !prev || Math.abs(cur[0] - prev[0]) > 0 || Math.abs(cur[1] - prev[1]) > 0 || Math.abs(cur[2] - prev[2]) > 8;
+    if (moved || trail.length) trail.push(cur);
+    if (trail.length > TRAIL_MAX + 1) trail.shift();
+    const animChanged = lastSent !== null && s.anim !== lastSent.anim && (s.anim === 'sit' || lastSent.anim === 'jump');
+    if (fishPose !== sentPose || animChanged) sendNow(true);
+    else if (trail.length && performance.now() - lastFlush >= sendMs) sendNow();
+  }
+
+  /** 찍어 둔 위치를 한 번에 보낸다. force: 움직임이 없어도 지금 상태를 보낸다 */
   function sendNow(force = false) {
     if (document.visibilityState === 'hidden') return;
     const s = latest ?? scene.getLocalState();
-    if (!force && lastSent) {
-      const moved = Math.abs(s.x - lastSent.x) > 0.05 || Math.abs(s.z - lastSent.z) > 0.05;
-      const turned = Math.abs(s.rotY - lastSent.rotY) > 0.08;
-      if (!moved && !turned && s.anim === lastSent.anim && fishPose === sentPose) return;
-    }
+    if (!force && !trail.length) return;
+    const last: [number, number, number] = [Math.round(s.x * POS_SCALE), Math.round(s.z * POS_SCALE), Math.round(s.rotY * ROT_SCALE)];
+    // 마지막 찍은 점이 지금 자리와 같으면 빼고, 그 앞의 점들만 묶음으로 보낸다
+    const before = trail.slice(0, -1);
     const ok = send({
       t: 'm',
-      x: Math.round(s.x * POS_SCALE),
-      z: Math.round(s.z * POS_SCALE),
-      r: Math.round(s.rotY * ROT_SCALE),
+      x: last[0],
+      z: last[1],
+      r: last[2],
       a: Math.max(0, ANIMS.indexOf(s.anim)),
       ...(fishPose ? { f: fishPose } : {}),
+      ...(before.length ? { p: before.flat(), i: SAMPLE_MS } : {}),
     });
     if (ok) {
       lastSent = { ...s };
       sentPose = fishPose;
+      trail = [];
+      lastFlush = performance.now();
     }
   }
 
@@ -303,14 +396,21 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       latest = scene.getLocalState();
       lastSent = null;
       connect();
-      sendTimer = window.setInterval(() => {
-        sendNow();
+      sampleTimer = window.setInterval(() => {
+        sample();
         keepAlive();
-      }, Math.round(1000 / MOVE_SEND_HZ));
+      }, SAMPLE_MS);
+      playTimer = window.setInterval(() => {
+        if (visibleIds.length) playback();
+      }, 100);
     },
     stop() {
       running = false;
-      clearInterval(sendTimer);
+      clearInterval(sampleTimer);
+      clearInterval(playTimer);
+      tracks.clear();
+      visibleIds = [];
+      trail = [];
       clearTimeout(retryTimer);
       clearTimeout(hiddenTimer);
       clearTimeout(zoneTimer);
@@ -340,7 +440,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       const n = pose ? Math.max(0, FISH_POSES.indexOf(pose)) : 0;
       if (n === fishPose) return;
       fishPose = n;
-      if (running) sendNow();
+      if (running) sendNow(true);
     },
     debug() {
       return { room: conn?.room ?? null, open: !!conn?.open, solo, players: players.length, sent, received };

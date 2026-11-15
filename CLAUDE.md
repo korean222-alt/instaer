@@ -54,6 +54,7 @@ createIslandScene(canvas) → IslandScene
 - (걷기 작업 시 추가) setWalkMode(on, startHouseNo?), onNearHouse(cb(houseNo|null))
 - (멀티플레이 작업 시 추가) setRemotePlayers(players: RemotePlayer[]), onLocalMove(cb(state: LocalState)), getLocalState()
 - (작업 5에서 추가) setRoofArt(items: {houseNo, drawingId}[]), setNpcs(npcs: {id, name, x, z, rotY, cat, role?}[]), onNpcTap(cb(id)), setFishing('cast'|'wait'|'bite'|'reel'|'caught'|null), setLocalPosition(x, z, rotY?), renderCatPreview(cat, size?, options?) → PNG data URL. 따로 내보내는 것: fishingSpotAt(x, z) → {kind: 'pond'|'pier', x, z} | null, POND_R, dockArea()
+- (2026-11-15 추가) enterNpcHome(homeId, interior, wallpaper?, floor?), enterCave(level, nodes), setCaveNodes(nodes), exitCave(), onExitCave(cb), caveNodeNear(reach?), setWalkZoom(0~1), renderItemPreview(type, size?). 따로 내보내는 것: npcHomes(zones), caveMouths(zones), mapHills(zones), landAt, CAVE_DEEPER
 - (작업 4에서 추가) enterHouse(houseNo, interior: InteriorItem[], wallpaper?, floor?), exitHouse(), setInteriorItems(items), onDoor(cb(houseNo|null)), onExitHouse(cb(houseNo)), setYardItemsFree(houseNo, items: PlacedItem[]), startPlacing(typeOrItemId?, houseNo?), stopPlacing(), rotatePlacing(step?), onPlace(cb(item)), onPick(cb(itemId)), setDrawings(drawings). 자세한 약속은 `src/scene/README-scene.md`
 - 위치 계산: `houseSlot(houseNo)` → { x, z, zone, neighborhood } (src/scene/layout.ts). 위치는 DB에 저장하지 않는다.
 
@@ -66,7 +67,7 @@ createIslandScene(canvas) → IslandScene
 - 멀티플레이: 내 주변의 몇 명(NEARBY_MAX)만 실시간으로 보인다. 미니게임 방 안에서는 참가자가 거리와 상관없이 모두 보인다. (아래 "멀티플레이 방침")
 - 이번 버전에서 하지 않는 것: 채팅, 개인 땅 구매, 인스타 DM 자동 인증, 사람 캐릭터, 현금 결제.
 - 입주는 soft (2026-11-15 사용자): 인스타 DM 인증은 사업자 인증이 필요해서 못 쓴다. 입주 화면이 운영 계정 팔로우를 부탁만 하고(`FOLLOW_HANDLE`, 비면 건너뜀) 확인은 하지 않는다. 입주할 때 열린 구역 안의 빈 집을 직접 고른다(안 고르면 빈 번지 중 앞 번호). 열린 구역 수는 입주 수로 센다(`src/shared/zones.ts`).
-- 놀거리 (2026-11-15 사용자 요청): 돈은 "츄르"(서버만 지급, 지갑 한 줄 JSON 이라 DB 쓰기가 적다). 퀘스트(오늘의 퀘스트 3개 + 주민 부탁)와 미니게임(낚시, 생선 받기)으로 츄르와 꾸미기 아이템을 얻는다. 동네 가운데마다 주민(잡화점, 오락실, 낚시꾼, 정원사), 빈 집은 들어갈 수 있는 주민 집. 미니게임은 지금은 혼자 하는 2D 판이다(여럿이 하는 방 미니게임은 아직). 규칙은 `src/shared/economy.ts`.
+- 놀거리 (2026-11-15 사용자 요청): 돈은 "츄르"(서버만 지급, 지갑 한 줄 JSON 이라 DB 쓰기가 적다). 퀘스트는 주민에게 말을 걸어 받는다(주민마다 하루 하나, 한국 시간 자정에 새로 + 특별 부탁). 미니게임(낚시, 생선 받기, 동굴 캐기). 물고기/광석은 가방에 들어가고 잡화점에서 팔아야 츄르가 된다. 주민은 섬 모서리의 주민 집 8채에 산다(빈 집은 입주할 집일 뿐 들어갈 수 없다). 미니게임은 지금은 혼자 하는 2D 판이다(여럿이 하는 방 미니게임은 아직). 규칙은 `src/shared/economy.ts`.
 - 입주할 때 고양이(무늬, 털 색, 눈 색)를 고른다(DB houses.cat, 비어 있으면 아이디로 정해진 고양이). 빈 집 마당에는 고양이가 없다.
 
 ## 멀티플레이 방침
@@ -93,4 +94,5 @@ createIslandScene(canvas) → IslandScene
 (작업이 끝날 때마다 `src/scene/README-scene.md`(씬) 또는 `README.md`(앱, 서버)에 적고, 여기에는 한 줄 요약만 남긴다)
 - 씬(Fable): 작업 1(동네 단위 배치), 작업 2(3인칭 걷기: `setWalkMode`, `onNearHouse`), 작업 3a(다른 유저 고양이 표시: `setRemotePlayers`, `onLocalMove`, `getLocalState`), 작업 4(집 안 들어가기, 끌어서 놓는 자유 배치, 32x32 그림: 씬 쪽만, 2026-11-15) 완료. 작업 5(지붕 그림, 주민 고양이, 낚시 모습, 부두 걷기와 부두 낚시터, 위치 되돌리기, 고양이 그림 찍기, 고양이 눈 키우기: 씬 쪽만, 2026-11-15) 완료. 씬 임시 타입은 shared 로 바꿨다. 실제 폰 fps 는 미측정.
 - 앱(Opus): 단계 0, A(입주, 입양 카드, 지역 대항전, 꾸미기, 예뻐요, 오늘의 특이한 집, HUD), B(걷기 버튼, 구경하기), C(Durable Object 실시간 주변 20명, 미니게임 방 인프라, 부하 시험) 완료 (2026-11-14). 원격 D1 `cat-island-db` 생성과 스키마 적용 완료. 실제 배포(GitHub 연결)와 실제 폰 시험은 아직. 소리(배경 음악/효과음, 설정), 아이디 숨기기, 사람 많아져도 D1 무료 한도에 맞게 구역별 요약 표(zone_cache, region_counts) 추가(2026-11-15). 자세한 내용은 README.md, README-realtime.md. 2026-11-15: 작업 4 연결(마당/집 안 자유 배치 저장, 32x32 그림판, 지붕 그림 저장), 츄르/상점/퀘스트/주민/낚시/생선 받기 완료(DB `0004`, 원격 적용 완료). 지붕 그림의 3D 표시는 씬 작업 5 대기. `src/shared` 에 RemotePlayer/LocalState 와 실시간 상수가 생겼으니 씬의 임시 타입은 shared 로 바꿀 것(README.md "Fable 에게 요청"). 씬 작업 5 연결(주민 setNpcs, 부두 바다 낚시, 낚시 모습, 서버 fix → setLocalPosition, 3D 입양 카드, 다른 유저 낚시 단계 전송) 완료(2026-11-15). 고양이 고르기(DB `0005`, 원격 적용), 빈 집 고양이 없애기, 다른 유저 낚싯대(씬, Opus), 첫 실제 배포(Builds API 로 이 브랜치) 완료(2026-11-15). soft 입주(팔로우 부탁, 확인 없음), 집 고르기, 원격 입주 데이터 초기화(2026-11-15).
+- 2026-11-15 (Opus, 씬 포함): 입주 탭 제거(위쪽 "입주하기", 설정에 입양 카드/닉네임 변경 500츄르), 고양이 이름 = 닉네임, 걷기 미니맵과 시야 넓히기, 섬 네 모서리 땅 + 주민 집 8채(빈 집에는 주민 없음), 바위 언덕, 동굴 산과 동굴 1~3층(광석 캐기), 퀘스트는 주민에게 받아야 시작(하루 한 번 새로), 물고기/광석은 가방 → 잡화점에서 팔기, 상점 3D 가구 그림, 탭해서 놓는 배치, 지붕 색 즉시 반영, 지붕 그림 크게 + 지붕 모양 도화지, 실시간 묶어 보내기(동접 500 계산은 README "동접 500명 계산").
 - 입주 화면 변경(2026-11-15 사용자): 입주 첫 화면은 "팔로우하러 가기" 버튼 하나만 항상 띄운다("부탁해요"/"팔로우했어요" 버튼 없음. 누르면 인스타 프로필이 열리고 곧 입주 폼으로 넘어간다. 팔로우 여부는 여전히 확인하지 못한다). 인스타 아이디 대신 **닉네임**(한글/영문/숫자/_, 12자, 중복 불가)을 직접 정한다. 코드 이름 `handle`/`igHandle`/DB `ig_handle` 은 그대로 두고 뜻만 닉네임이다. 화면의 `@` 표시와 "인스타 보러 가기", 아이디 숨기기(설정과 입주 폼)는 없앴다(서버 `setPrivacy` API 는 남겨 둠).

@@ -1,97 +1,90 @@
-// 동네 가운데에 사는 주민(잡화점, 오락실, 낚시꾼, 정원사)과 빈 집(주민 집) 안의 고양이.
-// 씬 작업 5 의 setNpcs 로 그린다 (이름표는 '@' 없이 연두색, 역할마다 모자/소품).
-import { neighborhoodArea, POND_R, type SceneNpc } from '../../scene';
-import { NEIGHBORHOOD_SIZE, ZONE_CAPACITY } from '../../shared/config';
-import { NPC_INFO, residentName, type NpcRole } from '../../shared/economy';
+// 섬 모서리의 주민 집에 사는 주민들 (2026-11-15).
+// 구역마다 주민 집 8채: 탐험가 두더지, 잡화점 보리, 오락실 콩이, 낚시꾼 멸치, 정원사 쑥이, 이웃 셋.
+// 주민은 자기 집 문 옆에 서 있다가 둘레를 조금 걷는다 (씬 setNpcs). 집 안에 들어가면 그 주민이 안에도 있다.
+import { mapHills, npcHomes, type SceneNpc } from '../../scene';
+import { homeRole, NPC_INFO, residentName, type HomeRole } from '../../shared/economy';
 import type { CatLook } from '../../shared/types';
 
 export interface Npc {
   id: string;
-  role: NpcRole | 'resident';
+  role: HomeRole;
   name: string;
   x: number;
   z: number;
   rotY: number;
   cat: CatLook;
-  /** 주민 집 고양이면 그 번지 */
-  houseNo?: number;
+  /** 사는 주민 집 번호 (npcHomes 의 id) */
+  homeId: number;
 }
 
-const LOOK: Record<NpcRole, CatLook> = {
+export interface Home {
+  id: number;
+  role: HomeRole;
+  /** 화면에 쓰는 이름 (예: 잡화점 보리네 집) */
+  label: string;
+  x: number;
+  z: number;
+  rot: number;
+  door: { x: number; z: number };
+}
+
+const LOOK: Record<HomeRole, CatLook> = {
   shop: { fur: '#f4a650', pattern: 'cheese', eyeColor: '#7ac36a' },
   arcade: { fur: '#35323a', pattern: 'tuxedo', eyeColor: '#f2c94c' },
   fisher: { fur: '#a9adb8', pattern: 'gray', eyeColor: '#f0b44a' },
   gardener: { fur: '#f0a04b', pattern: 'calico', eyeColor: '#6fb7e8' },
+  explorer: { fur: '#7d6a5e', pattern: 'black', eyeColor: '#f2c94c' },
+  resident: { fur: '#fffaf2', pattern: 'white', eyeColor: '#6fb7e8' },
 };
 const RESIDENT_LOOKS: CatLook[] = [
   { fur: '#fffaf2', pattern: 'white', eyeColor: '#6fb7e8' },
   { fur: '#34313a', pattern: 'black', eyeColor: '#f2c94c' },
-  { fur: '#f4a650', pattern: 'cheese', eyeColor: '#7ac36a' },
-  { fur: '#a9adb8', pattern: 'gray', eyeColor: '#f0b44a' },
+  { fur: '#f7c27a', pattern: 'cheese', eyeColor: '#7ac36a' },
+  { fur: '#c9ccd4', pattern: 'gray', eyeColor: '#e0a13a' },
 ];
 
+export const npcName = (role: HomeRole, homeId: number) => (role === 'resident' ? `이웃 ${residentName(homeId)}` : `${NPC_INFO[role].title} ${NPC_INFO[role].name}`);
+export const npcLook = (role: HomeRole, homeId: number) => (role === 'resident' ? RESIDENT_LOOKS[homeId % RESIDENT_LOOKS.length] : LOOK[role]);
+
 let cachedZones = -1;
-let cachedList: Npc[] = [];
-/** 연못이 있는 동네 가운데 */
-let ponds: Array<{ x: number; z: number }> = [];
+let cachedNpcs: Npc[] = [];
+let cachedHomes: Home[] = [];
 
-/** 열린 구역의 동네 주민 전체 */
+function build(zones: number) {
+  if (zones === cachedZones) return;
+  cachedZones = zones;
+  cachedHomes = npcHomes(zones).map((h) => {
+    const role = homeRole(h.id);
+    const owner = role === 'resident' ? `이웃 ${residentName(h.id)}` : NPC_INFO[role].name;
+    return { id: h.id, role, label: `${owner}네 집`, x: h.x, z: h.z, rot: h.rot, door: h.door };
+  });
+  cachedNpcs = npcHomes(zones).map((h) => {
+    const role = homeRole(h.id);
+    return { id: `npc-${h.id}`, role, name: npcName(role, h.id), x: h.stand.x, z: h.stand.z, rotY: h.rot, cat: npcLook(role, h.id), homeId: h.id };
+  });
+}
+
+/** 열린 구역의 주민 전체 (섬 좌표) */
 export function townNpcs(unlockedZones: number): Npc[] {
-  if (unlockedZones === cachedZones) return cachedList;
-  cachedZones = unlockedZones;
-  const list: Npc[] = [];
-  ponds = [];
-  const perZone = ZONE_CAPACITY / NEIGHBORHOOD_SIZE;
-  for (let z = 0; z < unlockedZones; z++) {
-    let plazas = 0;
-    for (let i = 0; i < perZone; i++) {
-      const n = z * perZone + i;
-      const a = neighborhoodArea(n);
-      let role: NpcRole;
-      let x = a.x;
-      let zz = a.z;
-      let rotY = 0;
-      if (a.feature === 'pond') {
-        role = 'fisher';
-        ponds.push({ x: a.x, z: a.z });
-        x += 1.3;
-        zz += POND_R + 0.8;
-        rotY = Math.PI; // 연못을 본다
-      } else if (a.feature === 'tree') {
-        role = 'gardener';
-        x -= 2.4;
-        zz += 2.6;
-        rotY = -0.6;
-      } else {
-        role = plazas++ % 2 === 0 ? 'shop' : 'arcade';
-        x += 2.4;
-        zz += 2.1;
-        rotY = 0.5;
-      }
-      list.push({ id: `npc-${role}-${n}`, role, name: `${NPC_INFO[role].title} ${NPC_INFO[role].name}`, x, z: zz, rotY, cat: LOOK[role] });
-    }
-  }
-  cachedList = list;
-  return list;
+  build(unlockedZones);
+  return cachedNpcs;
 }
 
+/** 열린 구역의 주민 집 전체 */
+export function townHomes(unlockedZones: number): Home[] {
+  build(unlockedZones);
+  return cachedHomes;
+}
+
+/** 연못 (지도용) */
 export function pondsOf(unlockedZones: number) {
-  townNpcs(unlockedZones);
-  return ponds;
+  return mapHills(unlockedZones).ponds;
 }
 
-/** 주민 집 안의 고양이 (방 좌표) */
-export function residentNpc(houseNo: number): Npc {
-  return {
-    id: `npc-resident-${houseNo}`,
-    role: 'resident',
-    name: residentName(houseNo),
-    x: 1.5,
-    z: -1.2,
-    rotY: -0.4,
-    cat: RESIDENT_LOOKS[houseNo % RESIDENT_LOOKS.length],
-    houseNo,
-  };
+/** 주민 집 안의 주인 고양이 (방 좌표) */
+export function homeNpc(homeId: number): Npc {
+  const role = homeRole(homeId);
+  return { id: `npc-in-${homeId}`, role, name: npcName(role, homeId), x: 1.5, z: -1.2, rotY: -0.4, cat: npcLook(role, homeId), homeId };
 }
 
 export const toSceneNpc = (n: Npc): SceneNpc => ({ id: n.id, name: n.name, x: n.x, z: n.z, rotY: n.rotY, cat: n.cat, role: n.role });

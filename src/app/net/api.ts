@@ -126,7 +126,7 @@ export const setPrivacy = (hideHandle: boolean) => call<{ ok: true; hideHandle: 
 export interface WalletView {
   coins: number;
   data: WalletData;
-  /** 오늘의 퀘스트 id 3개 */
+  /** 오늘 주민들이 주는 부탁 id (주민마다 하나) */
   daily: string[];
 }
 type WithWallet<T> = T & { ok: true; wallet: WalletView };
@@ -144,11 +144,17 @@ export const deleteDrawing = (id: string) => call<{ ok: true }>('DELETE', `/api/
 export const fetchWallet = () => call<{ wallet: WalletView }>('GET', '/api/wallet');
 export const buyItem = (type: string) => call<WithWallet<{ bought: string }>>('POST', '/api/shop/buy', { type });
 export const claimQuest = (id: string) => call<WithWallet<{ coins: number; item?: string }>>('POST', '/api/quest/claim', { id });
+export const acceptQuest = (id: string) => call<WithWallet<{ accepted: string }>>('POST', '/api/quest/accept', { id });
 export const reportFish = (catches: Array<{ id: string; cm: number }>) =>
-  call<WithWallet<{ counted: number; coins: number; capped: boolean }>>('POST', '/api/game/fish', { catches });
+  call<WithWallet<{ counted: number; coins: number; full?: boolean }>>('POST', '/api/game/fish', { catches });
+export const reportMine = (ores: Array<{ id: string; level: number }>) =>
+  call<WithWallet<{ counted: number; full?: boolean }>>('POST', '/api/game/mine', { ores });
+export const sellItems = (items: Record<string, number>) =>
+  call<WithWallet<{ sold: number; coins: number; capped: boolean }>>('POST', '/api/shop/sell', { items });
+export const renameMe = (handle: string) => call<WithWallet<{ house: House }>>('POST', '/api/me/rename', { handle });
 export const reportArcade = (score: number, ms: number) =>
   call<WithWallet<{ score: number; coins: number; prize: string | null; morePaid: number }>>('POST', '/api/game/arcade', { score, ms });
-export const reportVisit = (houseNo: number) =>
-  call<WithWallet<{ coins: number; already?: boolean; full?: boolean }>>('POST', '/api/game/visit', { houseNo });
+export const reportVisit = (home: number) =>
+  call<WithWallet<{ coins: number; already?: boolean; full?: boolean }>>('POST', '/api/game/visit', { home });
 export const like = (houseNo: number) =>
   call<{ ok: boolean; likes: number; code?: string; message?: string }>('POST', `/api/like/${houseNo}`);

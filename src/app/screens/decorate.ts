@@ -1,7 +1,7 @@
 // 꾸미기 탭: 마당/집 안 꾸미기 시작, 지붕(색 + 직접 그린 그림), 내 그림, 상점으로 가기.
 import { DRAWING_MAX, ROOF_COLORS } from '../../shared/config';
 import { CURRENCY } from '../../shared/economy';
-import { forgetMyDrawing, loadMyDrawings, myDrawingList, sceneHasRoofArt, syncArt } from '../art';
+import { forgetMyDrawing, loadMyDrawings, myDrawingList, syncArt } from '../art';
 import { play } from '../audio/sound';
 import { ApiError, deleteDrawing, saveDecor } from '../net/api';
 import { ctl } from '../play/ctl';
@@ -18,8 +18,7 @@ export const decorateScreen: Screen = {
   id: 'decorate',
   title: '꾸미기',
   render(root, param, ctx) {
-    const me = state.me;
-    if (!me) {
+    if (!state.me) {
       root.innerHTML = `
         <p class="empty">입주하면 마당과 집 안을 손가락으로 끌어서 꾸미고,<br />직접 그린 그림을 지붕과 액자에 붙일 수 있어요.</p>
         <a class="btn primary" href="#/move-in">입주하러 가기</a>`;
@@ -31,13 +30,15 @@ export const decorateScreen: Screen = {
       void ctl.placement?.start(param);
       return;
     }
-    const houseNo = me.houseNo;
+    const houseNo = state.me.houseNo;
     if (!ctl.explore?.walking()) state.scene.focusHouse(houseNo);
     let selected: string | null = null;
     let busy = false;
 
     const roofArt = () => state.roofArt.get(houseNo) ?? null;
     const draw = () => {
+      // 2026-11-15: 처음 연 순간의 me 가 아니라 지금 값을 쓴다 (지붕 색이 판을 다시 열어야 바뀌던 문제)
+      const me = state.me!;
       const list = myDrawingList();
       const art = roofArt();
       const artD = art ? list.find((d) => d.id === art) : null;
@@ -49,11 +50,12 @@ export const decorateScreen: Screen = {
           <button class="btn primary" data-act="yard">마당 꾸미기</button>
           <button class="btn primary" data-act="room">집 안 꾸미기</button>
         </div>
-        <p class="note">섬 화면에서 아이템을 손가락으로 끌어서 놓아요. 집 안은 걷기 모드로 들어가요.</p>
+        <p class="note">아래 줄에서 아이템을 고르고, 섬에서 놓을 곳을 누르면 그 자리에 놓여요. 집 안은 걷기 모드로 들어가요.</p>
 
         <h3 class="sec">지붕</h3>
         <div class="roof-preview" style="--roof:${me.roofColor}">
-          <div class="roof">${artD ? `<img class="pixel" src="${drawingUrl(artD)}" alt="지붕 그림" />` : ''}</div><div class="wall"></div>
+          <div class="roof-top"><i class="ear l"></i><i class="ear r"></i></div>
+          <div class="roof">${artD ? `<img class="pixel" src="${drawingUrl(artD, true)}" alt="지붕 그림" />` : ''}</div><div class="wall"><i class="door"></i></div>
         </div>
         <div class="swatches">
           ${ROOF_COLORS.map((c) => `<button class="swatch${c === me.roofColor ? ' on' : ''}" data-roof="${c}" style="background:${c}" aria-label="지붕 색 ${c}" aria-pressed="${c === me.roofColor}"></button>`).join('')}
@@ -62,9 +64,9 @@ export const decorateScreen: Screen = {
         <div class="art-row wrap">
           <button class="art-pick${!art ? ' on' : ''}" data-roofart="">없음</button>
           ${list.map((d) => `<button class="art-pick${art === d.id ? ' on' : ''}" data-roofart="${esc(d.id)}">${drawingThumb(d, 40)}</button>`).join('')}
-          <button class="art-pick new" data-act="roof-new">+ 새로 그리기</button>
+          <button class="art-pick new" data-act="roof-new">+ 지붕에 그리기</button>
+          ${art ? '<button class="art-pick new" data-act="roof-edit">지금 그림 고치기</button>' : ''}
         </div>
-        ${sceneHasRoofArt() ? '' : '<p class="note">지붕 그림은 저장되고 다른 사람에게도 전해져요. 3D 섬의 지붕에 그려지는 것은 섬 화면 업데이트(Fable 작업 5) 뒤부터예요.</p>'}
 
         <h3 class="sec">내 그림 <small>${list.length}/${DRAWING_MAX}</small></h3>
         <div class="art-row wrap">
@@ -81,6 +83,18 @@ export const decorateScreen: Screen = {
     async function patchRoof(patch: { roofColor?: string; roofArt?: string | null }) {
       if (busy) return;
       busy = true;
+      // 누르자마자 화면과 섬에 먼저 보여 준다 (저장이 실패하면 되돌린다)
+      const before = { roofColor: state.me!.roofColor, roofArt: roofArt() };
+      if (patch.roofColor) {
+        setMe({ ...state.me!, roofColor: patch.roofColor });
+        pushHousesToScene(true);
+      }
+      if (patch.roofArt !== undefined) {
+        setMyRoofArt(patch.roofArt);
+        syncArt();
+      }
+      play('tap');
+      draw();
       try {
         const res = await saveDecor(houseNo, patch);
         applyWallet(res.wallet, { silent: true });
@@ -91,10 +105,13 @@ export const decorateScreen: Screen = {
         pushHousesToScene();
         syncArt();
         play('save');
-        toast('지붕을 바꿨어요');
       } catch (err) {
         play('error');
         toast(err instanceof ApiError ? err.message : '저장하지 못했어요');
+        setMe({ ...state.me!, roofColor: before.roofColor });
+        setMyRoofArt(before.roofArt);
+        pushHousesToScene(true);
+        syncArt();
       }
       busy = false;
       draw();
@@ -116,9 +133,11 @@ export const decorateScreen: Screen = {
         ctx.close();
         void ctl.placement?.start(act);
       } else if (act === 'new') openDrawEditor();
-      else if (act === 'roof-new') openDrawEditor((d) => void patchRoof({ roofArt: d.id }));
+      else if (act === 'roof-new') openDrawEditor((d) => void patchRoof({ roofArt: d.id }), undefined, true);
+      else if (act === 'roof-edit' && roofArt()) openDrawEditor((d) => void patchRoof({ roofArt: d.id }), roofArt()!, true);
       else if (act === 'copy' && selected) openDrawEditor(undefined, selected);
       else if (act === 'to-roof' && selected) void patchRoof({ roofArt: selected });
+      else if (act === 'copy-roof' && selected) openDrawEditor((d) => void patchRoof({ roofArt: d.id }), selected, true);
       else if (act === 'del' && selected) {
         if (!confirm('이 그림을 지울까요? 붙여 둔 곳은 빈 액자로 보여요')) return;
         try {

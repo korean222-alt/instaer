@@ -101,7 +101,8 @@ export function catLook(handle: string): CatProfile {
     pattern: kind.pattern,
     fur: pick(kind.furs),
     eyeColor: pick(kind.eyes),
-    name: pick(NAMES),
+    // 2026-11-15: 고양이 이름은 입주할 때 정한 닉네임 그대로 (자동으로 지은 이름을 쓰지 않는다)
+    name: (pick(NAMES), handle.trim() || '고양이'),
     patternLabel: kind.label,
     personality: pick(PERSONALITIES),
   };

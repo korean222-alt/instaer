@@ -6,8 +6,10 @@ const urls = new Map<string, string>();
 
 export const paletteOf = (d: Pick<Drawing, 'palette'>) => (d.palette?.length === 16 ? d.palette : [...DEFAULT_PALETTE]);
 
-export function drawingUrl(d: Drawing): string {
-  const hit = urls.get(d.id);
+/** clearZero: 바탕(0번 색)을 투명하게 (지붕 미리 보기) */
+export function drawingUrl(d: Drawing, clearZero = false): string {
+  const key = clearZero ? `${d.id}|roof` : d.id;
+  const hit = urls.get(key);
   if (hit) return hit;
   const px = decodeDrawing(d.pixels);
   const c = document.createElement('canvas');
@@ -16,12 +18,13 @@ export function drawingUrl(d: Drawing): string {
   const pal = paletteOf(d);
   if (px) {
     for (let i = 0; i < px.length; i++) {
+      if (clearZero && px[i] === 0) continue;
       ctx.fillStyle = pal[px[i]];
       ctx.fillRect(i % DRAWING_SIZE, Math.floor(i / DRAWING_SIZE), 1, 1);
     }
   }
   const url = c.toDataURL('image/png');
-  urls.set(d.id, url);
+  urls.set(key, url);
   return url;
 }
 

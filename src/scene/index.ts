@@ -3,6 +3,8 @@ import type { CatLook, House, RegionId, YardItem } from '../shared/types';
 import { CatFlock } from './cat/CatFlock';
 import { createProceduralCatModel } from './cat/catModel';
 import { CatPreview, type CatPreviewOptions } from './cat/catPreview';
+import { Cave, CAVE_EXIT_Z, CAVE_START, CAVE_WALK, type CaveNode } from './cave/Cave';
+import { ItemPreview } from './free/itemPreview';
 import { Atmosphere } from './core/atmosphere';
 import { CameraRig } from './core/cameraRig';
 import { regionIndex } from './core/labelLayer';
@@ -22,9 +24,12 @@ import {
   collidersNear,
   fishingSpotAt,
   houseNoAt,
+  homeDoor,
+  HOME_SPOTS,
   houseSlot,
   landAt,
   LOCAL_SLOTS,
+  caveMouths,
   lotGate,
   neighborhoodArea,
   neighborhoodAt,
@@ -52,6 +57,9 @@ export type { FishingSpot } from './layout';
 export type { FishingState } from './fishing/FishingRig';
 export type { SceneNpc } from './npc/Npcs';
 export type { CatPreviewOptions } from './cat/catPreview';
+export type { CaveNode } from './cave/Cave';
+export { CAVE_DEEPER } from './cave/Cave';
+export { landAt, npcHomes, caveMouths, mapHills } from './layout';
 
 /**
  * 고양이섬 3D 씬.
@@ -160,6 +168,30 @@ export interface IslandScene {
    * size 는 한 변의 픽셀 수(32~512, 기본 256). WebGL 이 끊긴 동안에는 빈 글자를 돌려준다.
    */
   renderCatPreview(cat: CatLook, size?: number, options?: CatPreviewOptions): string;
+
+  // ── 2026-11-15: 주민 집, 동굴, 시야, 가구 그림 ──
+
+  /**
+   * 섬 모서리의 주민 집(npcHomes 의 id) 안으로 들어간다. 방은 enterHouse 와 같다.
+   * 문으로 걸어 나오면 onExitHouse 를 -(id + 1) 로 부른다.
+   */
+  enterNpcHome(homeId: number, interior: InteriorItem[], wallpaper?: string, floor?: string): void;
+  /**
+   * 동굴 안으로 (깊이 1~3). 동굴 산 입구에서 부른다. 광석 바위는 nodes 로 준다.
+   * 이미 동굴 안이면 그 깊이로 옮긴다 (안쪽 입구 앞에서 시작). 나가는 길로 걸어 나오면 onExitCave.
+   */
+  enterCave(level: number, nodes: CaveNode[]): void;
+  /** 동굴 안 광석 바위 목록을 바꾼다 (캔 것을 빼고 다시 넘긴다) */
+  setCaveNodes(nodes: CaveNode[]): void;
+  /** 동굴 밖(입구 앞)으로 나온다. 이때는 onExitCave 를 부르지 않는다 */
+  exitCave(): void;
+  onExitCave(cb: () => void): void;
+  /** 동굴 안에서 (x, z) 둘레 reach 안의 가장 가까운 광석 바위 id */
+  caveNodeNear(reach?: number): string | null;
+  /** 걷기 시야 넓히기 0(기본) ~ 1(가장 넓게). 카메라가 조금 더 멀고 높아진다 */
+  setWalkZoom(amount: number): void;
+  /** 꾸미기 아이템 하나를 그림으로 찍는다 (상점, 꾸미기 줄). 배경이 투명한 PNG data URL */
+  renderItemPreview(type: string, size?: number): string;
 
   /** 캔버스 크기가 바뀌면 부른다 */
   resize(): void;
@@ -280,6 +312,13 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   let exitCb: ((houseNo: number) => void) | null = null;
   let doorHouse: number | null = null;
   const roomBlockers: Array<{ x: number; z: number; r: number }> = [];
+  // 동굴 (처음 들어갈 때 만든다)
+  let cave: Cave | null = null;
+  let inCave = false;
+  let caveExitCb: (() => void) | null = null;
+  /** 동굴에서 나오면 설 자리 (들어간 입구 앞) */
+  const caveReturn = { x: 0, z: 0, yaw: 0 };
+  let itemPreview: ItemPreview | null = null;
   scene.add(world.group, houses.group, mark.group, player.mesh, remotes.group, npcs.group, fishRig.group, placer.group);
   placer.onChange = () => {
     if (inside !== null) interior?.redraw(placer.heldId);
@@ -298,7 +337,8 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   const walkCam = new WalkCamera();
   walker.hasHouse = walkCam.hasHouse = (houseNo) => houses.has(houseNo);
   walker.blockers = (x, z, out) => {
-    if (inside !== null && interior) blockersOf(interior.space, interior.list, roomBlockers, 0, out);
+    if (inCave && cave) cave.blockers(out);
+    else if (inside !== null && interior) blockersOf(interior.space, interior.list, roomBlockers, 0, out);
     else houses.blockersNear(x, z, out);
   };
   // 주민이 설 수 있는 자리: 밖이면 땅 위이고 집/나무/가구에 안 걸리는 곳, 집 안이면 방 안이고 가구에 안 걸리는 곳
@@ -307,6 +347,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   npcs.canStand = (x, z) => {
     const pad = 0.42;
     npcBlock.length = 0;
+    if (inCave && cave) return cave.canStand(x, z, pad);
     if (inside !== null && interior) {
       if (Math.abs(x) > ROOM_WALK.maxX - pad || z < ROOM_WALK.minZ + pad || z > ROOM_WALK.maxZ - pad) return false;
       blockersOf(interior.space, interior.list, roomBlockers, 0, npcBlock);
@@ -430,6 +471,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
         return;
       }
     }
+    if (inCave) return;
     if (inside !== null) {
       // 집 안: 아이템을 누르면 알린다 (꾸미기 모드에서는 끌어 놓기 쪽이 먼저 받는다)
       const hit = interior && !placer.active ? pickItem(interior.space, interior.list, rig.rayFrom(cx, cy)) : null;
@@ -540,8 +582,17 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     npcs.clear();
     npcs.flatY = null;
     walker.room = null;
-    const s = houseSlot(houseNo);
-    walker.place(s.x + DOOR_STAND_Z * Math.sin(s.rot), s.z + DOOR_STAND_Z * Math.cos(s.rot), s.rot);
+    if (houseNo < 0) {
+      // 주민 집: 그 집 문 앞에 선다
+      const id = -houseNo - 1;
+      const h = HOME_SPOTS[id % HOME_SPOTS.length];
+      const c = zoneCenter(Math.floor(id / HOME_SPOTS.length));
+      const d = homeDoor(h, 2.9);
+      walker.place(c.x + d.x, c.z + d.z, h.rot);
+    } else {
+      const s = houseSlot(houseNo);
+      walker.place(s.x + DOOR_STAND_Z * Math.sin(s.rot), s.z + DOOR_STAND_Z * Math.cos(s.rot), s.rot);
+    }
     walkCam.snap(walker.x, walker.groundY, walker.z, walkCam.yaw);
     walkFocus.x = walker.x;
     walkFocus.z = walker.z;
@@ -549,6 +600,26 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     sent.x = NaN;
     blend = 1;
     if (viaDoor) exitCb?.(houseNo);
+  };
+
+  /** 동굴 밖으로: 입구 앞에 동굴을 등지고 선다 */
+  const leaveCave = (viaExit: boolean) => {
+    if (!inCave) return;
+    inCave = false;
+    scene.add(player.mesh, remotes.group, npcs.group, placer.group);
+    remotes.clear();
+    remotes.flatY = null;
+    npcs.clear();
+    npcs.flatY = null;
+    walker.room = null;
+    walker.place(caveReturn.x, caveReturn.z, caveReturn.yaw);
+    walkCam.snap(walker.x, walker.groundY, walker.z, walkCam.yaw);
+    walkFocus.x = walker.x;
+    walkFocus.z = walker.z;
+    shadowX = Infinity;
+    sent.x = NaN;
+    blend = 1;
+    if (viaExit) caveExitCb?.();
   };
 
   const wrapAngle = (a: number) => a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
@@ -627,6 +698,37 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     }
 
     atmosphere.update(dt);
+    if (inCave && cave) {
+      // 동굴 안: 섬은 그리지 않는다
+      controls.update();
+      controls.takeLook();
+      walker.update(dt, controls.moveX, controls.moveY, 0, controls.takeJump());
+      cave.updateCamera(camera, dt, walker.x, walker.z);
+      cave.update(dt);
+      player.setPose(0, walker.x, walker.y + 0.01, walker.z, walker.yaw, PLAYER_SCALE);
+      player.setAnim(0, walker.phase, walker.walk, 0, 0);
+      player.setMood(0, walker.sit, walker.yawn);
+      notifyMove(now);
+      remoteView.focusX = walker.x;
+      remoteView.focusZ = walker.z;
+      remoteView.walking = true;
+      remoteView.dist = WALK_DIST;
+      remoteView.viewportW = viewportW;
+      remoteView.viewportH = viewportH;
+      remoteView.quality = quality;
+      remotes.update(performance.now(), dt, remoteView);
+      npcView.focusX = walker.x;
+      npcView.focusZ = walker.z;
+      npcView.walking = true;
+      npcView.dist = WALK_DIST;
+      npcView.viewportW = viewportW;
+      npcView.viewportH = viewportH;
+      npcs.update(dt, npcView);
+      renderer.render(cave.scene, camera);
+      cpuMs = cpuMs * 0.9 + (performance.now() - t0) * 0.1;
+      if (walker.z > CAVE_EXIT_Z) leaveCave(true);
+      return;
+    }
     if (inside !== null && interior) {
       // 집 안: 섬은 그리지 않고 방 하나만 그린다
       controls.update();
@@ -692,7 +794,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       target.dist = t.dist;
     }
     // 시점이 바뀌는 동안에는 이전 카메라 자리에서 새 자리로 부드럽게 옮긴다
-    const fovGoal = walking ? WALK_FOV : VIEW_FOV;
+    const fovGoal = walking ? WALK_FOV + walkCam.zoom * 8 : VIEW_FOV;
     if (blend < 1) {
       blend = Math.min(1, blend + dt / 0.9);
       const e = blend * blend * (3 - 2 * blend);
@@ -774,6 +876,44 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   canvas.addEventListener('webglcontextlost', onLost);
   canvas.addEventListener('webglcontextrestored', onRestored);
 
+  /** 방 하나(집 안) 열기. houseNo 가 음수면 주민 집 -(id+1) */
+  const openRoom = (houseNo: number, items: InteriorItem[], wallpaper?: string, floor?: string) => {
+      if (inCave) leaveCave(false);
+      interior ??= new Interior(atmosphere.shared, geometries, drawings);
+      if (inside === houseNo) {
+        interior.restyle(wallpaper, floor);
+        interior.setItems(items);
+        if (placer.active) placer.relist(interior.list);
+        interior.redraw(placer.heldId);
+        return;
+      }
+      if (inside !== null) leaveHouse(false);
+      if (!walking) api.setWalkMode(true);
+      stopFishing();
+      placer.end();
+      interior.setShadows(quality < 3);
+      interior.open(houseNo, items, wallpaper, floor);
+      inside = houseNo;
+      interior.scene.add(player.mesh, remotes.group, npcs.group, placer.group);
+      // 밖에 있던 유저들은 방 안에 보이면 안 된다. 앱이 같은 집 안 사람만 다시 넘긴다
+      remotes.clear();
+      remotes.flatY = 0;
+      npcs.clear();
+      npcs.flatY = 0;
+      walker.room = ROOM_WALK;
+      walker.place(ROOM_START.x, ROOM_START.z, Math.PI);
+      sent.x = NaN;
+      blend = 1;
+      if (nearHouse !== null) {
+        nearHouse = null;
+        nearCb?.(null);
+      }
+      if (doorHouse !== null) {
+        doorHouse = null;
+        doorCb?.(null);
+      }
+    };
+
   const api: IslandScene = {
     setHouses(list) {
       houses.setHouses(list);
@@ -808,6 +948,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     },
     setWalkMode(on, startHouseNo) {
       leaveHouse(false);
+      leaveCave(false);
       stopFishing();
       if (on) {
         const start = startHouseNo !== undefined && houses.has(startHouseNo) ? startHouseNo : null;
@@ -874,29 +1015,35 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     getLocalState: localState,
     enterHouse(houseNo, items, wallpaper, floor) {
       if (!houses.has(houseNo)) return;
-      interior ??= new Interior(atmosphere.shared, geometries, drawings);
-      if (inside === houseNo) {
-        interior.restyle(wallpaper, floor);
-        interior.setItems(items);
-        if (placer.active) placer.relist(interior.list);
-        interior.redraw(placer.heldId);
-        return;
-      }
+      openRoom(houseNo, items, wallpaper, floor);
+    },
+    enterNpcHome(homeId, items, wallpaper, floor) {
+      if (!Number.isInteger(homeId) || homeId < 0) return;
+      openRoom(-homeId - 1, items, wallpaper, floor);
+    },
+    enterCave(level, nodes) {
+      cave ??= new Cave();
       if (inside !== null) leaveHouse(false);
       if (!walking) api.setWalkMode(true);
       stopFishing();
       placer.end();
-      interior.setShadows(quality < 3);
-      interior.open(houseNo, items, wallpaper, floor);
-      inside = houseNo;
-      interior.scene.add(player.mesh, remotes.group, npcs.group, placer.group);
-      // 밖에 있던 유저들은 방 안에 보이면 안 된다. 앱이 같은 집 안 사람만 다시 넘긴다
-      remotes.clear();
-      remotes.flatY = 0;
-      npcs.clear();
-      npcs.flatY = 0;
-      walker.room = ROOM_WALK;
-      walker.place(ROOM_START.x, ROOM_START.z, Math.PI);
+      if (!inCave) {
+        // 나올 때 설 자리: 가장 가까운 동굴 입구 앞
+        const zone = Math.max(0, zoneAt(walker.x, walker.z));
+        const m = caveMouths(zone + 1)[zone];
+        caveReturn.x = m.x + Math.sin(m.rot) * 1.4;
+        caveReturn.z = m.z + Math.cos(m.rot) * 1.4;
+        caveReturn.yaw = m.rot;
+        cave.scene.add(player.mesh, remotes.group, npcs.group);
+        remotes.clear();
+        remotes.flatY = 0;
+        npcs.clear();
+        npcs.flatY = 0;
+      }
+      inCave = true;
+      cave.open(level, Array.isArray(nodes) ? nodes : []);
+      walker.room = CAVE_WALK;
+      walker.place(CAVE_START.x, CAVE_START.z, Math.PI);
       sent.x = NaN;
       blend = 1;
       if (nearHouse !== null) {
@@ -907,6 +1054,25 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
         doorHouse = null;
         doorCb?.(null);
       }
+    },
+    setCaveNodes(nodes) {
+      if (inCave && cave) cave.setNodes(Array.isArray(nodes) ? nodes : []);
+    },
+    exitCave() {
+      leaveCave(false);
+    },
+    onExitCave(cb) {
+      caveExitCb = cb;
+    },
+    caveNodeNear(reach = 1.1) {
+      return inCave && cave ? cave.nodeNear(walker.x, walker.z, reach) : null;
+    },
+    setWalkZoom(amount) {
+      walkCam.zoom = Math.max(0, Math.min(1, Number(amount) || 0));
+    },
+    renderItemPreview(type, size = 128) {
+      itemPreview ??= new ItemPreview(renderer, geometries, atmosphere.shared);
+      return itemPreview.render(type, size);
     },
     exitHouse() {
       leaveHouse(false);

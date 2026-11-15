@@ -46,6 +46,10 @@ interface Entry {
   material: THREE.MeshLambertMaterial | null;
   /** 벽지/바닥처럼 이어 붙여 쓰는 사본 */
   tiled: Map<string, THREE.Texture> | null;
+  /** 지붕용: 0번 색(바탕)을 비워서 지붕 색이 보이게 한 것 (2026-11-15) */
+  roof: THREE.MeshLambertMaterial | null;
+  idx: Uint8Array | null;
+  palette: readonly string[];
 }
 
 export class DrawingStore {
@@ -68,6 +72,13 @@ export class DrawingStore {
       const entry = old ?? this.create();
       this.paint(entry.texture, idx, palette);
       entry.key = key;
+      entry.idx = idx;
+      entry.palette = palette;
+      if (entry.roof) {
+        entry.roof.map?.dispose();
+        entry.roof.dispose();
+        entry.roof = null;
+      }
       this.entries.set(d.id, entry);
       changed = true;
     }
@@ -92,6 +103,18 @@ export class DrawingStore {
       e.material = new THREE.MeshLambertMaterial({ map: e.texture, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     }
     return e.material;
+  }
+
+  /** 지붕에 붙이는 재질: 바탕색(0번)은 비워서 지붕 색이 보인다. 그림이 없으면 null */
+  roofMaterial(id: string | undefined): THREE.MeshLambertMaterial | null {
+    const e = id === undefined ? undefined : this.entries.get(id);
+    if (!e || !e.idx) return null;
+    if (!e.roof) {
+      const t = this.create().texture;
+      this.paint(t, e.idx, e.palette, true);
+      e.roof = new THREE.MeshLambertMaterial({ map: t, alphaTest: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    }
+    return e.roof;
   }
 
   /** 벽지/바닥처럼 이어 붙여 쓰는 텍스처 (그림 한 장 = 1m). 그림이 없으면 null */
@@ -121,10 +144,10 @@ export class DrawingStore {
     texture.magFilter = THREE.NearestFilter;
     texture.minFilter = THREE.LinearMipmapLinearFilter;
     texture.generateMipmaps = true;
-    return { key: '', texture, material: null, tiled: null };
+    return { key: '', texture, material: null, tiled: null, roof: null, idx: null, palette: DEFAULT_PALETTE };
   }
 
-  private paint(texture: THREE.DataTexture, idx: Uint8Array, palette: readonly string[]) {
+  private paint(texture: THREE.DataTexture, idx: Uint8Array, palette: readonly string[], clearZero = false) {
     const rgb = new Uint8Array(48);
     for (let i = 0; i < 16; i++) {
       // 잘못된 색 이름이면 기본 팔레트 색을 쓴다
@@ -145,7 +168,7 @@ export class DrawingStore {
         data[o] = rgb[k];
         data[o + 1] = rgb[k + 1];
         data[o + 2] = rgb[k + 2];
-        data[o + 3] = 255;
+        data[o + 3] = clearZero && k === 0 ? 0 : 255;
       }
     }
     texture.needsUpdate = true;
@@ -155,5 +178,9 @@ export class DrawingStore {
     e.texture.dispose();
     if (e.tiled) for (const t of e.tiled.values()) t.dispose();
     e.material?.dispose();
+    if (e.roof) {
+      e.roof.map?.dispose();
+      e.roof.dispose();
+    }
   }
 }

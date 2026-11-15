@@ -93,7 +93,10 @@ export type SceneryKind =
   | 'flowers'
   | 'tuft'
   | 'lantern'
-  | 'bench';
+  | 'bench'
+  | 'npcHome'
+  | 'caveHill'
+  | 'hill';
 export interface Scenery {
   kind: SceneryKind;
   x: number;
@@ -289,8 +292,73 @@ function buildPaths(): PathSeg[] {
   return out;
 }
 
+// ───────────── 섬 모서리: 주민 집, 동굴 산, 바위 언덕 (2026-11-15) ─────────────
+
+/** 주민 집 하나 (구역 가운데 기준). rot 은 집이 보는 쪽 (0 이면 +z) */
+export interface HomeSpot {
+  x: number;
+  z: number;
+  rot: number;
+  /** 모서리 번호 (CORNERS) */
+  corner: number;
+}
+/** 구역마다 같은 자리에 있는 주민 집 8채. 순서가 곧 주민 집 번호 (앱이 역할을 붙인다) */
+export const HOME_SPOTS: readonly HomeSpot[] = [
+  { x: -71, z: -57, rot: 0.25, corner: 0 },
+  { x: -92, z: -56, rot: 0.15, corner: 0 },
+  { x: 72, z: -61, rot: -0.2, corner: 1 },
+  { x: 86, z: -55, rot: -0.35, corner: 1 },
+  { x: -76, z: 60, rot: 0.3, corner: 2 },
+  { x: -90, z: 70, rot: 0.2, corner: 2 },
+  { x: 76, z: 60, rot: -0.3, corner: 3 },
+  { x: 90, z: 70, rot: -0.2, corner: 3 },
+];
+/** 주민 집 몸체의 절반 크기와 문 앞 거리 (몸체 가운데 기준) */
+export const HOME_HALF = { x: 1.75, z: 1.45 };
+export const HOME_DOOR = 2.1;
+export const homeDoor = (h: HomeSpot, dist = HOME_DOOR) => ({ x: h.x + Math.sin(h.rot) * dist, z: h.z + Math.cos(h.rot) * dist });
+
+/** 북서쪽 동굴 산 (구역 가운데 기준). mouth 는 동굴 입구 앞 (여기 가까이 가면 들어갈 수 있다) */
+export const CAVE_HILL = { x: -83, z: -73, r: 8.2, rot: 0.55 };
+export const CAVE_MOUTH = { x: CAVE_HILL.x + Math.sin(CAVE_HILL.rot) * (CAVE_HILL.r + 0.9), z: CAVE_HILL.z + Math.cos(CAVE_HILL.rot) * (CAVE_HILL.r + 0.9) };
+/** 바위 언덕 (올라갈 수 없는 큰 바위산). 섬을 덜 밋밋하게 */
+export const HILLS: ReadonlyArray<{ x: number; z: number; r: number; h: number; seed: number }> = [
+  { x: -91, z: -63, r: 2.6, h: 2.6, seed: 11 },
+  { x: 88, z: -71, r: 4.6, h: 3.8, seed: 12 },
+  { x: 75, z: -74, r: 2.6, h: 2.4, seed: 13 },
+  { x: -92, z: 58, r: 3.0, h: 2.8, seed: 14 },
+  { x: -84, z: 78, r: 2.4, h: 2.0, seed: 15 },
+  { x: 93, z: 57, r: 3.2, h: 3.0, seed: 16 },
+  { x: 84, z: 79, r: 2.2, h: 1.8, seed: 17 },
+];
+
+function buildCornerPaths(base: PathSeg[]): PathSeg[] {
+  const out: PathSeg[] = [];
+  const r = ZONE.pathR * 0.9;
+  const door = (i: number) => homeDoor(HOME_SPOTS[i], HOME_DOOR + 0.6);
+  // 북서: 1줄 길 서쪽 끝에서 동굴 입구까지, 가는 길에 주민 집 두 채
+  polyline(out, [...bend({ x: -52, z: roadZ(0, -52) }, { x: -64, z: -36 }, { x: -68, z: -50 }, 8), ...bend({ x: -68, z: -50 }, { x: -72, z: -56 }, CAVE_MOUTH, 6).slice(1)], r);
+  polyline(out, bend(door(0), { x: door(0).x - 2, z: door(0).z + 1 }, { x: -68, z: -50 }, 4), r * 0.8);
+  polyline(out, bend(door(1), { x: -85, z: -53 }, { x: -77, z: -57 }, 5), r * 0.8);
+  // 북동: 1줄 길 동쪽 끝에서
+  polyline(out, bend({ x: 52, z: roadZ(0, 52) }, { x: 64, z: -36 }, { x: 68, z: -52 }, 8), r);
+  polyline(out, bend({ x: 68, z: -52 }, { x: 70, z: -56 }, door(2), 4), r * 0.8);
+  polyline(out, bend({ x: 68, z: -52 }, { x: 80, z: -50 }, door(3), 5), r * 0.8);
+  // 남서, 남동: 3줄 길 끝에서
+  for (const sign of [-1, 1]) {
+    const a = sign < 0 ? 4 : 6;
+    const b = a + 1;
+    polyline(out, bend({ x: sign * 52, z: roadZ(2, sign * 52) }, { x: sign * 62, z: 80 }, { x: sign * 70, z: 66 }, 8), r);
+    polyline(out, bend({ x: sign * 70, z: 66 }, { x: sign * 72, z: 64 }, door(a), 3), r * 0.8);
+    polyline(out, bend({ x: sign * 70, z: 66 }, { x: sign * 80, z: 70 }, door(b), 5), r * 0.8);
+  }
+  void base;
+  return out;
+}
+
 /** 구역 안의 길 (구역 가운데 기준, 다리로 가는 길은 빼고) */
-export const ZONE_PATHS: readonly PathSeg[] = buildPaths();
+const BASE_PATHS = buildPaths();
+export const ZONE_PATHS: readonly PathSeg[] = [...BASE_PATHS, ...buildCornerPaths(BASE_PATHS)];
 
 /** 다리/항구로 이어지는 길 (구역 가운데 기준). 다리가 놓인 방향만 그린다 */
 export function linkPaths(links: { e: boolean; w: boolean; n: boolean; s: boolean }, harbor: boolean): PathSeg[] {
@@ -359,6 +427,17 @@ const LAND_BANDS: Array<[number, number, number, number, number]> = [
 ];
 
 /**
+ * 섬 네 모서리에 붙인 땅 (2026-11-15). 주민들의 집, 동굴 산, 바위 언덕이 있다.
+ * 0: 북서(동굴 산), 1: 북동(장터), 2: 남서(바닷가), 3: 남동(정원)
+ */
+export const CORNERS: ReadonlyArray<{ x: number; z: number; rx: number; rz: number }> = [
+  { x: -79, z: -65, rx: 19, rz: 17 },
+  { x: 79, z: -65, rx: 19, rz: 17 },
+  { x: -79, z: 65, rx: 19, rz: 17 },
+  { x: 79, z: 65, rx: 19, rz: 17 },
+];
+
+/**
  * 구역의 매끈한 땅 모양 (해안 굴곡을 넣기 전): 안쪽이 +, 바다가 -.
  * 동네마다 둥근 땅덩이가 있고 그것들이 이어져서 올록볼록한 섬이 된다.
  */
@@ -374,6 +453,10 @@ export function zoneBaseLand(lx: number, lz: number): number {
   for (const [ax, az, bx, bz, r] of LAND_BANDS) {
     const c = capsule(lx, lz, ax, az, bx, bz, r);
     if (c > -6) d = smoothUnion(d, c, 6);
+  }
+  for (const c of CORNERS) {
+    const q = Math.hypot((lx - c.x) / c.rx, (lz - c.z) / c.rz);
+    if (q < 1.8) d = smoothUnion(d, (1 - q) * Math.min(c.rx, c.rz), 7);
   }
   // 구역 범위를 넘지 않게 한다
   return Math.min(d, ZONE.halfX - Math.abs(lx), ZONE.halfZ - Math.abs(lz));
@@ -429,6 +512,17 @@ function buildScenery(): Scenery[] {
       add('lantern', nb.x - 3.6, nb.z + 3.4);
     }
   }
+  // 섬 모서리: 주민 집 (seed = 집 번호), 동굴 산, 바위 언덕, 집 앞 등불
+  HOME_SPOTS.forEach((h, i) => {
+    out.push({ kind: 'npcHome', x: h.x, z: h.z, rot: h.rot, scale: 1, seed: i });
+    const d = homeDoor(h, 2.6);
+    add('lantern', d.x + Math.cos(h.rot) * 1.6, d.z - Math.sin(h.rot) * 1.6);
+  });
+  out.push({ kind: 'caveHill', x: CAVE_HILL.x, z: CAVE_HILL.z, rot: CAVE_HILL.rot, scale: 1, seed: 7 });
+  add('lantern', CAVE_MOUTH.x + Math.cos(CAVE_HILL.rot) * 2.2, CAVE_MOUTH.z - Math.sin(CAVE_HILL.rot) * 2.2);
+  add('lantern', CAVE_MOUTH.x - Math.cos(CAVE_HILL.rot) * 2.2, CAVE_MOUTH.z + Math.sin(CAVE_HILL.rot) * 2.2);
+  for (const hl of HILLS) out.push({ kind: 'hill', x: hl.x, z: hl.z, rot: hl.seed * 1.7, scale: hl.r, seed: hl.seed });
+
   // 줄 길을 따라 등불
   for (let row = 0; row < 3; row++) {
     const span = row === 1 ? 72 : 48;
@@ -443,6 +537,10 @@ function buildScenery(): Scenery[] {
     if (Math.abs(x - ZONE.bridgeX) < 1.8 + margin && Math.abs(z) > 28) return false;
     if (Math.abs(z - ZONE.bridgeZ) < 3.2 + margin && Math.abs(x) > 74) return false;
     for (const nb of NEIGHBORHOODS) if (Math.hypot(x - nb.x, z - nb.z) < 6.2 + margin) return false;
+    for (const h of HOME_SPOTS) if (Math.hypot(x - h.x, z - h.z) < 3.6 + margin) return false;
+    if (Math.hypot(x - CAVE_HILL.x, z - CAVE_HILL.z) < CAVE_HILL.r + 1.2 + margin) return false;
+    if (Math.hypot(x - CAVE_MOUTH.x, z - CAVE_MOUTH.z) < 2.6 + margin) return false;
+    for (const hl of HILLS) if (Math.hypot(x - hl.x, z - hl.z) < hl.r + 0.6 + margin) return false;
     for (const l of LOCAL_SLOTS) if (Math.hypot(x - l.x, z - l.z) < 4.7 + margin) return false;
     for (const s of ZONE_PATHS) if (segDist(x, z, s) < 0.55 + margin) return false;
     return true;
@@ -498,6 +596,15 @@ function buildColliders(): Collider[] {
     else if (s.kind === 'rock') circle(s.x, s.z, 0.5 * s.scale, 0.4);
     else if (s.kind === 'lantern') circle(s.x, s.z, 0.2, 0.4);
     else if (s.kind === 'bench') box(s.x, s.z, 0.78, 0.26, s.rot, 0.5);
+    else if (s.kind === 'npcHome') box(s.x, s.z, HOME_HALF.x, HOME_HALF.z, s.rot, 3.4, -1, 0.3);
+    else if (s.kind === 'caveHill') {
+      // 산은 둥근 몸통 여러 개로 막는다 (입구 쪽은 앱이 "동굴 들어가기" 로 안으로 보낸다)
+      circle(s.x, s.z, CAVE_HILL.r, 7, CAVE_HILL.r * 0.7);
+      for (let k = 0; k < 5; k++) {
+        const a = s.rot + Math.PI + (k - 2) * 0.7;
+        circle(s.x + Math.sin(a) * 4, s.z + Math.cos(a) * 4, CAVE_HILL.r * 0.6, 6, 0);
+      }
+    } else if (s.kind === 'hill') circle(s.x, s.z, s.scale * 0.95, 3, s.scale * 0.6);
   }
   return out;
 }
@@ -742,4 +849,52 @@ export function fishingSpotAt(x: number, z: number): FishingSpot | null {
     return { kind: 'pond', x: px + (x - px) * k, z: pz + (z - pz) * k };
   }
   return null;
+}
+
+// ───────────── 섬 모서리 (세계 좌표로, 앱과 지도용) ─────────────
+
+/** 열린 구역들의 주민 집 (id = 구역 * 8 + 순번). door 는 문 앞 (가까이 가면 들어갈 수 있다), stand 는 주인이 서 있을 자리 */
+export function npcHomes(zoneCount: number): Array<{ id: number; zone: number; index: number; x: number; z: number; rot: number; door: { x: number; z: number }; stand: { x: number; z: number } }> {
+  const out = [];
+  for (let zone = 0; zone < Math.max(1, zoneCount); zone++) {
+    const c = zoneCenter(zone);
+    for (let i = 0; i < HOME_SPOTS.length; i++) {
+      const h = HOME_SPOTS[i];
+      const d = homeDoor(h, HOME_DOOR + 0.5);
+      const side = homeDoor(h, HOME_DOOR + 1.4);
+      out.push({
+        id: zone * HOME_SPOTS.length + i,
+        zone,
+        index: i,
+        x: c.x + h.x,
+        z: c.z + h.z,
+        rot: h.rot,
+        door: { x: c.x + d.x, z: c.z + d.z },
+        stand: { x: c.x + side.x + Math.cos(h.rot) * 2.2, z: c.z + side.z - Math.sin(h.rot) * 2.2 },
+      });
+    }
+  }
+  return out;
+}
+
+/** 열린 구역들의 동굴 입구 (세계 좌표). rot 은 입구가 보는 쪽 */
+export function caveMouths(zoneCount: number): Array<{ zone: number; x: number; z: number; rot: number; hillX: number; hillZ: number; r: number }> {
+  const out = [];
+  for (let zone = 0; zone < Math.max(1, zoneCount); zone++) {
+    const c = zoneCenter(zone);
+    out.push({ zone, x: c.x + CAVE_MOUTH.x, z: c.z + CAVE_MOUTH.z, rot: CAVE_HILL.rot, hillX: c.x + CAVE_HILL.x, hillZ: c.z + CAVE_HILL.z, r: CAVE_HILL.r });
+  }
+  return out;
+}
+
+/** 지도에 그릴 바위 언덕과 연못 (세계 좌표) */
+export function mapHills(zoneCount: number): { hills: Array<{ x: number; z: number; r: number }>; ponds: Array<{ x: number; z: number; r: number }> } {
+  const hills = [];
+  const ponds = [];
+  for (let zone = 0; zone < Math.max(1, zoneCount); zone++) {
+    const c = zoneCenter(zone);
+    for (const h of HILLS) hills.push({ x: c.x + h.x, z: c.z + h.z, r: h.r });
+    for (const nb of NEIGHBORHOODS) if (nb.feature === 'pond') ponds.push({ x: c.x + nb.x, z: c.z + nb.z, r: POND_R });
+  }
+  return { hills, ponds };
 }

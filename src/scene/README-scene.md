@@ -15,6 +15,15 @@
 | 다른 유저 낚시 모습(`RemotePlayer.fishing` → 가까운 3명까지 낚싯대/찌), 낚시 시작 때 카메라를 물 쪽으로 (2026-11-15, 사용자 허락으로 Opus 가 함. `tasks/페이블-6-다른유저낚시.md`) | 완료 |
 | 작업 5: 지붕 그림 (`setRoofArt`), 주민 고양이 (`setNpcs`, `onNpcTap`), 낚시 모습 (`setFishing`, `fishingSpotAt`), 부두 걷기와 부두 낚시터, 위치 되돌리기 (`setLocalPosition`), 고양이 그림 찍기 (`renderCatPreview`), 고양이 눈 키우기 | 완료 (씬 쪽만. 앱에 붙이는 일은 아래 "앱 쪽에 알릴 것" 0번) |
 
+| 2026-11-15 (Opus): 섬 네 모서리 땅(`CORNERS`), 주민 집 8채(`HOME_SPOTS`, `props.npcHome`, `enterNpcHome`), 바위 언덕 7개(`HILLS`), 동굴 산(`CAVE_HILL`)과 동굴 안 1~3층(`cave/Cave.ts`, `enterCave`, `setCaveNodes`, `exitCave`, `onExitCave`, `caveNodeNear`), 걷기 시야 넓히기(`setWalkZoom`), 아이템 그림 찍기(`renderItemPreview`), 지붕 그림을 지붕 앞면 전체로 키움(`ROOF_ART_SIZE` 3.0, 바탕색 투명 `DrawingStore.roofMaterial`), 꾸미기 중 아이템을 든 채 빈 곳을 짧게 누르면 그 자리로 옮김(`Placer.moveHeldTo`), 탐험가 모자 | 완료 (앱도 붙임) |
+
+**2026-11-15 추가 메모**
+
+- 동굴은 집 안처럼 섬과 따로 떨어진 장면이에요(좌표: 가운데 (0,0), 폭 ±7.2, 깊이 -9.5~7, 앞쪽이 나가는 길). 걷기는 `Walker.room` 으로 막고 바위/광석은 원으로 막아요. 횃불 점광원 3개, 그림자 없음.
+- 주민 집 문으로 나오면 `onExitHouse` 를 `-(id+1)` 로 불러요. 앱은 번호와 상관없이 "집에서 나옴"으로만 써요.
+- 주민 집/언덕/동굴 산은 장식 덩어리(구역마다 같은 모양, 그리기 수 그대로)에 합쳐져 있어요. 막는 것은 `ZONE_COLLIDERS`.
+- 확인: 데모와 앱(세로 390x844, 소프트웨어 그래픽)에서 모서리 모습, 주민 집, 동굴 1층 입구~캐기~안쪽 굴, 지붕 그림, 누른 곳에 놓기. 실제 폰 fps 는 미측정.
+
 **아직 못 한 것**
 
 - **실제 폰에서의 fps 측정.** 작업 환경이 그래픽카드 없는 서버라서 여기서 나오는 fps 는 폰과 관계가 없어요. 아래 "성능"에 대신 잰 값을 적었어요.

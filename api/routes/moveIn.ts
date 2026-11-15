@@ -9,6 +9,8 @@ import { invalidate } from '../lib/cache';
 import { bumpRegion, HOUSE_COLS, isRegion, markZoneDirty, regionStats, toHouse, type HouseRow } from '../lib/houses';
 import { allow } from '../lib/rateLimit';
 import { createSession, isSecure, sessionCookie, sessionHouse } from '../lib/session';
+import { loadWallet, saveWallet, walletView } from '../lib/wallet';
+import { CURRENCY, RENAME_COST } from '../../src/shared/economy';
 import { REGIONS_KEY } from './regions';
 import { VILLAGE_KEY } from './village';
 
@@ -135,4 +137,39 @@ export async function setPrivacy(request: Request, env: Env): Promise<Response> 
     invalidate(VILLAGE_KEY);
   }
   return json({ ok: true, hideHandle: body.hideHandle });
+}
+
+/**
+ * POST /api/me/rename {handle} : 닉네임(= 고양이 이름) 바꾸기. RENAME_COST 츄르 (2026-11-15).
+ * 닉네임 규칙과 중복 검사는 입주와 같다. 지갑과 집 이름을 한 번에(batch) 바꾼다.
+ */
+export async function rename(request: Request, env: Env): Promise<Response> {
+  if (!(await allow(env.RL_WRITE, `write:${clientIp(request)}`, 40))) return error(429, 'rate_limited', '잠시 후에 다시 해 주세요');
+  const mine = await sessionHouse(env.DB, request);
+  if (!mine) return error(401, 'no_session', '입주한 사람만 바꿀 수 있어요');
+  const body = await readJson<{ handle?: unknown }>(request);
+  if (!body || typeof body.handle !== 'string') return error(400, 'bad_request', '새 닉네임을 적어 주세요');
+  const handle = normalizeHandle(body.handle);
+  const problem = handleProblem(handle);
+  if (problem) return error(400, `handle_${problem}`, HANDLE_PROBLEM_TEXT[problem]);
+  if (handle === mine.house.ig_handle) return error(400, 'same', '지금 닉네임과 같아요');
+  const taken = await env.DB.prepare('SELECT house_no FROM houses WHERE ig_handle = ?').bind(handle).first<{ house_no: number }>();
+  if (taken) return error(409, 'handle_taken', `${handle} 닉네임은 이미 다른 고양이가 쓰고 있어요`);
+  const w = await loadWallet(env.DB, mine.house.id);
+  if (w.coins < RENAME_COST) return error(400, 'no_coins', `${CURRENCY}가 ${RENAME_COST - w.coins}개 모자라요`);
+  w.coins -= RENAME_COST;
+  try {
+    await env.DB.batch([
+      env.DB.prepare('UPDATE houses SET ig_handle = ? WHERE id = ?').bind(handle, mine.house.id),
+      saveWallet(env.DB, mine.house.id, w),
+      markZoneDirty(env.DB, mine.house.house_no, 2),
+    ]);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/UNIQUE|ig_handle/i.test(msg)) return error(409, 'handle_taken', `${handle} 닉네임은 이미 다른 고양이가 쓰고 있어요`);
+    throw e;
+  }
+  invalidate(VILLAGE_KEY);
+  const house = toHouse({ ...mine.house, ig_handle: handle }, true);
+  return json({ ok: true, house, wallet: walletView(w, mine.house.house_no) });
 }

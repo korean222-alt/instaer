@@ -103,7 +103,7 @@ export function cardSvg(info: CardInfo, catImg = ''): string {
   }
 
   <text x="540" y="1150" font-size="120" font-weight="900" fill="#5b4636" text-anchor="middle">${esc(look.name)}</text>
-  <text x="540" y="1230" font-size="44" font-weight="700" fill="#8a715e" text-anchor="middle">${esc(info.handle)} 의 고양이</text>
+  <text x="540" y="1230" font-size="44" font-weight="700" fill="#8a715e" text-anchor="middle">${info.houseNo}번지에 사는 고양이</text>
   ${chipEls}
 
   <rect x="110" y="1430" width="860" height="${quote.length > 1 ? 210 : 150}" rx="44" fill="#ffffff" opacity="0.9"/>

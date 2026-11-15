@@ -4,12 +4,12 @@ import type { Env } from './env';
 import { error } from './http';
 import { health } from './routes/health';
 import { like } from './routes/like';
-import { me, moveIn, setPrivacy } from './routes/moveIn';
+import { me, moveIn, rename, setPrivacy } from './routes/moveIn';
 import { regions } from './routes/regions';
 import { village } from './routes/village';
 import { realtimeConnect, realtimeUsage } from './routes/realtime';
 import { deleteDrawing, getDecor, getDrawings, getWallet, myDrawings, postDrawing, putDecor } from './routes/decor';
-import { arcade, buy, claim, fish, visit } from './routes/game';
+import { accept, arcade, buy, claim, fish, mine, sell, visit } from './routes/game';
 
 export { RealtimeRoom } from './realtime/RealtimeRoom';
 
@@ -42,6 +42,10 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (method === 'POST' && path === '/api/drawings') return postDrawing(request, env);
   if (method === 'POST' && path === '/api/shop/buy') return buy(request, env);
   if (method === 'POST' && path === '/api/quest/claim') return claim(request, env);
+  if (method === 'POST' && path === '/api/quest/accept') return accept(request, env);
+  if (method === 'POST' && path === '/api/shop/sell') return sell(request, env);
+  if (method === 'POST' && path === '/api/game/mine') return mine(request, env);
+  if (method === 'POST' && path === '/api/me/rename') return rename(request, env);
   if (method === 'POST' && path === '/api/game/fish') return fish(request, env);
   if (method === 'POST' && path === '/api/game/arcade') return arcade(request, env);
   if (method === 'POST' && path === '/api/game/visit') return visit(request, env);

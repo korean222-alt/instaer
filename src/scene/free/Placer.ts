@@ -55,6 +55,12 @@ export class Placer {
   private downY = 0;
   private downAt = 0;
   private moved = 0;
+  /** 아이템을 든 채 빈 곳을 누른 터치 (짧게 누르면 그 자리로 옮긴다. 끌면 카메라가 움직인다) */
+  private groundId = -1;
+  private groundX = 0;
+  private groundY = 0;
+  private groundAt = 0;
+  private revertTimer: ReturnType<typeof setTimeout> | undefined;
   private offX = 0;
   private offZ = 0;
   private readonly pointers = new Map<number, { x: number; y: number }>();
@@ -353,6 +359,13 @@ export class Placer {
     const hit = pickItem(this.space, shown, ray);
     if (!hit) {
       this.pointers.delete(e.pointerId);
+      // 2026-11-15: 아이템을 든 채 빈 곳을 짧게 누르면 그 자리로 옮긴다 (터치는 카메라에도 그대로 간다)
+      if (h && this.groundId < 0) {
+        this.groundId = e.pointerId;
+        this.groundX = e.clientX;
+        this.groundY = e.clientY;
+        this.groundAt = performance.now();
+      }
       return;
     }
     if (!h || hit.id !== h.id) {
@@ -386,6 +399,7 @@ export class Placer {
   }
 
   private onMove(e: PointerEvent) {
+    if (e.pointerId === this.groundId && Math.hypot(e.clientX - this.groundX, e.clientY - this.groundY) > TAP_PX) this.groundId = -1;
     const p = this.pointers.get(e.pointerId);
     if (!p || this.dragId < 0 || !this.space || !this.held) return;
     p.x = e.clientX;
@@ -423,6 +437,11 @@ export class Placer {
   }
 
   private onUp(e: PointerEvent) {
+    if (e.pointerId === this.groundId) {
+      this.groundId = -1;
+      if (e.type === 'pointerup' && performance.now() - this.groundAt < TAP_MS && this.active && this.space && this.held && this.dragId < 0) this.moveHeldTo(this.ray(e));
+      return;
+    }
     if (!this.pointers.delete(e.pointerId)) return;
     if (e.pointerId === this.twistId) {
       this.twistId = -1;
@@ -441,7 +460,46 @@ export class Placer {
     this.refresh();
   }
 
+  /** 손에 든 아이템을 광선이 가리키는 자리로 옮긴다. 놓을 수 있으면 바로 놓고, 아니면 빨갛게 그 자리에 둔다 */
+  private moveHeldTo(ray: THREE.Ray) {
+    const s = this.space!;
+    const h = this.held!;
+    const def = itemDef(h.type);
+    if (def.mount === 'wall') {
+      const w = this.wallPoint(ray);
+      if (!w) return;
+      const lim = s.wall - def.hx - 0.06;
+      const along = round2(Math.max(-lim, Math.min(lim, w.along)));
+      if (w.wall === 0) Object.assign(h, { x: along, z: -s.wall, rotY: 0 });
+      else Object.assign(h, { x: -s.wall, z: along, rotY: wrap(Math.PI / 2) });
+    } else {
+      const f = this.floorPoint(ray);
+      if (!f) return;
+      if (f.x < s.minX - 0.6 || f.x > s.maxX + 0.6 || f.z < s.minZ - 0.6 || f.z > s.maxZ + 0.6) return;
+      const pad = Math.min(def.hx, def.hz);
+      h.x = round2(Math.max(s.minX + pad, Math.min(s.maxX - pad, f.x)));
+      h.z = round2(Math.max(s.minZ + pad, Math.min(s.maxZ - pad, f.z)));
+    }
+    this.valid = canPlace(s, h, this.list);
+    if (this.valid) this.commit(false);
+    else {
+      // 놓을 수 없는 곳: 잠깐 빨갛게 보여 준 뒤 마지막으로 놓였던 자리로 돌아간다
+      const id = h.id;
+      clearTimeout(this.revertTimer);
+      this.revertTimer = setTimeout(() => {
+        if (this.held?.id !== id || this.dragging || this.valid) return;
+        this.commit(true);
+        this.valid = true;
+        this.refresh();
+        this.onChange?.();
+      }, 650);
+    }
+    this.refresh();
+    this.onChange?.();
+  }
+
   private cancelDrag() {
+    this.groundId = -1;
     if (this.dragId >= 0 && this.canvas.hasPointerCapture?.(this.dragId)) this.canvas.releasePointerCapture(this.dragId);
     this.dragId = -1;
     this.twistId = -1;

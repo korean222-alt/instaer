@@ -77,8 +77,9 @@ export function startFishing(opts: FishingOptions = {}) {
     const list = catches.splice(0, catches.length);
     try {
       const res = await reportFish(list);
-      applyWallet(res.wallet, { coins: res.coins });
-      if (res.capped) toast(`오늘 미니게임 ${CURRENCY} 한도에 닿았어요. 내일 또 만나요`, 3000);
+      applyWallet(res.wallet, { silent: true });
+      toast(`물고기 ${res.counted}마리를 가방에 넣었어요. 잡화점 보리에게 팔면 ${CURRENCY}가 돼요`, 2800);
+      if (res.full) toast('가방이 가득 찼어요. 잡화점에 팔아 주세요', 3000);
     } catch (e) {
       toast(e instanceof ApiError ? e.message : '물고기를 알리지 못했어요');
     }
@@ -134,7 +135,7 @@ export function startFishing(opts: FishingOptions = {}) {
     play(isRareFish(f.def.id) ? 'fanfare' : 'save');
     shell.setMessage(`
       <div class="catch">${fishSvg(f.def.color, 64)}<div><b>${esc(f.def.label)}</b> ${f.cm}cm
-      <small>${f.def.rarity === 'legend' ? '전설!' : f.def.rarity === 'rare' ? '희귀한 물고기!' : f.def.rarity === 'junk' ? '...물고기가 아니네' : ''} ${state.me ? `${f.def.price} ${CURRENCY}` : '(입주하면 츄르로 바꿔 줘요)'}</small></div></div>`);
+      <small>${f.def.rarity === 'legend' ? '전설!' : f.def.rarity === 'rare' ? '희귀한 물고기!' : f.def.rarity === 'junk' ? '...물고기가 아니네' : ''} ${state.me ? `팔면 ${f.def.price} ${CURRENCY}` : '(입주하면 가방에 모여요)'}</small></div></div>`);
     shell.setButtons(`<button class="btn" data-act="stop">그만하기 (${catches.length}마리)</button><button class="btn primary" data-act="again">한 번 더</button>`);
     if (catches.length >= FISH_PER_REPORT) void flush();
   }

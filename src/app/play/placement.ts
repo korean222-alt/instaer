@@ -40,10 +40,24 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
   let panel: Panel = null;
   let saving = false;
 
+  // 위: 제목, 저장/취소, 고른 아이템 할 일 / 아래: 아이템 그림 줄 (2026-11-15, 엄지로 고르기 쉽게)
   const bar = document.createElement('div');
   bar.className = 'decor-bar';
   bar.hidden = true;
   document.getElementById('app')!.appendChild(bar);
+  const dock = document.createElement('div');
+  dock.className = 'decor-dock';
+  dock.hidden = true;
+  document.getElementById('app')!.appendChild(dock);
+  /** 아이템 그림 (씬이 찍은 것) */
+  const pic = (type: string) => {
+    try {
+      const url = scene.renderItemPreview(type, 96);
+      return url ? `<img src="${url}" alt="" width="48" height="48" draggable="false" />` : '';
+    } catch {
+      return '';
+    }
+  };
 
   const max = () => (where === 'room' ? FREE_ROOM_MAX : FREE_YARD_MAX);
   const dirty = () => !same(items, saved) || (where === 'room' && (wallpaper !== savedSurf.wallpaper || floor !== savedSurf.floor));
@@ -87,9 +101,11 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
   function draw() {
     if (!where) {
       bar.hidden = true;
+      dock.hidden = true;
       return;
     }
     bar.hidden = false;
+    dock.hidden = false;
     const it = picked ? items.find((i) => i.id === picked) : null;
     const def = it ? decorItem(it.type) : null;
     const shown = DECOR_ITEMS.filter((d) => where === 'room' || d.mount !== 'wall');
@@ -115,23 +131,26 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
       </div>
       ${
         it && def
-          ? `<div class="decor-sel"><b>${esc(def.label)}</b>
+          ? `<div class="decor-sel picked"><b>${esc(def.label)} 고름</b><span class="hint-line">놓을 곳을 누르거나 끌어서 옮겨요</span></div>
+             <div class="decor-sel">
               ${def.mount !== 'wall' ? '<button class="pill btn-pill" data-act="rotate">돌리기</button>' : ''}
               ${def.art ? `<button class="pill btn-pill${panel === 'art' ? ' on' : ''}" data-act="art">그림</button>` : ''}
-              <button class="pill btn-pill" data-act="remove">치우기</button></div>`
-          : `<div class="decor-sel hint-line">${where === 'room' ? '아이템을 끌어서 옮기고, 두 손가락으로 비틀면 돌아가요' : '아이템을 끌어서 옮겨요. 빨갛게 보이면 놓을 수 없는 곳이에요'}</div>`
+              <button class="pill btn-pill" data-act="remove">치우기</button>
+              <button class="pill btn-pill primary" data-act="done">다 놓았어요</button></div>`
+          : `<div class="decor-sel hint-line">아래에서 아이템을 고르고, 섬에서 놓을 곳을 눌러요. 놓인 아이템을 누르면 다시 골라요</div>`
       }
       ${
         where === 'room'
           ? `<div class="decor-sel"><button class="pill btn-pill${panel === 'wallpaper' ? ' on' : ''}" data-act="wallpaper">벽지</button><button class="pill btn-pill${panel === 'floor' ? ' on' : ''}" data-act="floor">바닥</button></div>`
           : ''
       }
-      ${panelHtml}
-      <div class="decor-strip">
+      ${panelHtml}`;
+    dock.innerHTML = `<div class="decor-strip">
         ${shown
           .map((d) => {
             const own = hasItem(d.type);
-            return `<button class="strip-item${own ? '' : ' locked'}" data-type="${d.type}">${esc(d.label)}${own ? '' : `<small>${d.price} ${CURRENCY}</small>`}</button>`;
+            const on = it?.type === d.type;
+            return `<button class="strip-item${own ? '' : ' locked'}${on ? ' on' : ''}" data-type="${d.type}">${pic(d.type)}<span>${esc(d.label)}</span>${own ? '' : `<small>${d.price} ${CURRENCY}</small>`}</button>`;
           })
           .join('')}
       </div>`;
@@ -170,7 +189,7 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
     explore.refresh();
   }
 
-  bar.addEventListener('click', (e) => {
+  const onClick = (e: Event) => {
     const t = (e.target as HTMLElement).closest<HTMLElement>('button');
     if (!t || !where) return;
     const it = picked ? items.find((i) => i.id === picked) : null;
@@ -188,6 +207,7 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
         return;
       }
       panel = null;
+      play('tap');
       scene.startPlacing(type, where === 'yard' ? houseNo : undefined);
     } else if (t.dataset.art !== undefined && it) {
       it.drawingId = t.dataset.art || undefined;
@@ -206,6 +226,11 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
       else if (act === 'rotate') {
         scene.rotatePlacing();
         play('rotate');
+      } else if (act === 'done') {
+        picked = null;
+        panel = null;
+        play('place');
+        scene.startPlacing(null, where === 'yard' ? houseNo : undefined);
       } else if (act === 'remove' && it) {
         items = items.filter((i) => i.id !== it.id);
         picked = null;
@@ -233,7 +258,9 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
       }
     }
     draw();
-  });
+  };
+  bar.addEventListener('click', onClick);
+  dock.addEventListener('click', onClick);
 
   const api: Placement = {
     active: () => where !== null,

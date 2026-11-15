@@ -6,8 +6,12 @@
 import { DurableObject } from 'cloudflare:workers';
 import { MOVE_SEND_HZ, NEARBY_MAX, NEARBY_RADIUS, ROOM_MAX } from '../../src/shared/config';
 import {
+  DAY_MSG_SOFT,
   FISH_POSES,
   MAX_JUMP,
+  SEND_MS_MAX,
+  SEND_MS_MIN,
+  TRAIL_MAX,
   MAX_MSG_PER_SEC,
   MAX_SPEED,
   POS_SCALE,
@@ -44,6 +48,10 @@ interface Att extends RtUser {
   k: number;
   /** 연속으로 거절한 위치 수 (너무 많으면 다시 맞춘다) */
   bad: number;
+  /** 위치 순번, 지난 위치 묶음과 그 간격 */
+  q: number;
+  p: number[];
+  i: number;
 }
 
 interface Usage {
@@ -67,6 +75,10 @@ export class RealtimeRoom extends DurableObject<Env> {
   private trailing: ReturnType<typeof setTimeout> | null = null;
   private usage: Usage = { day: day(), messages: 0, connects: 0, peak: 0, broadcasts: 0 };
   private lastFlush = Date.now();
+  /** 오늘 받은 메시지 (저장된 값 + 아직 안 저장한 값). 보내기 간격을 정할 때 쓴다 */
+  private savedToday = -1;
+  /** 지금 보내기 간격 (ms) */
+  private sendMs = SEND_MS_MIN;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -104,10 +116,13 @@ export class RealtimeRoom extends DurableObject<Env> {
       return new Response(null, { status: 101, webSocket: client, headers });
     }
 
-    const att: Att = { ...user, id: crypto.randomUUID().slice(0, 8), room, x: 0, z: 0, r: 0, a: 0, f: 0, t: 0, w: 0, k: 0, bad: 0 };
+    const att: Att = { ...user, id: crypto.randomUUID().slice(0, 8), room, x: 0, z: 0, r: 0, a: 0, f: 0, t: 0, w: 0, k: 0, bad: 0, q: 0, p: [], i: 0 };
     this.ctx.acceptWebSocket(server, [user.uid]);
     server.serializeAttachment(att);
     this.sendTo(server, { t: 'hello', id: att.id, room, st: Date.now() });
+    if (this.savedToday < 0) this.savedToday = (await this.ctx.storage.get<Usage>(`usage:${day()}`))?.messages ?? 0;
+    this.sendMs = this.pickSendMs(live + 1);
+    this.sendTo(server, { t: 'cfg', si: this.sendMs });
     this.count('connects');
     this.usage.peak = Math.max(this.usage.peak, live + 1);
     // 방에서는 위치가 오기 전에도 서로 정보를 알 수 있게 바로 한 번 돌린다
@@ -163,6 +178,18 @@ export class RealtimeRoom extends DurableObject<Env> {
           return;
         }
       }
+      // 지난 위치 묶음: 마지막 위치에서 그 시간 안에 갈 수 있는 거리만 받는다 (아니면 버린다)
+      let trail: number[] = [];
+      const step = typeof msg.i === 'number' ? Math.max(100, Math.min(1000, Math.round(msg.i))) : 0;
+      if (Array.isArray(msg.p) && step && msg.p.length % 3 === 0 && msg.p.length <= TRAIL_MAX * 3) {
+        const n = msg.p.length / 3;
+        let ok = msg.p.every(Number.isFinite);
+        for (let k = 0; ok && k < n; k++) {
+          const secs = ((n - k) * step) / 1000;
+          if (Math.hypot(msg.p[k * 3] - x, msg.p[k * 3 + 1] - z) / POS_SCALE > MAX_SPEED * secs + MAX_JUMP) ok = false;
+        }
+        if (ok) trail = msg.p.map((v) => Math.round(v));
+      }
       att.x = Math.round(x);
       att.z = Math.round(z);
       att.r = Math.round(r);
@@ -170,6 +197,9 @@ export class RealtimeRoom extends DurableObject<Env> {
       att.f = f | 0;
       att.t = now;
       att.bad = 0;
+      att.q = (att.q + 1) % 1_000_000;
+      att.p = trail;
+      att.i = trail.length ? step : 0;
       ws.serializeAttachment(att);
       this.schedule();
     } else if (msg.t === 'room') {
@@ -233,6 +263,19 @@ export class RealtimeRoom extends DurableObject<Env> {
     const all = sockets.map((ws) => ({ ws, a: ws.deserializeAttachment() as Att }));
     if (!all.length) return;
     const isGame = all[0].a.room.startsWith('room:');
+    // 보내기 간격이 바뀌었으면 모두에게 알린다
+    const si = this.pickSendMs(all.length);
+    if (si !== this.sendMs) {
+      this.sendMs = si;
+      const cfg = JSON.stringify({ t: 'cfg', si } satisfies ServerMsg);
+      for (const { ws } of all) {
+        try {
+          ws.send(cfg);
+        } catch {
+          /* 닫히는 중 */
+        }
+      }
+    }
 
     // 구역: 격자 칸에 나눠 담고 주변 9칸만 본다
     const grid = new Map<string, typeof all>();
@@ -272,7 +315,7 @@ export class RealtimeRoom extends DurableObject<Env> {
       }
       const p = near
         .filter(({ e }) => e.a.t > 0 || isGame)
-        .map(({ e }): PlayerTuple => (e.a.f ? [e.a.id, e.a.x, e.a.z, e.a.r, e.a.a, e.a.f] : [e.a.id, e.a.x, e.a.z, e.a.r, e.a.a]));
+        .map(({ e }): PlayerTuple => [e.a.id, e.a.x, e.a.z, e.a.r, e.a.a, e.a.f, e.a.q ?? 0, e.a.i ?? 0, e.a.p ?? []]);
       const sig = JSON.stringify(p);
       if (sig === this.lastSig.get(me.ws)) continue;
       this.lastSig.set(me.ws, sig);
@@ -280,9 +323,24 @@ export class RealtimeRoom extends DurableObject<Env> {
     }
   }
 
+  /**
+   * 보내기 간격 (ms). 사람이 많을수록, 오늘 이 객체가 메시지를 많이 받았을수록 길게 (무료 하루 요청 10만 건 = 메시지 200만 개).
+   * README "동접 500명 계산" 참고.
+   */
+  private pickSendMs(live: number): number {
+    let ms = live <= 30 ? 1000 : live <= 100 ? 1500 : live <= 250 ? 2000 : 2500;
+    const today = Math.max(0, this.savedToday) + this.usage.messages;
+    if (today > DAY_MSG_SOFT * 1.5) ms *= 2;
+    else if (today > DAY_MSG_SOFT) ms *= 1.5;
+    return Math.max(SEND_MS_MIN, Math.min(SEND_MS_MAX, Math.round(ms / 250) * 250));
+  }
+
   private count(key: 'messages' | 'connects' | 'broadcasts') {
     const today = day();
-    if (this.usage.day !== today) this.usage = { day: today, messages: 0, connects: 0, peak: 0, broadcasts: 0 };
+    if (this.usage.day !== today) {
+      this.usage = { day: today, messages: 0, connects: 0, peak: 0, broadcasts: 0 };
+      this.savedToday = 0;
+    }
     this.usage[key]++;
   }
 
@@ -300,6 +358,7 @@ export class RealtimeRoom extends DurableObject<Env> {
       peak: Math.max(saved.peak, this.usage.peak),
     };
     await this.ctx.storage.put(key, merged);
+    this.savedToday = merged.messages;
     console.log(JSON.stringify({ rt_usage: merged, approxRequests: Math.ceil(merged.messages / 20) + merged.connects }));
     this.usage = { day: this.usage.day, messages: 0, connects: 0, peak: 0, broadcasts: 0 };
   }

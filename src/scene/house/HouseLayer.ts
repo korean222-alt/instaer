@@ -386,7 +386,7 @@ export class HouseLayer {
       for (const r of this.near) {
         if (n >= ROOF_ART_MAX) break;
         const id = this.roofArt.get(r.house.houseNo);
-        const mat = id === undefined ? null : this.drawings.material(id);
+        const mat = id === undefined ? null : this.drawings.roofMaterial(id);
         // 그림이 아직 안 왔으면 지붕 색만 보인다
         if (!mat) continue;
         let mesh = this.roofArtMeshes[n];
