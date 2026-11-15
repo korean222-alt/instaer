@@ -264,6 +264,7 @@ vec3 catAlbedo() {
   }
 
   // ── 얼굴 ──
+  const float EYE_SCALE = 1.32;
   if (isHead) {
     vec2 f = hp.xy;
     float closed = vFace.x;
@@ -276,7 +277,8 @@ vec3 catAlbedo() {
 
     // 눈
     float sx = sign(f.x);
-    vec2 e = vec2(f.x - sx * 0.136, f.y - 0.004);
+    // 눈은 크게 그린다 (카드처럼 작게 볼 때도 또렷하게). 아래 크기 값은 전부 1/EYE_SCALE 배로 줄인 좌표 기준이다
+    vec2 e = vec2(f.x - sx * 0.146, f.y - 0.014) / EYE_SCALE;
     float shut = max(closed, happy);
     if (shut > 0.5) {
       // 감은 눈: 자거나 깜빡일 때는 ‿, 기분 좋을 때는 ︵
@@ -353,7 +355,7 @@ export function createCatMaterial(shared: CatShared): {
         #include <opaque_fragment>`,
       );
   };
-  material.customProgramCacheKey = () => 'cat-lambert-v2';
+  material.customProgramCacheKey = () => 'cat-lambert-v3';
 
   // 그림자에도 같은 움직임이 반영되도록 깊이 재질에도 같은 변형을 넣는다
   const depthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });

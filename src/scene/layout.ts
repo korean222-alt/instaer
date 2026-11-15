@@ -683,3 +683,63 @@ export function houseNoAt(x: number, z: number, margin = 0.3): number | null {
   }
   return null;
 }
+
+// ───────────── 부두와 낚시터 (작업 5) ─────────────
+
+/** 1구역 부두의 절반 폭과 상판 높이 (바다 수면이 0) */
+export const DOCK_HALF_W = 0.95;
+export const DOCK_DECK_Y = 0.5;
+/** 부두가 섬에서 시작하는 z (구역 가운데 기준). World 가 부두를 놓는 자리와 같다 */
+export const DOCK_START_Z = ZONE.halfZ + 3.4;
+
+/** 1구역 부두의 범위 (세계 좌표). z0 이 섬 쪽, z1 이 바다 쪽 끝 */
+export function dockArea(): { x: number; z0: number; z1: number } {
+  const c = zoneCenter(0);
+  return { x: c.x + HARBOR.x, z0: c.z + DOCK_START_Z, z1: c.z + DOCK_START_Z + HARBOR.dockLength };
+}
+
+/** (x, z) 가 부두 상판 위인가 (걸어 다닐 수 있는 곳) */
+export function onDock(x: number, z: number): boolean {
+  const d = dockArea();
+  return Math.abs(x - d.x) <= DOCK_HALF_W && z >= d.z0 - 0.3 && z <= d.z1;
+}
+
+/** 낚시할 수 있는 자리. (x, z) 는 찌를 던질 물 위의 자리 */
+export interface FishingSpot {
+  kind: 'pond' | 'pier';
+  x: number;
+  z: number;
+}
+
+/** 연못 가장자리에서 이 거리 안이면 낚시할 수 있다 */
+export const POND_FISH_REACH = 2.3;
+/** 부두에서 낚시할 수 있는 곳: 섬 쪽 끝에서 이만큼 지나 물 위로 나온 뒤부터 */
+const PIER_FISH_FROM = 3.2;
+
+/**
+ * (x, z) 에서 낚시할 수 있으면 그 낚시터를, 아니면 null 을 돌려준다.
+ * - 연못: 연못 가운데에서 POND_R + POND_FISH_REACH 안
+ * - 부두: 1구역 항구 부두 위에서 물 위로 나온 곳 (끝 쪽이면 앞바다로, 아니면 가까운 옆 바다로 던진다)
+ */
+export function fishingSpotAt(x: number, z: number): FishingSpot | null {
+  const d = dockArea();
+  if (onDock(x, z) && z >= d.z0 + PIER_FISH_FROM) {
+    if (z > d.z1 - 1.5) return { kind: 'pier', x: clamp(x, d.x - 0.4, d.x + 0.4), z: d.z1 + 2.1 };
+    return { kind: 'pier', x: d.x + (x >= d.x ? 1 : -1) * (DOCK_HALF_W + 1.9), z };
+  }
+  const zone = zoneAt(x, z);
+  if (zone < 0) return null;
+  const c = zoneCenter(zone);
+  for (const nb of NEIGHBORHOODS) {
+    if (nb.feature !== 'pond') continue;
+    const px = c.x + nb.x;
+    const pz = c.z + nb.z;
+    const dist = Math.hypot(x - px, z - pz);
+    if (dist > POND_R + POND_FISH_REACH) continue;
+    // 고양이에서 연못 가운데 쪽으로 2.2 앞, 단 연못 물 안쪽에 떨어지게
+    const reach = Math.max(0, Math.min(POND_R - 1.1, dist - 2.2));
+    const k = dist > 1e-3 ? reach / dist : 0;
+    return { kind: 'pond', x: px + (x - px) * k, z: pz + (z - pz) * k };
+  }
+  return null;
+}

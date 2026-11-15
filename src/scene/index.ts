@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { CatLook, House, RegionId, YardItem } from '../shared/types';
 import { CatFlock } from './cat/CatFlock';
 import { createProceduralCatModel } from './cat/catModel';
+import { CatPreview, type CatPreviewOptions } from './cat/catPreview';
 import { Atmosphere } from './core/atmosphere';
 import { CameraRig } from './core/cameraRig';
 import { regionIndex } from './core/labelLayer';
@@ -9,13 +10,28 @@ import { HighlightMark } from './house/highlightMark';
 import { HouseLayer } from './house/HouseLayer';
 import { ItemGeometries } from './free/catalog';
 import { DrawingStore } from './free/drawings';
+import { FishingRig, type FishingState } from './fishing/FishingRig';
 import { Placer } from './free/Placer';
 import { blockersOf, pickItem, type Space } from './free/space';
 import type { Drawing, InteriorItem, PlacedItem } from './free/types';
 import { Interior, ROOM_CAM_YAW, ROOM_EXIT_Z, ROOM_START, ROOM_WALK } from './interior/Interior';
+import { Npcs, type SceneNpc } from './npc/Npcs';
 import { RemotePlayers } from './remote/RemotePlayers';
 import type { LocalState, RemotePlayer } from './remote/types';
-import { houseNoAt, houseSlot, LOCAL_SLOTS, lotGate, neighborhoodArea, neighborhoodAt, zoneAt, zoneCenter } from './layout';
+import {
+  collidersNear,
+  fishingSpotAt,
+  houseNoAt,
+  houseSlot,
+  landAt,
+  LOCAL_SLOTS,
+  lotGate,
+  neighborhoodArea,
+  neighborhoodAt,
+  zoneAt,
+  zoneCenter,
+  type Collider,
+} from './layout';
 import { ZONE_CAPACITY } from '../shared/config';
 import { WalkControls } from './walk/controls';
 import { WALK_DIST, WALK_FOV, WalkCamera } from './walk/walkCamera';
@@ -31,6 +47,11 @@ export { FREE_ITEM_LIST } from './free/catalog';
 export { DEFAULT_PALETTE, DRAWING_SIZE, decodeDrawing, encodeDrawing } from './free/drawings';
 export { ROOM_SIZE } from './free/space';
 export { ROOM_STYLES } from './interior/Interior';
+export { dockArea, fishingSpotAt, POND_FISH_REACH, POND_R } from './layout';
+export type { FishingSpot } from './layout';
+export type { FishingState } from './fishing/FishingRig';
+export type { SceneNpc } from './npc/Npcs';
+export type { CatPreviewOptions } from './cat/catPreview';
 
 /**
  * 고양이섬 3D 씬.
@@ -108,6 +129,38 @@ export interface IslandScene {
   /** 직접 그린 그림 전체 (가까운 집 것만 넘긴다). drawingId 가 같은 아이템에 붙는다. 목록에서 빠진 그림은 지운다 */
   setDrawings(drawings: Drawing[]): void;
 
+  // ── 작업 5: 지붕 그림, 주민, 낚시, 위치 되돌리기, 고양이 그림 ──
+
+  /**
+   * 지금 보여 줄 지붕 그림 전체 (가까운 집 것만). 목록에서 빠진 집은 그림을 뗀다.
+   * 그림 내용은 setDrawings 로 넘긴 것을 쓴다. 그림이 아직 안 왔으면 지붕 색만 보인다.
+   */
+  setRoofArt(items: Array<{ houseNo: number; drawingId: string }>): void;
+  /**
+   * 지금 보여 줄 주민(NPC) 고양이 전체. 이름표는 '@' 없이 연두색이고, role 에 따라 작은 표시가 붙는다.
+   * 주민은 준 자리에 앉아 있다가 가끔 둘레를 조금 걷는다. 집 안에 있을 때는 방 좌표로 넘긴다.
+   * 집 안팎을 오갈 때 씬이 주민을 모두 지우므로(다른 유저와 같다) 그때 다시 넘긴다.
+   */
+  setNpcs(npcs: SceneNpc[]): void;
+  /** 주민을 눌렀을 때 그 주민의 id 를 알린다 */
+  onNpcTap(cb: (id: string) => void): void;
+  /**
+   * 내 고양이가 낚시하는 모습. 걷기 모드에서 집 밖일 때만 된다.
+   * 처음 켤 때 서 있는 곳이 낚시터(fishingSpotAt)면 그 물 쪽을, 아니면 바라보던 쪽을 보고 앉아 낚싯대를 든다.
+   * 켜 있는 동안에는 조이스틱과 점프가 듣지 않는다. null 이면 원래대로.
+   */
+  setFishing(state: FishingState | null): void;
+  /**
+   * 내 고양이를 (x, z) 로 바로 옮긴다 (서버가 위치를 되돌릴 때). 막힌 곳이면 가장 가까운 빈 곳에 선다.
+   * 집 안이면 방 좌표다. 옮긴 뒤 onLocalMove 로 새 위치를 한 번 알린다.
+   */
+  setLocalPosition(x: number, z: number, rotY?: number): void;
+  /**
+   * 고양이 한 마리를 그림으로 찍는다 (입양 카드용). 배경이 투명한 PNG 의 data URL 을 돌려준다.
+   * size 는 한 변의 픽셀 수(32~512, 기본 256). WebGL 이 끊긴 동안에는 빈 글자를 돌려준다.
+   */
+  renderCatPreview(cat: CatLook, size?: number, options?: CatPreviewOptions): string;
+
   /** 캔버스 크기가 바뀌면 부른다 */
   resize(): void;
   dispose(): void;
@@ -136,6 +189,12 @@ export interface SceneStats {
   free: { shown: number; art: number };
   /** 꾸미기 모드 상태 */
   placing: { active: boolean; held: PlacedItem | null; valid: boolean; placed: boolean };
+  /** 지금 그리는 지붕 그림 수 */
+  roofArt: number;
+  /** 지금 그리는 주민 수 / 이름표 수 */
+  npcs: { shown: number; tags: number };
+  /** 낚시 상태 (아니면 null) */
+  fishing: FishingState | null;
 }
 const statsOf = new WeakMap<IslandScene, () => SceneStats>();
 export const getSceneStats = (scene: IslandScene): SceneStats | null => statsOf.get(scene)?.() ?? null;
@@ -195,6 +254,13 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   player.mesh.visible = false;
   // 다른 유저의 고양이
   const remotes = new RemotePlayers(catModel);
+  // 주민(NPC) 고양이, 낚시 소품, 고양이 그림 찍기
+  const npcs = new Npcs(catModel, atmosphere.shared);
+  const fishRig = new FishingRig(atmosphere.shared);
+  let fishing: FishingState | null = null;
+  let fishYaw = 0;
+  let npcTapCb: ((id: string) => void) | null = null;
+  let preview: CatPreview | null = null;
   // 꾸미기(끌어 놓기)와 집 안. 집 안은 처음 들어갈 때 만든다
   const placer = new Placer(canvas, camera, geometries, drawings, atmosphere.shared);
   let interior: Interior | null = null;
@@ -203,7 +269,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   let exitCb: ((houseNo: number) => void) | null = null;
   let doorHouse: number | null = null;
   const roomBlockers: Array<{ x: number; z: number; r: number }> = [];
-  scene.add(world.group, houses.group, mark.group, player.mesh, remotes.group, placer.group);
+  scene.add(world.group, houses.group, mark.group, player.mesh, remotes.group, npcs.group, fishRig.group, placer.group);
   placer.onChange = () => {
     if (inside !== null) interior?.redraw(placer.heldId);
     else houses.redrawFree(placer.heldId);
@@ -223,6 +289,41 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   walker.blockers = (x, z, out) => {
     if (inside !== null && interior) blockersOf(interior.space, interior.list, roomBlockers, 0, out);
     else houses.blockersNear(x, z, out);
+  };
+  // 주민이 설 수 있는 자리: 밖이면 땅 위이고 집/나무/가구에 안 걸리는 곳, 집 안이면 방 안이고 가구에 안 걸리는 곳
+  const npcNear: Collider[] = [];
+  const npcBlock: Array<{ x: number; z: number; r: number }> = [];
+  npcs.canStand = (x, z) => {
+    const pad = 0.42;
+    npcBlock.length = 0;
+    if (inside !== null && interior) {
+      if (Math.abs(x) > ROOM_WALK.maxX - pad || z < ROOM_WALK.minZ + pad || z > ROOM_WALK.maxZ - pad) return false;
+      blockersOf(interior.space, interior.list, roomBlockers, 0, npcBlock);
+    } else {
+      const zone = zoneAt(x, z);
+      if (zone < 0 || landAt(x, z) < 2.2) return false;
+      const c = zoneCenter(zone);
+      const lx = x - c.x;
+      const lz = z - c.z;
+      for (const col of collidersNear(lx, lz, pad + 0.2, npcNear)) {
+        if (col.lot >= 0 && !houses.has(zone * ZONE_CAPACITY + col.lot + 1)) continue;
+        const dx = lx - col.x;
+        const dz = lz - col.z;
+        if (col.r > 0) {
+          if (Math.hypot(dx, dz) < col.r + pad) return false;
+        } else if (Math.abs(dx * col.cos - dz * col.sin) < col.hx + pad && Math.abs(dx * col.sin + dz * col.cos) < col.hz + pad) return false;
+      }
+      houses.blockersNear(x, z, npcBlock);
+    }
+    for (const b of npcBlock) if (Math.hypot(x - b.x, z - b.z) < b.r + pad) return false;
+    return true;
+  };
+  const npcView = { focusX: 0, focusZ: 0, walking: false, dist: 60, viewportW: 1, viewportH: 1 };
+  const stopFishing = () => {
+    if (fishing === null) return;
+    fishing = null;
+    fishRig.setState(null);
+    walker.holdSit = false;
   };
   let walking = false;
   let nearCb: ((houseNo: number | null) => void) | null = null;
@@ -268,6 +369,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     world.rebuild(unlocked, 1);
     walker.bridges = world.bridges;
     remotes.bridges = world.bridges;
+    npcs.bridges = world.bridges;
     const b = world.viewBounds;
     rig.setLimits({ bounds: { minX: b.minX + 6, maxX: b.maxX - 6, minZ: b.minZ + 4, maxZ: b.maxZ + 6 } });
   };
@@ -309,6 +411,14 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   observer?.observe(canvas);
 
   const onTap = (cx: number, cy: number) => {
+    // 주민을 누르면 그것부터 알린다 (꾸미는 중에는 빼고)
+    if (npcTapCb && !placer.active && npcs.shown > 0) {
+      const id = npcs.pick(rig.rayFrom(cx, cy));
+      if (id !== null) {
+        npcTapCb(id);
+        return;
+      }
+    }
     if (inside !== null) {
       // 집 안: 아이템을 누르면 알린다 (꾸미기 모드에서는 끌어 놓기 쪽이 먼저 받는다)
       const hit = interior && !placer.active ? pickItem(interior.space, interior.list, rig.rayFrom(cx, cy)) : null;
@@ -413,9 +523,11 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     const houseNo = inside;
     placer.end();
     inside = null;
-    scene.add(player.mesh, remotes.group, placer.group);
+    scene.add(player.mesh, remotes.group, npcs.group, placer.group);
     remotes.clear();
     remotes.flatY = null;
+    npcs.clear();
+    npcs.flatY = null;
     walker.room = null;
     const s = houseSlot(houseNo);
     walker.place(s.x + DOOR_STAND_Z * Math.sin(s.rot), s.z + DOOR_STAND_Z * Math.cos(s.rot), s.rot);
@@ -523,6 +635,13 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       remoteView.viewportH = viewportH;
       remoteView.quality = quality;
       remotes.update(performance.now(), dt, remoteView);
+      npcView.focusX = walker.x;
+      npcView.focusZ = walker.z;
+      npcView.walking = true;
+      npcView.dist = WALK_DIST;
+      npcView.viewportW = viewportW;
+      npcView.viewportH = viewportH;
+      npcs.update(dt, npcView);
       renderer.render(interior.scene, camera);
       cpuMs = cpuMs * 0.9 + (performance.now() - t0) * 0.1;
       // 문턱을 넘으면 밖으로 내보내고 알린다
@@ -531,11 +650,18 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     }
     if (walking) {
       controls.update();
-      walker.update(dt, controls.moveX, controls.moveY, walkCam.yaw, controls.takeJump());
+      const jump = controls.takeJump();
+      if (fishing !== null) {
+        // 낚시 중: 움직이지 않고 물 쪽으로 몸을 돌린 채 앉아 있는다
+        walker.update(dt, 0, 0, walkCam.yaw, false);
+        walker.yaw += wrapAngle(fishYaw - walker.yaw) * (1 - Math.exp(-dt * 8));
+      } else walker.update(dt, controls.moveX, controls.moveY, walkCam.yaw, jump);
       walkCam.update(dt, camera, walker.x, walker.groundY, walker.air, walker.z, controls.takeLook());
       player.setPose(0, walker.x, walker.y + 0.035, walker.z, walker.yaw, PLAYER_SCALE);
-      player.setAnim(0, walker.phase, walker.walk, 0, 0);
-      player.setMood(0, walker.sit, walker.yawn);
+      // 물고기를 낚으면 눈웃음을 짓는다
+      player.setAnim(0, walker.phase, walker.walk, 0, fishing === 'caught' ? 1 : 0);
+      player.setMood(0, walker.sit, fishing !== null ? 0 : walker.yawn);
+      fishRig.update(dt, walker.x, walker.y + 0.035, walker.z, walker.yaw, PLAYER_SCALE);
       walkFocus.x = walker.x;
       walkFocus.z = walker.z;
       target.x = walkCam.focus.x;
@@ -602,6 +728,13 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     remoteView.viewportH = viewportH;
     remoteView.quality = quality;
     remotes.update(performance.now(), dt, remoteView);
+    npcView.focusX = remoteView.focusX;
+    npcView.focusZ = remoteView.focusZ;
+    npcView.walking = walking;
+    npcView.dist = target.dist;
+    npcView.viewportW = viewportW;
+    npcView.viewportH = viewportH;
+    npcs.update(dt, npcView);
 
     renderer.render(scene, camera);
     cpuMs = cpuMs * 0.9 + (performance.now() - t0) * 0.1;
@@ -660,6 +793,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     },
     setWalkMode(on, startHouseNo) {
       leaveHouse(false);
+      stopFishing();
       if (on) {
         const start = startHouseNo !== undefined && houses.has(startHouseNo) ? startHouseNo : null;
         let look = DEFAULT_CAT;
@@ -735,14 +869,17 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       }
       if (inside !== null) leaveHouse(false);
       if (!walking) api.setWalkMode(true);
+      stopFishing();
       placer.end();
       interior.setShadows(quality < 3);
       interior.open(houseNo, items, wallpaper, floor);
       inside = houseNo;
-      interior.scene.add(player.mesh, remotes.group, placer.group);
+      interior.scene.add(player.mesh, remotes.group, npcs.group, placer.group);
       // 밖에 있던 유저들은 방 안에 보이면 안 된다. 앱이 같은 집 안 사람만 다시 넘긴다
       remotes.clear();
       remotes.flatY = 0;
+      npcs.clear();
+      npcs.flatY = 0;
       walker.room = ROOM_WALK;
       walker.place(ROOM_START.x, ROOM_START.z, Math.PI);
       sent.x = NaN;
@@ -814,8 +951,56 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     setDrawings(list) {
       if (!drawings.set(list)) return;
       houses.redrawFree();
+      houses.redrawRoofArt();
       interior?.refreshDrawings();
       placer.refresh();
+    },
+    setRoofArt(items) {
+      houses.setRoofArt(Array.isArray(items) ? items : []);
+    },
+    setNpcs(list) {
+      npcs.set(Array.isArray(list) ? list : []);
+    },
+    onNpcTap(cb) {
+      npcTapCb = cb;
+    },
+    setFishing(state) {
+      if (state === null) {
+        stopFishing();
+        return;
+      }
+      if (!walking || inside !== null) return;
+      if (fishing === null) {
+        // 낚시터면 그 물 쪽으로, 아니면 바라보던 쪽 앞으로 던진다
+        const spot = fishingSpotAt(walker.x, walker.z);
+        const tx = spot ? spot.x : walker.x + Math.sin(walker.yaw) * 2.2;
+        const tz = spot ? spot.z : walker.z + Math.cos(walker.yaw) * 2.2;
+        fishYaw = Math.atan2(tx - walker.x, tz - walker.z);
+        // 연못 물은 풀밭보다 조금 높고, 바다는 0 이다
+        fishRig.begin(tx, tz, spot?.kind === 'pier' ? 0.02 : landAt(tx, tz) > 0 ? GROUND_Y + 0.075 : 0.02);
+        walker.holdSit = true;
+      }
+      fishing = state;
+      fishRig.setState(state);
+    },
+    setLocalPosition(x, z, rotY) {
+      if (!Number.isFinite(x) || !Number.isFinite(z)) return;
+      stopFishing();
+      const far = Math.hypot(x - walker.x, z - walker.z) > 8;
+      walker.place(x, z, rotY !== undefined && Number.isFinite(rotY) ? rotY : walker.yaw);
+      // 멀리 옮겼으면 카메라도 바로 따라간다 (가까우면 부드럽게 따라온다)
+      if (walking && inside === null && far) {
+        walkCam.snap(walker.x, walker.groundY, walker.z, walkCam.yaw);
+        walkFocus.x = walker.x;
+        walkFocus.z = walker.z;
+        shadowX = Infinity;
+      }
+      // 다음 프레임에 새 위치를 한 번 알린다
+      sent.x = NaN;
+    },
+    renderCatPreview(cat, size = 256, options = {}) {
+      preview ??= new CatPreview(renderer, catModel, atmosphere.shared);
+      return preview.render(cat, size, options, (houseNo) => hash01(houseNo, 99));
     },
     resize,
     dispose() {
@@ -827,6 +1012,9 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       controls.dispose();
       player.dispose();
       remotes.dispose();
+      npcs.dispose();
+      fishRig.dispose();
+      preview?.dispose();
       placer.dispose();
       interior?.dispose();
       geometries.dispose();
@@ -851,6 +1039,9 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     inside,
     free: inside !== null && interior ? { shown: interior.free.shown, art: interior.free.shownArt } : { shown: houses.free.shown, art: houses.free.shownArt },
     placing: placer.state,
+    roofArt: houses.shownRoofArt,
+    npcs: { shown: npcs.shown, tags: npcs.shownTags },
+    fishing,
   }));
   qualityOf.set(api, (level) => {
     qualityAuto = level === 'auto';

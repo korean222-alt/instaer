@@ -1,7 +1,11 @@
 import {
   BRIDGE,
   collidersNear,
+  DOCK_DECK_Y,
+  DOCK_HALF_W,
+  dockArea,
   landAt,
+  onDock,
   zoneAt,
   zoneCenter,
   type Collider,
@@ -76,6 +80,8 @@ export class Walker {
    * 앞쪽 가운데(문, 절반 폭 doorHalf)로는 doorZ 까지 더 나갈 수 있다. 가구는 blockers 로 막는다
    */
   room: { minX: number; maxX: number; minZ: number; maxZ: number; y: number; doorHalf: number; doorZ: number } | null = null;
+  /** true 인 동안에는 가만히 있으면 바로 앉는다 (낚시할 때) */
+  holdSit = false;
 
   private vx = 0;
   private vz = 0;
@@ -158,6 +164,7 @@ export class Walker {
       this.idle = 0;
       this.yawnAt = 8 + (this.phase % 5);
     } else this.idle += dt;
+    if (this.holdSit && this.idle > 0) this.idle = Math.max(this.idle, 5.01);
     this.sit += ((this.idle > 5 ? 1 : 0) - this.sit) * (1 - Math.exp(-dt * 4));
     if (this.idle > this.yawnAt && this.yawnT >= 1) {
       this.yawnT = 0;
@@ -275,7 +282,15 @@ export class Walker {
       }
       // 바다: 해안 쪽으로 넘어간 만큼 땅 쪽으로 되민다 (해안선을 따라 미끄러진다)
       const br = this.bridgeAt(nx, nz);
-      if (br) {
+      if (onDock(nx, nz)) {
+        // 부두 위: 물 위로 나온 곳에서는 옆과 끝으로 못 나간다 (섬에 걸친 쪽은 옆으로 내려설 수 있다)
+        if (landAt(nx, nz) < MIN_LAND + 0.4) {
+          const d = dockArea();
+          const lim = DOCK_HALF_W - 0.45;
+          nx = d.x + Math.max(-lim, Math.min(lim, nx - d.x));
+          nz = Math.min(d.z1 - 0.4, nz);
+        }
+      } else if (br) {
         // 다리 위에서는 난간 밖으로 못 나간다 (섬에 걸친 양 끝은 옆으로 내려설 수 있다)
         if (landAt(nx, nz) < MIN_LAND + 0.4) {
           const lim = BRIDGE.width / 2 - 0.42;
@@ -300,7 +315,7 @@ export class Walker {
       }
     }
     // 그래도 바다나 막힌 곳이면 움직이지 않는다
-    if (!this.bridgeAt(nx, nz) && landAt(nx, nz) < MIN_LAND - 0.15 && landAt(ox, oz) >= MIN_LAND - 0.15) {
+    if (!this.bridgeAt(nx, nz) && !onDock(nx, nz) && landAt(nx, nz) < MIN_LAND - 0.15 && landAt(ox, oz) >= MIN_LAND - 0.15) {
       nx = ox;
       nz = oz;
     }
@@ -331,7 +346,8 @@ function bridgeAt(bridges: readonly Bridge[], x: number, z: number): Bridge | nu
 
 /** 그 자리의 땅 높이 (다리 위면 다리 바닥). 내 고양이와 다른 유저 고양이가 같이 쓴다 */
 export function groundHeightAt(bridges: readonly Bridge[], x: number, z: number): number {
-  const ground = heightFromLand(landAt(x, z));
+  let ground = heightFromLand(landAt(x, z));
+  if (onDock(x, z)) ground = Math.max(ground, DOCK_DECK_Y);
   const b = bridgeAt(bridges, x, z);
   if (!b) return ground;
   const along = b.axis === 'x' ? x - b.x : z - b.z;

@@ -20,6 +20,7 @@ import {
   buildFarHouseGeometry,
   buildFlagGeometry,
   buildHouseGeometry,
+  buildRoofArtGeometry,
   buildYardGeometry,
   FLAG_DIM,
   HOUSE_DIM,
@@ -54,6 +55,8 @@ const WALK_NEAR_RADIUS = 40;
 const WALK_NEAR_MAX = 26;
 /** 고양이가 돌아다니는 범위 (마당 가운데 기준): 집 앞 잔디밭 */
 /** 걸어서 지나갈 수 없는 큰 아이템과 그 반지름 (나머지는 작아서 지나간다) */
+/** 지붕 그림은 가까운 집부터 이만큼까지만 그린다 (그림마다 텍스처가 달라서 하나씩 따로 그린다) */
+const ROOF_ART_MAX = 32;
 const BLOCKING_ITEMS: Partial<Record<YardItem['type'], number>> = { cat_tower: 0.42, bench: 0.48, hammock: 0.5, fish_rack: 0.42 };
 const CAT_AREA = { minX: -2.2, maxX: 2.2, minZ: 0.7, maxZ: 2.45 };
 
@@ -139,6 +142,12 @@ export class HouseLayer {
   readonly free: FreeItems;
   /** 지금 손에 들고 있어서 따로 그리는 아이템 */
   private freeSkip: string | null = null;
+  /** 지붕 그림 (집 번호 → 그림 id) */
+  private readonly roofArt = new Map<number, string>();
+  private readonly roofArtGeometry = buildRoofArtGeometry();
+  private readonly roofArtMeshes: THREE.Mesh[] = [];
+  /** 확인용: 지금 그리는 지붕 그림 수 */
+  shownRoofArt = 0;
   private near: Rec[] = [];
   private readonly cats = new Map<number, NearCat>();
   private catOrder: NearCat[] = [];
@@ -152,7 +161,12 @@ export class HouseLayer {
   private readonly box = new THREE.Box3();
   private readonly v = new THREE.Vector3();
 
-  constructor(shared: GlowShared, catModel: CatModel, geometries: ItemGeometries, drawings: DrawingStore) {
+  constructor(
+    shared: GlowShared,
+    catModel: CatModel,
+    geometries: ItemGeometries,
+    private readonly drawings: DrawingStore,
+  ) {
     this.shared = shared;
     this.free = new FreeItems(shared, geometries, drawings);
     this.material = createGlowLambert(shared, { instanced: true });
@@ -353,6 +367,44 @@ export class HouseLayer {
       items.filter((it) => it && typeof it.id === 'string' && typeof it.type === 'string').map((it) => ({ ...it })),
     );
     if (this.near.some((r) => r.house.houseNo === houseNo)) this.redrawFree();
+  }
+
+  /** 지금 보여 줄 지붕 그림 전체. 목록에서 빠진 집은 그림을 뗀다 */
+  setRoofArt(items: ReadonlyArray<{ houseNo: number; drawingId: string }>) {
+    this.roofArt.clear();
+    for (const it of items) {
+      if (it && Number.isFinite(it.houseNo) && typeof it.drawingId === 'string' && it.drawingId) this.roofArt.set(it.houseNo, it.drawingId);
+    }
+    this.redrawRoofArt();
+  }
+
+  /** 지붕 그림만 다시 붙인다 (가까운 집이 바뀌었거나 그림 목록이 바뀌었을 때) */
+  redrawRoofArt() {
+    let n = 0;
+    if (this.roofArt.size) {
+      // near 는 가까운 순서라서 앞에서부터 채우면 가까운 집이 먼저다
+      for (const r of this.near) {
+        if (n >= ROOF_ART_MAX) break;
+        const id = this.roofArt.get(r.house.houseNo);
+        const mat = id === undefined ? null : this.drawings.material(id);
+        // 그림이 아직 안 왔으면 지붕 색만 보인다
+        if (!mat) continue;
+        let mesh = this.roofArtMeshes[n];
+        if (!mesh) {
+          mesh = this.roofArtMeshes[n] = new THREE.Mesh(this.roofArtGeometry);
+          mesh.matrixAutoUpdate = false;
+          mesh.frustumCulled = false;
+          mesh.receiveShadow = true;
+          this.group.add(mesh);
+        }
+        mesh.material = mat;
+        mesh.matrix.copy(this.place(r, 0, HOUSE_OFFSET_Z, GROUND_Y));
+        mesh.visible = true;
+        n++;
+      }
+    }
+    for (let i = n; i < this.roofArtMeshes.length; i++) this.roofArtMeshes[i].visible = false;
+    this.shownRoofArt = n;
   }
 
   /** 그 집의 자유 배치 목록 (끌어 놓기가 이 배열을 직접 고친다) */
@@ -656,6 +708,7 @@ export class HouseLayer {
     // 꾸미기 아이템
     this.items.set(want.map((r) => ({ x: r.x, z: r.z, rot: r.rot, items: this.yardItems.get(r.house.houseNo) })));
     this.redrawFree();
+    this.redrawRoofArt();
 
     // 이름표: 사는 사람이 있는 집만, 화면 가운데에서 가까운 순서로
     const entries: LabelEntry[] = [];
@@ -738,6 +791,7 @@ export class HouseLayer {
     this.tintMaterial.dispose();
     this.nearHouses.geometry.dispose();
     this.nearYards.geometry.dispose();
+    this.roofArtGeometry.dispose();
     this.material.dispose();
     this.flagMaterial.dispose();
     this.flockLo.dispose();

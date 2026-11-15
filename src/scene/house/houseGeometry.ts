@@ -396,3 +396,61 @@ export function buildFlagGeometry(): THREE.BufferGeometry {
   }
   return mergeParts(parts, GLOW_ATTRS);
 }
+
+/** 지붕 그림 한 변의 길이 (지붕 폭 3.4 중 가운데만 덮는다) */
+export const ROOF_ART_SIZE = 1.24;
+
+/**
+ * 지붕 그림을 붙이는 판: 지붕 앞면(대문 쪽 경사면)의 휜 모양을 그대로 따라가는 네모.
+ * 집과 같은 기준(원점은 집 바닥 한가운데, 앞은 +z)이라서 집과 같은 행렬로 놓으면 된다.
+ * uv 는 (0,0)=왼쪽 아래 ~ (1,1)=오른쪽 위 (앞에서 봤을 때).
+ */
+export function buildRoofArtGeometry(): THREE.BufferGeometry {
+  const D = HOUSE_DIM;
+  // 지붕 단면의 앞쪽 곡선 (buildHouseGeometry 의 지붕과 같은 점)
+  const p0 = { z: 0, y: D.ridge };
+  const p1 = { z: 0.88, y: 2.78 };
+  const p2 = { z: D.eaveZ, y: 1.74 };
+  const at = (t: number) => ({
+    z: (1 - t) * (1 - t) * p0.z + 2 * t * (1 - t) * p1.z + t * t * p2.z,
+    y: (1 - t) * (1 - t) * p0.y + 2 * t * (1 - t) * p1.y + t * t * p2.y,
+  });
+  // 고양이 귀 아래(t0)에서 처마 위(t1)까지. 지붕 겉면은 단면보다 0.07 바깥이라 그만큼 띄운다
+  const t0 = 0.25;
+  const t1 = 0.87;
+  const lift = 0.07 + 0.016;
+  const rows = 10;
+  const half = ROOF_ART_SIZE / 2;
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i <= rows; i++) {
+    const t = t0 + ((t1 - t0) * i) / rows;
+    const a = at(t);
+    const b = at(t + 0.001);
+    // 곡선의 접선 (z, y) → 바깥쪽 법선
+    let tz = b.z - a.z;
+    let ty = b.y - a.y;
+    const tl = Math.hypot(tz, ty);
+    tz /= tl;
+    ty /= tl;
+    const nz = -ty;
+    const ny = tz;
+    for (const side of [-1, 1]) {
+      pos.push(side * half, a.y + ny * lift, a.z + nz * lift);
+      nor.push(0, ny, nz);
+      uv.push(side < 0 ? 0 : 1, 1 - i / rows);
+    }
+    if (i < rows) {
+      const k = i * 2;
+      idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+}

@@ -12,6 +12,7 @@
 | 작업 2: 3인칭 걷기 (`setWalkMode`, `onNearHouse`), 조이스틱, 충돌, 자동 품질, WebGL 복구 | 완료 |
 | 작업 3a: 다른 유저 고양이 표시 (`setRemotePlayers`, `onLocalMove`, `getLocalState`), 데모의 "다른 유저 20명 시험" | 완료 (씬 쪽만. 서버와 통신은 앱 쪽 작업 3b) |
 | 작업 4: 집 안 들어가기 (`enterHouse`, `exitHouse`, `onDoor`, `onExitHouse`), 자유 배치 (`setYardItemsFree`, `startPlacing`, `stopPlacing`, `rotatePlacing`, `onPlace`, `onPick`), 직접 그린 그림 (`setDrawings`) | 완료 (씬 쪽만. 저장, 그리기 화면, 꾸미기 UI 는 앱 쪽) |
+| 작업 5: 지붕 그림 (`setRoofArt`), 주민 고양이 (`setNpcs`, `onNpcTap`), 낚시 모습 (`setFishing`, `fishingSpotAt`), 부두 걷기와 부두 낚시터, 위치 되돌리기 (`setLocalPosition`), 고양이 그림 찍기 (`renderCatPreview`), 고양이 눈 키우기 | 완료 (씬 쪽만. 앱에 붙이는 일은 아래 "앱 쪽에 알릴 것" 0번) |
 
 **아직 못 한 것**
 
@@ -22,6 +23,8 @@
 - 작업 4(집 안, 자유 배치, 그림)는 폰 화면 크기를 흉내 낸 브라우저에서 마우스와 가짜 터치로만 확인했어요. 실제 폰에서 손가락으로 끌고 비트는 느낌은 아직 못 봤어요.
 - 집 안에 들어가고 나올 때 화면이 부드럽게 넘어가지 않고 바로 바뀌어요(전환 효과 없음).
 - 옷에 그림 붙이기는 지시문대로 이번에 하지 않았어요.
+- 작업 5 는 씬 데모(가짜 데이터)에서만 확인했어요. 앱에서 실제 서버 데이터로는 아직 못 봤어요. 부두 낚시, 위치 되돌리기, 입양 카드의 3D 고양이는 앱이 새 함수를 불러야 화면에 나와요(앱 쪽 작업).
+- 다른 유저가 낚시하는 모습은 안 보여요(앉아 있는 모습으로만 보여요). 낚싯대는 내 고양이에게만 그려요.
 
 **알려진 문제**
 
@@ -33,6 +36,9 @@
 - 자유 배치 아이템은 기존 칸 방식 아이템(`setYardItems`)과 겹치는지 보지 않아요. 한 마당에 두 방식을 같이 쓰면 겹쳐 보일 수 있어요.
 - 마당 고양이는 자유 배치 가구를 피해 다니지만, 가구를 옮긴 직후에는 화면을 조금 움직이기 전까지 예전 자리를 피해요.
 - 침대처럼 긴 가구는 걷기 충돌을 원 여러 개로 흉내 내서, 모서리에서는 살짝 파고들어 보일 수 있어요.
+- 지붕 그림은 지역 강조(`highlightRegion`)로 다른 지역 집이 흐려질 때 같이 흐려지지 않아요.
+- 주민은 광장 벤치처럼 막힌 곳을 피해 자리를 조금 옮겨 앉아요(앱이 준 자리에서 최대 3 정도). 앱의 "말 걸기" 거리(2.4)는 앱이 준 자리 기준이라 살짝 어긋날 수 있어요.
+- 부두 가운데쯤에서 옆으로 낚시하면 찌가 얕은 물가에 떨어져요.
 - 새 아이템을 꺼냈는데 놓을 빈 자리가 하나도 없으면 빨간 채로 가운데에 떠 있고 `onPlace` 는 오지 않아요. 빈 곳으로 끌어다 놓으면 그때 알려요.
 
 ## 보는 방법
@@ -64,6 +70,10 @@ npm run dev
 | `?walk=12&inside=12` | 12번지 고양이로 12번지 집 안에서 시작 |
 | `?walk=12&inside=12&decor=1` | 집 안 꾸미기 모드까지 켜고 시작 |
 | `?yard=12` | 12번지 마당 꾸미기 모드로 시작 (걷기 아님) |
+| `?roof=1` | 지붕 그림 붙이기 (사는 집 셋 중 둘) |
+| `?npc=1` | 동네 가운데마다 주민 세우기 |
+| `?fish=pond` / `?fish=pier` | 연못 / 부두 끝으로 가기. `&fishstep=3` 을 붙이면 낚시 단계를 그만큼 넘김 |
+| `?preview=1` | 고양이 그림(`renderCatPreview`) 6장 보기 |
 
 확인용 화면 모음은 `docs/screenshots/` 에 있어요(동네 시점, 전체 시점 1,000채, 밤, 지역 강조, 걷기, 다른 유저, 집 안, 꾸미기 중 겹침 표시, 마당 자유 배치).
 
@@ -383,6 +393,95 @@ island.setDrawings([{ id: 'd1', pixels: encodeDrawing(indices1024), palette }]);
 - 자유 배치는 **화면에 보이는 종류 하나마다 그리기 +2번**(본체, 그림자)이고, 그림 한 장마다 +1번이에요. 같은 종류는 몇 개든 한 번에 그려요.
 - fps 는 이번에도 못 쟀어요(그래픽카드 없는 서버). 폰에서는 `?walk=12&inside=12` 로 열어 위쪽 fps 를 봐 주세요.
 
+## 지붕 그림, 주민, 낚시, 위치 되돌리기, 고양이 그림 (작업 5)
+
+데모 위쪽 셋째 줄 버튼(지붕 그림, 주민, 연못으로, 부두로, 낚시 다음 단계, 되돌리기, 고양이 그림)으로 볼 수 있어요. 화면 모음은 `docs/screenshots/14~18`.
+
+```ts
+island.setRoofArt([{ houseNo: 12, drawingId: 'd1' }]);   // 지금 보여 줄 지붕 그림 전체
+island.setNpcs([{ id: 'npc-shop-0', name: '잡화점 보리', x, z, rotY, cat, role: 'shop' }]);
+island.onNpcTap((id) => { /* 주민을 눌렀을 때 */ });
+island.setFishing('cast');   // 'cast' | 'wait' | 'bite' | 'reel' | 'caught' | null
+island.setLocalPosition(x, z, rotY?);   // 서버가 위치를 되돌릴 때
+const url = island.renderCatPreview(cat, 256, { houseNo: 12 });   // <img src={url}>
+
+import { fishingSpotAt, POND_R, POND_FISH_REACH, dockArea } from './scene';
+fishingSpotAt(x, z);   // { kind: 'pond' | 'pier', x, z } 또는 null
+```
+
+### 지붕 그림 (`setRoofArt`)
+
+- 지붕 앞면(대문 쪽 경사면) 가운데에 1.24 x 1.24 크기로 붙어요. 지붕의 휜 모양을 따라가고, 둘레로 지붕 색이 보여요. 픽셀은 또렷하게 보여요.
+- 그림 내용은 `setDrawings` 로 넘긴 것을 써요. 그림이 아직 안 왔으면 지붕 색만 보이고, 나중에 `setDrawings` 로 오면 그때 붙어요. 순서는 상관없어요.
+- 자세히 그리는 가까운 집 중 가까운 순서로 32채까지만 그려요(그림마다 그리기 1번). 먼 집은 지붕 색만 보여요.
+
+### 주민 (`setNpcs`, `onNpcTap`)
+
+- 다른 유저와 같은 고양이 모양이고, 이름표는 `@` 없이 연두색이에요. 한 번에 16마리까지 그려요.
+- `role` 에 따라 표시가 붙어요. 모르는 값이거나 없으면 고양이만 그려요.
+
+| role | 몸에 걸친 것 | 자리에 놓인 것 |
+|------|-------------|---------------|
+| `shop` | 빨간 목도리와 방울 | 물건 바구니 |
+| `arcade` | 파란 모자 | 작은 게임기 |
+| `fisher` | 밀짚모자 | 받침대에 걸친 낚싯대, 물고기 통 |
+| `gardener` | 꽃 달린 밀짚모자 | 물뿌리개, 꽃 한 송이 |
+| `resident` | 하늘색 목도리 | 없음 |
+
+- 준 자리에 앉아 있다가 5~14초마다 둘레(밖 1.5, 집 안 0.9 안)를 조금 걷고 돌아와요. 걷기 모드에서 내 고양이가 3.4 안으로 오면 멈춰서 쳐다봐요.
+- 준 자리(와 소품 자리)가 벤치, 나무, 바위, 가구에 걸리면 가장 가까운 빈 곳으로 옮겨 앉혀요. 그래서 앱이 자리를 정밀하게 맞출 필요가 없어요.
+- 집 안에 있을 때는 방 좌표로 넘겨요. 집 안팎을 오갈 때(`enterHouse`, `exitHouse`, 문으로 나감) 씬이 주민을 모두 지우니 그때 다시 넘겨야 해요(`setRemotePlayers` 와 같은 규칙).
+- `onNpcTap`: 주민을 누르면 id 를 알려요. 이때는 `onHouseTap` 이 오지 않아요. 꾸미기 모드에서는 알리지 않아요.
+
+### 낚시 (`setFishing`, `fishingSpotAt`)
+
+- `fishingSpotAt(x, z)`: 그 자리에서 낚시할 수 있으면 낚시터를, 아니면 null 을 돌려줘요. 돌려준 `x`, `z` 는 찌가 떨어질 물 위의 자리예요.
+  - 연못: 연못 가운데에서 `POND_R + POND_FISH_REACH`(4.3 + 2.3) 안. 지금 앱이 쓰는 범위와 같아요.
+  - 부두: 1구역 항구 부두 위에서 물 위로 3.2 넘게 나온 곳. 끝 쪽(끝에서 1.5 안)이면 앞바다로, 아니면 가까운 옆 바다로 던져요.
+- **부두를 걸을 수 있게 됐어요.** 전에는 바다라서 막혀 있었어요. 물 위로 나온 부분에서는 옆과 끝으로 못 나가요. `dockArea()` 가 부두 범위(세계 좌표)를 돌려줘요.
+- `setFishing(state)`: 걷기 모드에서 집 밖일 때만 돼요. 처음 켤 때 서 있는 곳이 낚시터면 그 물 쪽으로, 아니면 바라보던 쪽 2.2 앞으로 던져요. 낚시터가 아니어도 모습은 나와요.
+
+| 상태 | 모습 |
+|------|------|
+| `cast` | 낚싯대를 휘둘러 찌가 포물선으로 날아가요(0.6초). 그 뒤에는 `wait` 와 같아요 |
+| `wait` | 찌가 천천히 까딱이고 물결이 느리게 퍼져요 |
+| `bite` | 찌가 쑥 들어가 떨리고, 물결이 빨라지고, 낚싯대 끝이 숙여져요 |
+| `reel` | 찌가 고양이 쪽으로 끌려오고 낚싯대가 들썩여요 |
+| `caught` | 물고기가 줄 끝에 매달려 올라와 파닥이고, 고양이가 눈웃음을 지어요 |
+| `null` | 원래대로 |
+
+- 켜 있는 동안 내 고양이는 물 쪽을 보고 앉고(`onLocalMove` 의 `anim` 도 `'sit'`), 조이스틱과 점프가 듣지 않아요. 카메라 돌리기는 돼요.
+- 걷기를 끄거나 집에 들어가거나 `setLocalPosition` 을 부르면 낚시가 꺼져요.
+
+### 위치 되돌리기 (`setLocalPosition`)
+
+- 내 고양이를 `(x, z)` 로 바로 옮겨요. `rotY` 를 안 주면 방향은 그대로예요. 집 안이면 방 좌표예요.
+- 막힌 곳(집 몸체, 나무, 바다)이면 가장 가까운 빈 곳에 서요. 8 넘게 옮기면 카메라도 바로 따라가고, 가까우면 부드럽게 따라와요.
+- 옮긴 다음 프레임에 `onLocalMove` 로 새 위치를 한 번 알려요. 걷기 모드가 아닐 때 부르면 `getLocalState` 의 값만 바뀌어요.
+
+### 고양이 그림 (`renderCatPreview`)
+
+- `renderCatPreview(cat, size = 256, options?)` → 배경이 투명한 PNG 의 data URL. `<img>` 의 `src` 나 CSS 배경에 그대로 넣으면 돼요.
+- `options`: `houseNo`(그 집 마당 고양이와 같은 얼룩), `pose: 'stand' | 'sit'`, `yaw`(몸을 튼 각도, 기본 0.4).
+- 섬을 그리는 WebGL 을 잠깐 빌려 화면 밖에 그려요(WebGL 을 하나 더 만들지 않아요). 같은 고양이는 전에 만든 그림을 돌려줘요(24장까지 기억).
+- 눈을 깜빡이는 순간에는 찍히지 않게 맞춰 두었어요. WebGL 이 끊긴 동안에는 빈 글자를 돌려주니, 그때는 기존 2D 그림을 쓰면 돼요.
+- 한 장 찍는 데 드는 시간은 폰에서 아직 못 쟀어요. 카드를 열 때 한 번만 부르는 것이 좋아요.
+
+### 고양이 눈
+
+- 고양이 눈을 1.32배로 키웠어요(사용자 요청, 2026-11-15: "카드에서 보면 눈이 작다"). 섬의 모든 고양이와 고양이 그림에 같이 적용돼요. `catMaterial.ts` 의 `EYE_SCALE`.
+
+### 성능 (세로 390x844, 품질 단계 0, 100채)
+
+| 화면 | 그리기 횟수 | 삼각형 |
+|------|-----------|--------|
+| 동네 시점 + 지붕 그림 4장 | 29 | 280k |
+| 걷기 + 지붕 그림 12장 | 43 | 416k |
+| 걷기 + 주민 10마리 | 50 | 452k |
+| 걷기 + 주민 10마리 + 낚시 | 53 | 451k |
+
+지붕 그림은 한 장에 그리기 1번(삼각형 20개), 주민은 고양이 1번 + 역할마다 최대 2번 + 이름표 1번, 낚시는 6번이 늘어요. fps 는 이 환경에서 잴 수 없었어요.
+
 ## 지역 깃발과 지역 강조
 
 - **깃발**: 사는 사람이 있는 집마다 마당 입구 왼쪽에 작은 깃발이 서요. 색은 `REGIONS` 의 `color`. 빈 집(NPC)에는 없어요. 동네 시점에서만 보여요.
@@ -456,16 +555,21 @@ src/scene/
     NameTags.ts   머리 위 이름표
     types.ts      RemotePlayer, LocalState (src/shared/types.ts 것을 다시 내보냄)
   free/           자유 배치와 그림 (작업 4)
-    types.ts      PlacedItem, InteriorItem, Drawing (임시. 아래 "요청" 1번)
+    types.ts      PlacedItem, InteriorItem, Drawing (src/shared/types.ts 것을 다시 내보냄)
     catalog.ts    아이템 종류 목록 (이름 → 크기와 모양). 늘릴 때 여기만 고침
     space.ts      마당/방 좌표, 겹침 검사, 누른 아이템 찾기, 걷기 충돌
     FreeItems.ts  그리기 (종류마다 InstancedMesh, 그림은 작은 네모)
     Placer.ts     꾸미기 모드 (끌기, 비틀기, 빨간 표시, onPlace/onPick)
     drawings.ts   32x32 16색 그림 → 텍스처, encodeDrawing/decodeDrawing
+  npc/            주민 고양이 (작업 5)
+    Npcs.ts       앉기/걷기/쳐다보기, 역할 표시(걸친 것, 놓인 것), 연두색 이름표
+  fishing/        낚시 모습 (작업 5)
+    FishingRig.ts 낚싯대, 줄, 찌, 물결, 물고기
   interior/       집 안
     Interior.ts   방(바닥, 벽 두 면, 문), 조명, 카메라, 벽지/바닥 무늬
   cat/            고양이 (모양, 셰이더, 행동, 여러 마리 그리기)
     catModel.ts   "고양이 모델"을 만드는 곳. GLB로 바꿀 때 여기만 바꾸면 됨
+    catPreview.ts 고양이 한 마리를 PNG 그림으로 찍기 (renderCatPreview)
   house/          집, 마당, 먼 집, 깃발, 동네 색, 특이한 집 표시
     HouseLayer.ts 집 전체 관리 (가까운 집/먼 집 전환, 깃발, 고양이, 이름표, 아이템)
   items/          꾸미기 아이템 8종
@@ -483,8 +587,16 @@ src/scene/
 
 ## 앱 쪽(Opus)에 알릴 것 / 요청
 
-1. **`src/shared/types.ts` 에 추가 요청 (작업 4)**: `PlacedItem`, `InteriorItem`, `Drawing` 이 아직 없어서 `src/scene/free/types.ts` 에 지시문 제안과 같은 모양으로 임시로 만들었어요(파일 맨 위에 "임시"라고 적어 둠). `import type { PlacedItem, InteriorItem, Drawing } from './scene'` 으로 쓸 수 있어요. shared 에 같은 모양으로 생기면 씬 파일은 그쪽 것을 다시 내보내도록 바꿀게요. 모양을 바꾸고 싶으면 알려 주세요.
-2. **README.md "Fable 에게 요청" 1번은 했어요.** 씬의 `RemotePlayer`, `LocalState`, `PlayerAnim`, `NEIGHBORHOOD_SIZE` 는 이제 `src/shared` 것을 써요. 2번(`setLocalPosition`)과 4번(`renderCatPreview`)은 아직이에요.
+0. **작업 5에서 앱이 할 일** (씬 함수는 다 있어요. `src/app` 은 씬 담당이 고치지 않아서 연결은 앱 쪽 일이에요)
+   - 지붕 그림: 고칠 것 없어요. `art.ts` 가 이미 `setRoofArt` 가 있으면 불러요.
+   - 주민: `explore.ts` 에서 주민을 `setRemotePlayers` 에 섞지 말고 `scene.setNpcs(list.map((n) => ({ id: n.id, name: n.name, x: n.x, z: n.z, rotY: n.rotY, cat: n.cat, role: n.role })))` 로 넘겨 주세요. 집 안팎을 오갈 때는 목록이 같아도 다시 넘겨야 해요. 원하면 `onNpcTap(id)` 로 "말 걸기"를 바로 열 수 있어요.
+   - 부두 낚시: "낚시하기" 버튼 조건을 `fishingSpotAt(me.x, me.z) !== null` 로 바꾸면 연못과 부두가 같이 돼요(`kind` 가 `'pier'` 면 바다 물고기를 주는 식으로 나눌 수 있어요). `npcs.ts` 의 `POND_R` 은 씬이 내보내는 것으로 바꿔도 돼요.
+   - 낚시 모습: 미니게임 판의 단계에 맞춰 `setFishing('cast' → 'wait' → 'bite' → 'reel' → 'caught')` 를 부르고, 판을 닫을 때 `setFishing(null)` 을 불러 주세요. 판이 화면을 다 덮으면 안 보이니 위쪽을 조금 비워 주면 좋아요.
+   - 위치 되돌리기: 서버가 위치를 고쳐 보낼 때 `setLocalPosition(x, z)` 를 불러 주세요.
+   - 입양 카드: `adoptCard.ts` 에서 `state.scene.renderCatPreview(cat, 256, { houseNo })` 가 빈 글자가 아니면 그 그림을 `<img>` 로 쓰고, 빈 글자면 지금의 2D 그림을 쓰면 돼요.
+   - 서버에서 낚시 위치를 검사한다면 부두 범위는 `dockArea()` 값(1구역 기준 x = -23 ± 0.95, z = 94.4 ~ 100.6)이에요.
+1. **씬 임시 타입 정리는 끝났어요.** `src/scene/free/types.ts` 는 `src/shared/types.ts` 것을 다시 내보내기만 해요. `DECOR_ITEMS` 17종과 씬 `catalog.ts` 의 종류 이름이 같은 것도 확인했어요.
+2. **README.md "Fable 에게 요청" 0번(작업 5), 1번, 2번(`setLocalPosition`), 4번(`renderCatPreview`) 다 했어요.**
 3. **작업 4에서 앱이 할 일**
    - "들어가기" 버튼: `onDoor(houseNo)` 로 보이고 숨겨요. 누르면 그 집의 집 안 아이템, 벽지, 바닥을 서버에서 받아 `enterHouse` 를 불러요.
    - 내 집일 때만 꾸미기 버튼을 보여 주고 `startPlacing` 을 불러요. `onPlace` 로 온 아이템은 같은 `id` 를 덮어써서 저장해요(끌 때마다 오니까 모아서 저장하면 좋아요).

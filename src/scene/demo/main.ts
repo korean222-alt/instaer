@@ -9,13 +9,19 @@ import {
   debugProject,
   debugSetCamera,
   debugSetQuality,
+  dockArea,
   encodeDrawing,
+  fishingSpotAt,
   FREE_ITEM_LIST,
   getSceneStats,
   houseSlot,
+  neighborhoodArea,
+  POND_R,
   type Drawing,
+  type FishingState,
   type LocalState,
   type PlacedItem,
+  type SceneNpc,
 } from '../index';
 import { startFakePlayers, type FakePlayers } from './fakePlayers';
 
@@ -339,6 +345,92 @@ function renderT4() {
 }
 let focusedNo: number | null = 1;
 
+// ── 작업 5: 지붕 그림, 주민, 낚시, 위치 되돌리기, 고양이 그림 (확인용 임시 UI) ──
+const rowC = document.createElement('div');
+rowC.className = 'row';
+t4.append(rowC);
+// 지붕 그림: 사는 사람이 있는 집 셋 중 둘에 가짜 그림을 붙인다
+let roofOn = false;
+function setRoof(on: boolean) {
+  roofOn = on;
+  const art = ['heart', 'cat', 'check', 'rainbow'];
+  island.setRoofArt(on ? houses.filter((h) => !h.isNpc && h.houseNo % 3 !== 0).map((h) => ({ houseNo: h.houseNo, drawingId: art[h.houseNo % 4] })) : []);
+  say(on ? '지붕에 그림을 붙였어요' : '지붕 그림을 뗐어요');
+}
+// 주민: 앱(src/app/play/npcs.ts)과 같은 자리 (광장: 잡화점/오락실, 연못: 낚시꾼, 큰 나무: 정원사)
+function townNpcs(): SceneNpc[] {
+  const list: SceneNpc[] = [];
+  let plazas = 0;
+  for (let n = 0; n < Math.ceil(count / 100) * 10; n++) {
+    const a = neighborhoodArea(n);
+    if (a.feature === 'pond') list.push({ id: `npc-fisher-${n}`, role: 'fisher', name: '낚시꾼 고등어', x: a.x + 1.3, z: a.z + POND_R + 0.8, rotY: Math.PI, cat: { fur: '#a9adb8', pattern: 'gray', eyeColor: '#f0b44a' } });
+    else if (a.feature === 'tree') list.push({ id: `npc-gardener-${n}`, role: 'gardener', name: '정원사 삼색이', x: a.x - 2.4, z: a.z + 2.6, rotY: -0.6, cat: { fur: '#f0a04b', pattern: 'calico', eyeColor: '#6fb7e8' } });
+    else if (plazas++ % 2 === 0) list.push({ id: `npc-shop-${n}`, role: 'shop', name: '잡화점 보리', x: a.x + 2.4, z: a.z + 2.1, rotY: 0.5, cat: { fur: '#f4a650', pattern: 'cheese', eyeColor: '#7ac36a' } });
+    else list.push({ id: `npc-arcade-${n}`, role: 'arcade', name: '오락실 턱시도', x: a.x + 2.4, z: a.z + 2.1, rotY: 0.5, cat: { fur: '#35323a', pattern: 'tuxedo', eyeColor: '#f2c94c' } });
+  }
+  return list;
+}
+let npcOn = false;
+function setNpc(on: boolean) {
+  npcOn = on;
+  if (!on) island.setNpcs([]);
+  else if (insideNo !== null) island.setNpcs([{ id: `npc-resident-${insideNo}`, role: 'resident', name: '주민 나비', x: 1.5, z: -1.2, rotY: -0.4, cat: { fur: '#fffaf2', pattern: 'white', eyeColor: '#6fb7e8' } }]);
+  else island.setNpcs(townNpcs());
+}
+island.onNpcTap((id) => say(`주민을 눌렀어요: ${id}`));
+// 낚시: 낚시터로 옮긴 뒤 상태를 차례로 넘긴다
+const FISH_STEPS: Array<FishingState | null> = ['cast', 'wait', 'bite', 'reel', 'caught', null];
+let fishStep = -1;
+function goFish(where: 'pond' | 'pier') {
+  if (!walking) setWalking(true, 1);
+  if (where === 'pier') {
+    const d = dockArea();
+    island.setLocalPosition(d.x, d.z1 - 0.8, 0);
+  } else {
+    for (let n = 0; n < 10; n++) {
+      const a = neighborhoodArea(n);
+      if (a.feature !== 'pond') continue;
+      island.setLocalPosition(a.x - 1.2, a.z + POND_R + 1.0, Math.PI);
+      break;
+    }
+  }
+  fishStep = -1;
+  island.setFishing(null);
+}
+function nextFish() {
+  const me = island.getLocalState();
+  fishStep = (fishStep + 1) % FISH_STEPS.length;
+  island.setFishing(FISH_STEPS[fishStep]);
+  say(`낚시: ${FISH_STEPS[fishStep] ?? '끝'} · 낚시터 ${fishingSpotAt(me.x, me.z)?.kind ?? '아님'}`);
+}
+// 고양이 그림: 가짜 입양 카드 자리에 3D 고양이를 찍어 넣는다
+const previewBox = document.createElement('div');
+previewBox.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9;background:#fff8ec;border-radius:24px;padding:14px;box-shadow:0 8px 30px rgba(70,50,30,.3);display:none;gap:8px;flex-wrap:wrap;width:300px;justify-content:center';
+document.body.append(previewBox);
+function showPreview(on: boolean) {
+  previewBox.style.display = on ? 'flex' : 'none';
+  previewBox.textContent = '';
+  if (!on) return;
+  const cats = houses.filter((h) => h.cat).slice(0, 6);
+  cats.forEach((h, i) => {
+    const img = new Image();
+    img.width = img.height = 128;
+    img.src = island.renderCatPreview(h.cat!, 128, { houseNo: h.houseNo, pose: i % 3 === 2 ? 'sit' : 'stand' });
+    previewBox.append(img);
+  });
+}
+previewBox.addEventListener('click', () => showPreview(false));
+btn(rowC, '지붕 그림', () => setRoof(!roofOn));
+btn(rowC, '주민', () => setNpc(!npcOn));
+btn(rowC, '연못으로', () => goFish('pond'));
+btn(rowC, '부두로', () => goFish('pier'));
+btn(rowC, '낚시 다음 단계', () => nextFish());
+btn(rowC, '되돌리기(1번지)', () => {
+  const s = houseSlot(1);
+  island.setLocalPosition(s.x, s.z + 4.4);
+});
+btn(rowC, '고양이 그림', () => showPreview(previewBox.style.display === 'none'));
+
 // ── 지역 버튼 (highlightRegion 확인용) ──
 const chips = $('regions');
 function setRegion(id: RegionId | null) {
@@ -412,6 +504,14 @@ if (params.get('inside')) {
   focusedNo = Number(params.get('yard'));
   setDecor(focusedNo);
 }
+//   ?roof=1 (지붕 그림)  ?npc=1 (주민)  ?fish=pond|pier (낚시터로)  ?fishstep=3 (낚시 단계)  ?preview=1 (고양이 그림)
+if (params.get('roof')) setRoof(true);
+if (params.get('fish')) {
+  goFish(params.get('fish') === 'pier' ? 'pier' : 'pond');
+  for (let i = 0; i < Number(params.get('fishstep') ?? 0); i++) nextFish();
+}
+if (params.get('npc')) setNpc(true);
+if (params.get('preview')) showPreview(true);
 renderT4();
 (window as unknown as Record<string, unknown>).__island = {
   island,
@@ -430,4 +530,10 @@ renderT4();
   placed: () => placedLog,
   rooms,
   yards,
+  setRoof,
+  setNpc,
+  goFish,
+  nextFish,
+  showPreview,
+  fishingSpotAt,
 };
