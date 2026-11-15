@@ -42,6 +42,9 @@ export interface YardItem {
 
 export type PlayerAnim = 'idle' | 'walk' | 'sit' | 'jump';
 
+/** 낚시하는 모습의 단계 (씬 setFishing 의 FishingState 와 같은 값) */
+export type FishingPose = 'cast' | 'wait' | 'bite' | 'reel' | 'caught';
+
 /** 내 주변의 다른 유저 (실시간) */
 export interface RemotePlayer {
   /** 접속이 이어지는 동안 바뀌지 않는 값 */
@@ -56,6 +59,8 @@ export interface RemotePlayer {
   anim: PlayerAnim;
   /** null 이면 기본 고양이 */
   cat: House['cat'];
+  /** 낚시 중이면 그 단계 (없거나 null 이면 낚시 안 함). 이때 anim 은 'sit' 이다 */
+  fishing?: FishingPose | null;
 }
 
 /** 걷기 모드에서 내 고양이 상태 */

@@ -1,10 +1,9 @@
 // 동네 가운데에 사는 주민(잡화점, 오락실, 낚시꾼, 정원사)과 빈 집(주민 집) 안의 고양이.
-// 씬에 NPC 전용 함수가 아직 없어서, 다른 유저 고양이(setRemotePlayers)에 섞어서 그린다.
-// (이름표가 '@이름' 으로 보인다. Fable 작업 5 의 setNpcs 가 생기면 그쪽으로 옮긴다)
-import { neighborhoodArea } from '../../scene';
+// 씬 작업 5 의 setNpcs 로 그린다 (이름표는 '@' 없이 연두색, 역할마다 모자/소품).
+import { neighborhoodArea, POND_R, type SceneNpc } from '../../scene';
 import { NEIGHBORHOOD_SIZE, ZONE_CAPACITY } from '../../shared/config';
 import { NPC_INFO, residentName, type NpcRole } from '../../shared/economy';
-import type { CatLook, RemotePlayer } from '../../shared/types';
+import type { CatLook } from '../../shared/types';
 
 export interface Npc {
   id: string;
@@ -30,9 +29,6 @@ const RESIDENT_LOOKS: CatLook[] = [
   { fur: '#f4a650', pattern: 'cheese', eyeColor: '#7ac36a' },
   { fur: '#a9adb8', pattern: 'gray', eyeColor: '#f0b44a' },
 ];
-
-/** 연못 반지름 (씬 layout.ts 의 POND_R 와 같은 값. 씬이 공개하면 그 값을 쓴다) */
-export const POND_R = 4.3;
 
 let cachedZones = -1;
 let cachedList: Npc[] = [];
@@ -98,4 +94,4 @@ export function residentNpc(houseNo: number): Npc {
   };
 }
 
-export const toPlayer = (n: Npc): RemotePlayer => ({ id: n.id, houseNo: null, handle: n.name, x: n.x, z: n.z, rotY: n.rotY, anim: 'sit', cat: n.cat });
+export const toSceneNpc = (n: Npc): SceneNpc => ({ id: n.id, name: n.name, x: n.x, z: n.z, rotY: n.rotY, cat: n.cat, role: n.role });

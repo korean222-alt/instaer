@@ -6,6 +6,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { MOVE_SEND_HZ, NEARBY_MAX, NEARBY_RADIUS, ROOM_MAX } from '../../src/shared/config';
 import {
+  FISH_POSES,
   MAX_JUMP,
   MAX_MSG_PER_SEC,
   MAX_SPEED,
@@ -13,6 +14,7 @@ import {
   RT_PROTOCOL,
   ZONE_CONN_MAX,
   type ClientMsg,
+  type PlayerTuple,
   type ServerMsg,
 } from '../../src/shared/realtime';
 import type { Env } from '../env';
@@ -34,6 +36,8 @@ interface Att extends RtUser {
   z: number;
   r: number;
   a: number;
+  /** 낚시 단계 번호 (FISH_POSES, 0 = 낚시 안 함) */
+  f: number;
   t: number;
   /** 초당 메시지 수 세기 */
   w: number;
@@ -100,7 +104,7 @@ export class RealtimeRoom extends DurableObject<Env> {
       return new Response(null, { status: 101, webSocket: client, headers });
     }
 
-    const att: Att = { ...user, id: crypto.randomUUID().slice(0, 8), room, x: 0, z: 0, r: 0, a: 0, t: 0, w: 0, k: 0, bad: 0 };
+    const att: Att = { ...user, id: crypto.randomUUID().slice(0, 8), room, x: 0, z: 0, r: 0, a: 0, f: 0, t: 0, w: 0, k: 0, bad: 0 };
     this.ctx.acceptWebSocket(server, [user.uid]);
     server.serializeAttachment(att);
     this.sendTo(server, { t: 'hello', id: att.id, room, st: Date.now() });
@@ -143,7 +147,8 @@ export class RealtimeRoom extends DurableObject<Env> {
 
     if (msg.t === 'm') {
       const { x, z, r, a } = msg;
-      if (![x, z, r, a].every(Number.isFinite) || Math.abs(x) > 200_000 || Math.abs(z) > 200_000 || a < 0 || a > 3) {
+      const f = msg.f ?? 0;
+      if (![x, z, r, a, f].every(Number.isFinite) || Math.abs(x) > 200_000 || Math.abs(z) > 200_000 || a < 0 || a > 3 || f < 0 || f >= FISH_POSES.length) {
         ws.serializeAttachment(att);
         return;
       }
@@ -162,6 +167,7 @@ export class RealtimeRoom extends DurableObject<Env> {
       att.z = Math.round(z);
       att.r = Math.round(r);
       att.a = a | 0;
+      att.f = f | 0;
       att.t = now;
       att.bad = 0;
       ws.serializeAttachment(att);
@@ -264,7 +270,9 @@ export class RealtimeRoom extends DurableObject<Env> {
         for (const { e } of fresh) known.add(e.a.id);
         this.sendTo(me.ws, { t: 'u', u: fresh.map(({ e }) => ({ id: e.a.id, h: e.a.h, n: e.a.n, c: e.a.c })) });
       }
-      const p = near.filter(({ e }) => e.a.t > 0 || isGame).map(({ e }) => [e.a.id, e.a.x, e.a.z, e.a.r, e.a.a] as [string, number, number, number, number]);
+      const p = near
+        .filter(({ e }) => e.a.t > 0 || isGame)
+        .map(({ e }): PlayerTuple => (e.a.f ? [e.a.id, e.a.x, e.a.z, e.a.r, e.a.a, e.a.f] : [e.a.id, e.a.x, e.a.z, e.a.r, e.a.a]));
       const sig = JSON.stringify(p);
       if (sig === this.lastSig.get(me.ws)) continue;
       this.lastSig.set(me.ws, sig);

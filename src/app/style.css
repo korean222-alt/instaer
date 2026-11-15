@@ -393,6 +393,7 @@ body:has(.sheet.open) .decor-bar { display: none; }
 /* ── 미니게임 판 (낚시, 생선 받기) ── */
 body.playing .actions, body.playing .walk-end, body.playing .inside-bar { display: none !important; }
 .game { position: absolute; inset: 0; background: rgba(40, 30, 20, 0.35); display: grid; place-items: center; z-index: 30; touch-action: none; }
+.game.low { background: linear-gradient(to bottom, transparent 40%, rgba(40, 30, 20, 0.28)); place-items: end center; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
 .game-card { background: var(--card-solid); border-radius: 22px; padding: 12px; box-shadow: 0 8px 30px var(--shadow); display: flex; flex-direction: column; gap: 8px; max-width: calc(100% - 16px); }
 .game-head { display: flex; justify-content: space-between; align-items: center; }
 .game-head b { font-size: 17px; }

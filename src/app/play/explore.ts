@@ -1,7 +1,8 @@
-// 걷기 모드에서 할 수 있는 것: 집 구경, 집 안 들어가기, 주민에게 말 걸기, 연못에서 낚시.
+// 걷기 모드에서 할 수 있는 것: 집 구경, 집 안 들어가기, 주민에게 말 걸기, 연못과 항구 부두에서 낚시.
 // 씬과는 공개 함수(setWalkMode, onNearHouse, onDoor, enterHouse, exitHouse, onExitHouse, setRemotePlayers,
-// getLocalState)로만 주고받는다.
-import type { IslandScene } from '../../scene';
+// setNpcs, onNpcTap, getLocalState, fishingSpotAt)로만 주고받는다.
+import { fishingSpotAt, type IslandScene } from '../../scene';
+import type { FishWhere } from '../../shared/economy';
 import type { HouseDecor, InteriorItem, RemotePlayer } from '../../shared/types';
 import { pinDrawings, setArtCenter, surfaceDrawing } from '../art';
 import { play } from '../audio/sound';
@@ -12,15 +13,15 @@ import { state } from '../state';
 import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
 import { applyWallet } from '../wallet';
-import { pondsOf, POND_R, residentNpc, toPlayer, townNpcs, type Npc } from './npcs';
+import { residentNpc, toSceneNpc, townNpcs, type Npc } from './npcs';
 
 export interface ExploreHooks {
   onWalking(on: boolean): void;
   onInside(houseNo: number | null): void;
   /** 주민에게 말 걸기 */
   talk(npc: Npc): void;
-  /** 연못에서 낚시하기 */
-  fish(): void;
+  /** 낚시하기 (연못이면 'pond', 항구 부두면 'sea') */
+  fish(where: FishWhere): void;
   icon(name: string): string;
 }
 
@@ -35,8 +36,10 @@ export interface Explore {
   exit(): void;
   /** 내 집 안으로 (걷기를 켜고 내 집 문 앞에서 들어간다) */
   goInsideMine(): Promise<boolean>;
-  /** 실시간이 받은 다른 유저 목록 (NPC 를 섞어서 씬에 넘긴다) */
+  /** 실시간이 받은 다른 유저 목록 */
   setNetPlayers(players: RemotePlayer[]): void;
+  /** 지금 서 있는 곳의 낚시터 (없으면 null) */
+  fishSpot(): FishWhere | null;
   /** 버튼 다시 그리기 (판이 열리고 닫힐 때 등) */
   refresh(): void;
 }
@@ -93,7 +96,8 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
   let doorNo: number | null = null;
   let nearNo: number | null = null;
   let nearNpc: Npc | null = null;
-  let nearPond = false;
+  /** 서 있는 곳의 낚시터 */
+  let nearFish: FishWhere | null = null;
   let net: RemotePlayer[] = [];
   let shownNpcs: Npc[] = [];
   let tick = 0;
@@ -107,13 +111,15 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
   insideBar.hidden = true;
   app.appendChild(insideBar);
 
-  const pushPlayers = () => scene.setRemotePlayers([...net, ...shownNpcs.map(toPlayer)]);
+  const pushPlayers = () => scene.setRemotePlayers(net);
+  const pushNpcs = () => scene.setNpcs(shownNpcs.map(toSceneNpc));
 
-  function updateNpcs() {
+  /** force: 집 안팎을 오갈 때 (씬이 주민을 모두 지우므로 목록이 같아도 다시 넘긴다) */
+  function updateNpcs(force = false) {
     if (!walking) {
       if (shownNpcs.length) {
         shownNpcs = [];
-        pushPlayers();
+        pushNpcs();
       }
       return;
     }
@@ -129,9 +135,9 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
         .map((e) => e.n);
     const changed = list.length !== shownNpcs.length || list.some((n, i) => shownNpcs[i]?.id !== n.id);
     shownNpcs = list;
-    if (changed) pushPlayers();
+    if (changed || force) pushNpcs();
 
-    // 가까운 주민, 연못
+    // 가까운 주민, 낚시터 (연못, 항구 부두)
     let best: Npc | null = null;
     let bestD = 2.4;
     for (const n of list) {
@@ -141,11 +147,12 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
         bestD = d;
       }
     }
-    const pond = inside === null && pondsOf(state.unlockedZones).some((p) => Math.hypot(p.x - me.x, p.z - me.z) < POND_R + 2.3);
-    if (best?.id !== nearNpc?.id || pond !== nearPond) {
-      if ((best && !nearNpc) || (pond && !nearPond)) play('ding');
+    const spot = inside === null ? fishingSpotAt(me.x, me.z) : null;
+    const fishHere: FishWhere | null = spot ? (spot.kind === 'pier' ? 'sea' : 'pond') : null;
+    if (best?.id !== nearNpc?.id || fishHere !== nearFish) {
+      if ((best && !nearNpc) || (fishHere && !nearFish)) play('ding');
       nearNpc = best;
-      nearPond = pond;
+      nearFish = fishHere;
       draw();
     }
     if (inside === null) setArtCenter(me.x, me.z);
@@ -156,7 +163,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     const btns: string[] = [];
     if (walking && !sheetOpen && !document.body.classList.contains('playing')) {
       if (nearNpc) btns.push(`<button class="act-btn primary" data-act="talk">${hooks.icon('chat')}<span>${esc(nearNpc.name)}에게 말 걸기</span></button>`);
-      if (nearPond && !nearNpc) btns.push(`<button class="act-btn primary" data-act="fish">${hooks.icon('fish')}<span>낚시하기</span></button>`);
+      if (nearFish && !nearNpc) btns.push(`<button class="act-btn primary" data-act="fish">${hooks.icon('fish')}<span>${nearFish === 'sea' ? '바다 낚시하기' : '낚시하기'}</span></button>`);
       if (inside === null && doorNo !== null) {
         const h = state.houses.get(doorNo);
         const label = state.me?.houseNo === doorNo ? '내 집 들어가기' : h?.igHandle ? `@${h.igHandle} 집 들어가기` : '주민 집 들어가기';
@@ -187,7 +194,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     if (act === 'talk' && nearNpc) {
       play('meow');
       hooks.talk(nearNpc);
-    } else if (act === 'fish') hooks.fish();
+    } else if (act === 'fish' && nearFish) hooks.fish(nearFish);
     else if (act === 'enter' && doorNo !== null) void api.enter(doorNo);
     else if (act === 'look' && nearNo !== null) go('house', nearNo);
     else if (act === 'exit') api.exit();
@@ -206,6 +213,13 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     draw();
   });
   scene.onExitHouse(() => leftHouse());
+  // 주민을 누르면 바로 말 걸기 (가까이 가지 않아도 된다)
+  scene.onNpcTap((id) => {
+    const npc = shownNpcs.find((n) => n.id === id);
+    if (!npc || !walking || document.body.classList.contains('playing') || document.body.classList.contains('decorating')) return;
+    play('meow');
+    hooks.talk(npc);
+  });
 
   function leftHouse() {
     if (inside === null) return;
@@ -215,7 +229,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     realtime.leaveRoom();
     pinDrawings([]);
     hooks.onInside(null);
-    updateNpcs();
+    updateNpcs(true);
     draw();
   }
 
@@ -251,9 +265,10 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
         clearInterval(tick);
         nearNo = doorNo = null;
         nearNpc = null;
-        nearPond = false;
+        nearFish = null;
         net = [];
         shownNpcs = [];
+        scene.setNpcs([]);
       }
       hooks.onWalking(on);
       updateNpcs();
@@ -278,7 +293,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       play('open');
       realtime.joinRoom(`house-${houseNo}`);
       hooks.onInside(houseNo);
-      updateNpcs();
+      updateNpcs(true);
       draw();
       if (!lived && state.me) {
         try {
@@ -308,6 +323,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       net = players;
       pushPlayers();
     },
+    fishSpot: () => nearFish,
     refresh: draw,
   };
   return api;

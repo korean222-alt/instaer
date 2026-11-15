@@ -16,7 +16,7 @@ import { npcScreen } from './screens/npc';
 import { questsScreen } from './screens/quests';
 import { shopScreen } from './screens/shop';
 import { debugPlaceWalker, houseSlot } from '../scene';
-import { CURRENCY } from '../shared/economy';
+import { CURRENCY, type FishWhere } from '../shared/economy';
 import { loadMyDrawings, setArtCenter, syncArt } from './art';
 import { startArcade } from './play/arcade';
 import { ctl } from './play/ctl';
@@ -275,21 +275,33 @@ explore = createExplore(scene, realtime, {
   talk(npc) {
     go('npc', npc.role === 'resident' ? `resident-${npc.houseNo}` : npc.role);
   },
-  fish() {
+  fish(where) {
     play('tap');
-    startFishing(() => explore.refresh());
-    explore.refresh();
+    fishHere(where);
   },
 });
+
+/** 낚시 판을 열고, 판의 단계에 맞춰 내 고양이 낚시 모습(씬)과 다른 유저에게 보낼 낚시 단계(실시간)를 바꾼다 */
+function fishHere(where: FishWhere) {
+  startFishing({
+    where,
+    onPose(pose) {
+      scene.setFishing(pose);
+      realtime.setFishing(pose);
+    },
+    onEnd: () => explore.refresh(),
+  });
+  explore.refresh();
+}
 ctl.explore = explore;
 ctl.placement = createPlacement(scene, explore);
 ctl.arcade = () => {
   startArcade(() => explore.refresh());
   explore.refresh();
 };
-ctl.fishing = () => startFishing(() => explore.refresh());
+ctl.fishing = () => fishHere(explore.fishSpot() ?? 'pond');
 // 확인용 (콘솔에서 __catIsland.realtime.debug())
-(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state, ctl, place: (x: number, z: number) => debugPlaceWalker(scene, x, z), npcs: () => townNpcs(state.unlockedZones), ponds: () => pondsOf(state.unlockedZones) };
+(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state, ctl, place: (x: number, z: number) => debugPlaceWalker(scene, x, z), moveTo: (x: number, z: number) => scene.setLocalPosition(x, z), local: () => scene.getLocalState(), npcs: () => townNpcs(state.unlockedZones), ponds: () => pondsOf(state.unlockedZones) };
 
 $('btn-walk').addEventListener('click', () => explore.setWalking(true));
 $('btn-walk-end').addEventListener('click', () => explore.setWalking(false));

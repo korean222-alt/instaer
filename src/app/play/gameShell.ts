@@ -13,9 +13,10 @@ export interface GameShell {
   close(): void;
 }
 
-export function openShell(title: string, opts: { aspect: number; onClose(): void; onAction(act: string): void }): GameShell {
+/** low: 판을 화면 아래쪽에 붙이고 뒤를 어둡게 하지 않는다 (위쪽에 섬과 내 고양이가 보이게. 낚시) */
+export function openShell(title: string, opts: { aspect: number; low?: boolean; onClose(): void; onAction(act: string): void }): GameShell {
   const el = document.createElement('div');
-  el.className = 'game';
+  el.className = opts.low ? 'game low' : 'game';
   el.setAttribute('role', 'dialog');
   el.innerHTML = `
     <div class="game-card">

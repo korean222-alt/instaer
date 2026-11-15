@@ -29,18 +29,29 @@ export interface FishDef {
   pull: number;
   /** 도감 그림 색 */
   color: string;
+  /** 잡히는 곳: 연못, 바다(부두), 둘 다 */
+  where: FishWhere | 'both';
 }
+/** 낚시하는 곳: 동네 연못 또는 1구역 항구 부두 */
+export type FishWhere = 'pond' | 'sea';
 
 export const FISH: readonly FishDef[] = [
-  { id: 'minnow', label: '피라미', rarity: 'common', weight: 26, price: 3, min: 6, max: 14, pull: 0.15, color: '#a9c7d8' },
-  { id: 'crucian', label: '붕어', rarity: 'common', weight: 28, price: 4, min: 10, max: 28, pull: 0.25, color: '#b9a77a' },
-  { id: 'loach', label: '미꾸라지', rarity: 'common', weight: 14, price: 6, min: 9, max: 20, pull: 0.35, color: '#a08a62' },
-  { id: 'carp', label: '잉어', rarity: 'common', weight: 11, price: 12, min: 30, max: 70, pull: 0.5, color: '#9c8f70' },
-  { id: 'catfish', label: '메기', rarity: 'common', weight: 7, price: 18, min: 35, max: 90, pull: 0.62, color: '#6f6a64' },
-  { id: 'boot', label: '낡은 장화', rarity: 'junk', weight: 6, price: 1, min: 24, max: 30, pull: 0.1, color: '#7b6a5a' },
-  { id: 'goldfish', label: '금붕어', rarity: 'rare', weight: 4, price: 30, min: 8, max: 18, pull: 0.55, color: '#ff8f3d' },
-  { id: 'koi', label: '비단잉어', rarity: 'rare', weight: 3, price: 45, min: 40, max: 80, pull: 0.72, color: '#ff6b5b' },
-  { id: 'goldkoi', label: '황금 잉어', rarity: 'legend', weight: 1, price: 80, min: 60, max: 100, pull: 0.85, color: '#ffc94a' },
+  { id: 'minnow', label: '피라미', rarity: 'common', weight: 26, price: 3, min: 6, max: 14, pull: 0.15, color: '#a9c7d8', where: 'pond' },
+  { id: 'crucian', label: '붕어', rarity: 'common', weight: 28, price: 4, min: 10, max: 28, pull: 0.25, color: '#b9a77a', where: 'pond' },
+  { id: 'loach', label: '미꾸라지', rarity: 'common', weight: 14, price: 6, min: 9, max: 20, pull: 0.35, color: '#a08a62', where: 'pond' },
+  { id: 'carp', label: '잉어', rarity: 'common', weight: 11, price: 12, min: 30, max: 70, pull: 0.5, color: '#9c8f70', where: 'pond' },
+  { id: 'catfish', label: '메기', rarity: 'common', weight: 7, price: 18, min: 35, max: 90, pull: 0.62, color: '#6f6a64', where: 'pond' },
+  { id: 'boot', label: '낡은 장화', rarity: 'junk', weight: 6, price: 1, min: 24, max: 30, pull: 0.1, color: '#7b6a5a', where: 'both' },
+  { id: 'goldfish', label: '금붕어', rarity: 'rare', weight: 4, price: 30, min: 8, max: 18, pull: 0.55, color: '#ff8f3d', where: 'pond' },
+  { id: 'koi', label: '비단잉어', rarity: 'rare', weight: 3, price: 45, min: 40, max: 80, pull: 0.72, color: '#ff6b5b', where: 'pond' },
+  { id: 'goldkoi', label: '황금 잉어', rarity: 'legend', weight: 1, price: 80, min: 60, max: 100, pull: 0.85, color: '#ffc94a', where: 'pond' },
+  // 바다 (부두 낚시, 씬 작업 5)
+  { id: 'mackerel', label: '고등어', rarity: 'common', weight: 26, price: 5, min: 20, max: 40, pull: 0.3, color: '#5f8fa8', where: 'sea' },
+  { id: 'flounder', label: '가자미', rarity: 'common', weight: 20, price: 8, min: 15, max: 40, pull: 0.4, color: '#b59a78', where: 'sea' },
+  { id: 'rockfish', label: '우럭', rarity: 'common', weight: 14, price: 12, min: 20, max: 45, pull: 0.5, color: '#6d6560', where: 'sea' },
+  { id: 'can', label: '빈 깡통', rarity: 'junk', weight: 5, price: 1, min: 10, max: 12, pull: 0.1, color: '#9aa3a8', where: 'sea' },
+  { id: 'seabream', label: '참돔', rarity: 'rare', weight: 4, price: 40, min: 30, max: 70, pull: 0.7, color: '#ff8a8a', where: 'sea' },
+  { id: 'bluefin', label: '참다랑어', rarity: 'legend', weight: 1, price: 90, min: 80, max: 150, pull: 0.9, color: '#3d5a80', where: 'sea' },
 ];
 export const fishDef = (id: string) => FISH.find((f) => f.id === id);
 export const isRareFish = (id: string) => {
@@ -48,12 +59,13 @@ export const isRareFish = (id: string) => {
   return r === 'rare' || r === 'legend';
 };
 
-/** rand: 0~1 난수 함수 → 잡힌 물고기와 크기 */
-export function rollFish(rand: () => number = Math.random): { id: string; cm: number } {
-  const total = FISH.reduce((s, f) => s + f.weight, 0);
+/** rand: 0~1 난수 함수, where: 낚시하는 곳 → 잡힌 물고기와 크기 */
+export function rollFish(rand: () => number = Math.random, where: FishWhere = 'pond'): { id: string; cm: number } {
+  const pool = FISH.filter((f) => f.where === where || f.where === 'both');
+  const total = pool.reduce((s, f) => s + f.weight, 0);
   let r = rand() * total;
-  let pick = FISH[0];
-  for (const f of FISH) {
+  let pick = pool[0];
+  for (const f of pool) {
     r -= f.weight;
     if (r < 0) {
       pick = f;

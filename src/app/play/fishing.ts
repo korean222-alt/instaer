@@ -1,7 +1,9 @@
-// 낚시 미니게임 (연못 가까이에서 "낚시하기").
+// 낚시 미니게임 (연못 가까이 또는 항구 부두 끝에서 "낚시하기").
+// 판의 단계에 맞춰 onPose 로 낚시 모습(씬 setFishing, 실시간)을 알린다. 판은 화면 아래쪽에 띄워서 위쪽에 내 고양이가 보이게 한다.
 // 던지기 → 찌가 쑥 들어가면 바로 누르기 → 누르고 있으면 초록 칸이 오른쪽으로, 떼면 왼쪽으로. 물고기를 칸 안에 두면 끌려온다.
 // 잡은 물고기는 모아 두었다가 그만둘 때(또는 많이 모이면) 한 번에 서버에 알린다 (쓰기 한도 아끼기).
-import { CURRENCY, FISH_PER_REPORT, fishDef, isRareFish, rollFish, type FishDef } from '../../shared/economy';
+import { CURRENCY, FISH_PER_REPORT, fishDef, isRareFish, rollFish, type FishDef, type FishWhere } from '../../shared/economy';
+import type { FishingPose } from '../../shared/types';
 import { play } from '../audio/sound';
 import { ApiError, reportFish } from '../net/api';
 import { fishSvg } from '../screens/quests';
@@ -13,7 +15,22 @@ import { openShell } from './gameShell';
 
 type Phase = 'ready' | 'cast' | 'wait' | 'bite' | 'reel' | 'done';
 
-export function startFishing(onEnd?: () => void) {
+export interface FishingOptions {
+  /** 낚시하는 곳 (기본: 연못) */
+  where?: FishWhere;
+  /** 낚시 모습 단계가 바뀔 때. 판을 닫으면 null */
+  onPose?(pose: FishingPose | null): void;
+  onEnd?(): void;
+}
+
+export function startFishing(opts: FishingOptions = {}) {
+  const where: FishWhere = opts.where ?? 'pond';
+  let pose: FishingPose | null = null;
+  const setPose = (p: FishingPose | null) => {
+    if (p === pose) return;
+    pose = p;
+    opts.onPose?.(p);
+  };
   let phase: Phase = 'ready';
   let t = 0;
   let waitFor = 0;
@@ -31,12 +48,14 @@ export function startFishing(onEnd?: () => void) {
   let raf = 0;
   let last = performance.now();
 
-  const shell = openShell('낚시', {
-    aspect: 1.05,
+  const shell = openShell(where === 'sea' ? '바다 낚시' : '낚시', {
+    aspect: 0.52,
+    low: true,
     onClose() {
       cancelAnimationFrame(raf);
+      setPose(null);
       void flush();
-      onEnd?.();
+      opts.onEnd?.();
     },
     onAction(act) {
       if (act === 'again') reset();
@@ -69,6 +88,9 @@ export function startFishing(onEnd?: () => void) {
     if (phase === 'ready') {
       phase = 'cast';
       t = 0;
+      // 다시 던질 때는 낚시 모습을 처음부터 (씬이 찌를 새로 던지게)
+      if (pose !== null) setPose(null);
+      setPose('cast');
       play('jump');
       shell.setMessage('찌를 지켜보세요...');
       shell.setButtons('');
@@ -79,6 +101,7 @@ export function startFishing(onEnd?: () => void) {
       shell.setMessage('너무 일렀어요. 물고기가 도망갔어요. 다시 던져 보세요');
     } else if (phase === 'bite') {
       phase = 'reel';
+      setPose('reel');
       play('ding');
       zone = 0.3;
       zoneV = 0;
@@ -92,7 +115,11 @@ export function startFishing(onEnd?: () => void) {
 
   canvas.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    canvas.setPointerCapture(e.pointerId);
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* 손가락이 이미 떨어짐 */
+    }
     press();
   });
   const release = () => (holding = false);
@@ -101,6 +128,7 @@ export function startFishing(onEnd?: () => void) {
 
   function caught() {
     phase = 'done';
+    setPose('caught');
     const f = fish!;
     catches.push({ id: f.def.id, cm: f.cm });
     play(isRareFish(f.def.id) ? 'fanfare' : 'save');
@@ -112,6 +140,7 @@ export function startFishing(onEnd?: () => void) {
   }
   function escaped(why: string) {
     phase = 'done';
+    setPose('wait');
     play('remove');
     shell.setMessage(why);
     shell.setButtons(`<button class="btn" data-act="stop">그만하기${catches.length ? ` (${catches.length}마리)` : ''}</button><button class="btn primary" data-act="again">다시 던지기</button>`);
@@ -121,14 +150,16 @@ export function startFishing(onEnd?: () => void) {
     t += dt;
     if (phase === 'cast' && t > 0.6) {
       phase = 'wait';
+      setPose('wait');
       t = 0;
       waitFor = 1.6 + Math.random() * 3.6;
       nibbleAt = Math.random() < 0.6 ? waitFor * (0.3 + Math.random() * 0.4) : -1;
     } else if (phase === 'wait' && t >= waitFor) {
-      const r = rollFish();
+      const r = rollFish(Math.random, where);
       fish = { def: fishDef(r.id)!, cm: r.cm };
       biteWindow = 0.95 - fish.def.pull * 0.3;
       phase = 'bite';
+      setPose('bite');
       t = 0;
       play('like');
       shell.setMessage('<b class="big">지금!</b>');
@@ -161,8 +192,8 @@ export function startFishing(onEnd?: () => void) {
   function render(now: number) {
     // 물
     const grd = g.createLinearGradient(0, 0, 0, h);
-    grd.addColorStop(0, '#9fdcd6');
-    grd.addColorStop(1, '#5fb8c4');
+    grd.addColorStop(0, where === 'sea' ? '#8fcde6' : '#9fdcd6');
+    grd.addColorStop(1, where === 'sea' ? '#3f8fb8' : '#5fb8c4');
     g.fillStyle = grd;
     g.fillRect(0, 0, w, h);
     g.strokeStyle = 'rgba(255,255,255,0.35)';
@@ -174,8 +205,8 @@ export function startFishing(onEnd?: () => void) {
       g.quadraticCurveTo(w / 2, y + 6 * Math.sin(now / 700 + i), w - 30, y);
       g.stroke();
     }
-    // 물풀과 연잎
-    g.fillStyle = '#7cc48a';
+    // 물풀과 연잎 (바다는 거품)
+    g.fillStyle = where === 'sea' ? 'rgba(255,255,255,0.45)' : '#7cc48a';
     g.beginPath();
     g.ellipse(w * 0.15, h * 0.2, 24, 12, 0.3, 0, Math.PI * 2);
     g.ellipse(w * 0.85, h * 0.7, 28, 13, -0.4, 0, Math.PI * 2);

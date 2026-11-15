@@ -1,7 +1,8 @@
 // 입양 결과 카드. 스토리에 올리기 좋은 세로(1080x1920) 그림을 SVG 로 만들고, 저장/공유용 PNG 로 바꾼다.
+// 고양이는 씬이 찍어 준 3D 그림(renderCatPreview)을 쓰고, 그게 안 되면(WebGL 끊김 등) 2D 그림을 쓴다.
 import { catLook } from '../../shared/catLook';
 import type { RegionId } from '../../shared/types';
-import { regionColor, regionLabel } from '../state';
+import { regionColor, regionLabel, state } from '../state';
 import { catSvgInner } from './catSvg';
 import { esc } from './dom';
 
@@ -15,6 +16,8 @@ export interface CardInfo {
   regionTotal: number | null;
 }
 
+/** 3D 고양이 그림 자리 (발이 풀밭 타원 위에 오게) */
+const CAT_IMG = { x: 170, y: 290, size: 740 };
 const W = 1080;
 const H = 1920;
 const FONT = `'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif`;
@@ -30,7 +33,20 @@ function wrap(text: string, max = 15): string[] {
   return [a, words.slice(i).join(' ')].filter(Boolean);
 }
 
-export function cardSvg(info: CardInfo): string {
+/** 3D 고양이 그림 (PNG data URL). 안 되면 빈 글자 */
+function catPhoto(info: CardInfo): string {
+  try {
+    const look = catLook(info.handle);
+    const cat = state.houses.get(info.houseNo)?.cat ?? { fur: look.fur, pattern: look.pattern, eyeColor: look.eyeColor };
+    const url = state.scene.renderCatPreview(cat, 512, { houseNo: info.houseNo, pose: 'sit' });
+    return typeof url === 'string' && url.startsWith('data:image/') ? url : '';
+  } catch {
+    return '';
+  }
+}
+
+/** catImg: 3D 고양이 그림 (없으면 2D 그림) */
+export function cardSvg(info: CardInfo, catImg = ''): string {
   const look = catLook(info.handle);
   const color = regionColor(info.region);
   const label = regionLabel(info.region);
@@ -54,7 +70,7 @@ export function cardSvg(info: CardInfo): string {
     })
     .join('');
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="${esc(FONT)}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="${esc(FONT)}">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#bfeaf0"/>
@@ -71,7 +87,11 @@ export function cardSvg(info: CardInfo): string {
   <text x="540" y="170" font-size="44" font-weight="700" fill="#5b4636" opacity="0.7" text-anchor="middle">고양이섬 · ${info.houseNo}번지</text>
   <text x="540" y="260" font-size="84" font-weight="900" fill="#5b4636" text-anchor="middle">입양 완료!</text>
 
-  <g transform="translate(240 360) scale(3)">${catSvgInner(look, 'card')}</g>
+  ${
+    catImg
+      ? `<image x="${CAT_IMG.x}" y="${CAT_IMG.y}" width="${CAT_IMG.size}" height="${CAT_IMG.size}" href="${catImg}" xlink:href="${catImg}"/>`
+      : `<g transform="translate(240 360) scale(3)">${catSvgInner(look, 'card')}</g>`
+  }
 
   <text x="540" y="1150" font-size="120" font-weight="900" fill="#5b4636" text-anchor="middle">${esc(look.name)}</text>
   <text x="540" y="1230" font-size="44" font-weight="700" fill="#8a715e" text-anchor="middle">@${esc(info.handle)} 의 고양이</text>
@@ -105,7 +125,7 @@ export function svgToPng(svg: string): Promise<Blob> {
 
 /** 카드 그림 영역 + 공유 버튼을 만든다 */
 export async function mountCard(root: HTMLElement, info: CardInfo) {
-  const svg = cardSvg(info);
+  const svg = cardSvg(info, catPhoto(info));
   root.innerHTML = `
     <div class="card-frame"><img class="card-img" alt="입양 결과 카드" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}" /></div>
     <div class="row">
