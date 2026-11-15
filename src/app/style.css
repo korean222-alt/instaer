@@ -516,3 +516,11 @@ body:has(.sheet.open) .decor-dock { display: none; }
 .decor-dock .strip-item.on { background: #ffe1d6; box-shadow: inset 0 0 0 2px var(--accent); }
 .decor-sel.picked b { color: var(--accent); }
 .hint-line { font-size: 12px; color: var(--ink-soft); font-weight: 700; }
+
+/* 낚시 방법 안내 (2026-11-15) */
+.fish-guide { display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.fg-step { display: flex; gap: 8px; align-items: flex-start; background: var(--field); border-radius: 12px; padding: 7px 10px; }
+.fg-step i { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-style: normal; font-weight: 800; font-size: 13px; display: grid; place-items: center; }
+.fg-step b { display: block; font-size: 13px; line-height: 1.4; }
+.fg-step em { font-style: normal; color: var(--accent); }
+.fg-step small { display: block; font-size: 11.5px; line-height: 1.4; }
