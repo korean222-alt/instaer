@@ -1,4 +1,4 @@
-import { catLook } from '../../src/shared/catLook';
+import { catLook, houseCat } from '../../src/shared/catLook';
 import { isBlockedText } from '../../src/shared/handle';
 import { gameRoomName, ROOM_ID_RE, RT_PROTOCOL, zoneRoomName } from '../../src/shared/realtime';
 import type { Env } from '../env';
@@ -43,8 +43,8 @@ export async function realtimeConnect(kind: string, id: string, request: Request
     const real = mine.house.ig_handle;
     if (isBlockedText(real)) return error(403, 'blocked', '이 아이디로는 함께 걸을 수 없어요');
     const h = publicHandle(mine.house); // 숨기기를 켰으면 이름표에도 가린 아이디
-    const look = catLook(real);
-    user = { uid: `h:${mine.house.id}`, h, n: mine.house.house_no, c: [look.fur, look.pattern, look.eyeColor] };
+    const cat = houseCat(real, mine.house.cat);
+    user = { uid: `h:${mine.house.id}`, h, n: mine.house.house_no, c: [cat.fur, cat.pattern, cat.eyeColor] };
   }
 
   const headers = new Headers(request.headers);

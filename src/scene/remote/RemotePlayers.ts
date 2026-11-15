@@ -3,6 +3,8 @@ import type { CatLook } from '../../shared/types';
 import { CatFlock } from '../cat/CatFlock';
 import { PATTERN_INDEX } from '../cat/catMaterial';
 import type { CatModel } from '../cat/catModel';
+import type { GlowShared } from '../core/glowLambert';
+import { FishingRig, type FishingState } from '../fishing/FishingRig';
 import { hash01 } from '../util/rand';
 import { GRAVITY, groundHeightAt, JUMP_V, SPEED_FAST, STRIDE, type Bridge } from '../walk/Walker';
 import { NameTags } from './NameTags';
@@ -18,6 +20,7 @@ import type { PlayerAnim, RemotePlayer } from './types';
  * - 목록에 새로 생긴 유저는 뿅 하고 커지며 나타나고, 빠진 유저는 작아지며 사라진다.
  *
  * 고양이는 InstancedMesh 두 개(가까운 유저용 / 먼 유저용 단순 모양)로만 그린다.
+ * 낚시 중인 유저(RemotePlayer.fishing)는 가까운 순서로 FISH_RIGS 명까지 낚싯대와 찌를 그린다 (한 명에 그리기 6번).
  * 유저 자리(Rec)는 처음에 POOL 개를 만들어 두고 계속 다시 쓴다.
  */
 
@@ -43,6 +46,9 @@ const NEAR_RADIUS = [22, 22, 16, 12, 9];
 const ANIMS: readonly PlayerAnim[] = ['idle', 'walk', 'sit', 'jump'];
 const JUMP = 3;
 const SIT = 2;
+/** 다른 유저 낚싯대는 가까운 순서로 이만큼만 그린다 */
+const FISH_RIGS = 3;
+const FISH_STATES: ReadonlySet<string> = new Set(['cast', 'wait', 'bite', 'reel', 'caught']);
 const DEFAULT_CAT: CatLook = { fur: '#f4a650', pattern: 'cheese', eyeColor: '#7ac36a' };
 
 function angleDiff(a: number, b: number) {
@@ -106,6 +112,11 @@ class Rec {
   /** 기준점(내 고양이)까지 거리의 제곱 */
   d2 = 0;
 
+  // 낚시
+  fishing: FishingState | null = null;
+  /** 맡은 낚싯대 번호 (-1 이면 없음) */
+  rig = -1;
+
   push(t: number, x: number, z: number, rotY: number, anim: number) {
     if (this.n === SNAPS) {
       this.st.copyWithin(0, 1);
@@ -137,6 +148,13 @@ export interface RemoteView {
   quality: number;
 }
 
+/** 다른 유저 낚싯대에 필요한 것 (index 가 넘긴다) */
+export interface RemoteFishingSupport {
+  shared: GlowShared;
+  /** (x, z) 에 앉아 yaw 쪽을 보는 고양이가 찌를 던질 물 위의 자리 */
+  target(x: number, z: number, yaw: number): { x: number; y: number; z: number };
+}
+
 export class RemotePlayers {
   readonly group = new THREE.Group();
   bridges: readonly Bridge[] = [];
@@ -156,7 +174,13 @@ export class RemotePlayers {
   private active = 0;
   private stamp = 0;
 
-  constructor(model: CatModel) {
+  private readonly rigs: FishingRig[] = [];
+  private readonly rigOwner: Array<Rec | null> = [];
+  private readonly fishSupport: RemoteFishingSupport | null;
+  private readonly fishCand: Rec[] = [];
+
+  constructor(model: CatModel, fishing?: RemoteFishingSupport) {
+    this.fishSupport = fishing ?? null;
     this.near = new CatFlock(model, POOL, 'low');
     this.far = new CatFlock(model, POOL, 'tiny');
     // 먼 유저는 그림자도 드리우지 않는다
@@ -165,6 +189,13 @@ export class RemotePlayers {
     this.far.mesh.visible = false;
     this.group.add(this.near.mesh, this.far.mesh, this.tags.mesh);
     for (let i = 0; i < POOL; i++) this.recs.push(new Rec());
+    if (fishing)
+      for (let i = 0; i < FISH_RIGS; i++) {
+        const rig = new FishingRig(fishing.shared);
+        this.rigs.push(rig);
+        this.rigOwner.push(null);
+        this.group.add(rig.group);
+      }
   }
 
   /** 지금 보여줄 유저 목록 전체. now 는 performance.now() 기준 시각(ms) */
@@ -196,6 +227,8 @@ export class RemotePlayers {
         r.tagAlpha = 0;
         r.tagSlot = -1;
         r.lookKey = '';
+        r.fishing = null;
+        r.rig = -1;
         this.byId.set(id, r);
         this.active++;
         r.push(now, p.x, p.z, rotY, anim);
@@ -216,6 +249,7 @@ export class RemotePlayers {
       } else continue;
       r.stamp = stamp;
       r.alive = true;
+      r.fishing = p.fishing && FISH_STATES.has(p.fishing) ? p.fishing : null;
       if (r.handle !== p.handle) {
         r.handle = String(p.handle ?? '');
         // 이름이 바뀌면 이름표를 새로 받는다
@@ -304,6 +338,8 @@ export class RemotePlayers {
     }
     for (let i = 0; i < nPicked; i++) picked[i].tagWant = true;
 
+    this.updateFishing(dt, visible);
+
     // 이름표
     this.tags.begin();
     let nTags = 0;
@@ -345,6 +381,52 @@ export class RemotePlayers {
     this.shownTags = nTags;
   }
 
+  /** 낚시 중인 가까운 유저에게 낚싯대를 나눠 주고 움직인다 */
+  private updateFishing(dt: number, visible: boolean) {
+    const sup = this.fishSupport;
+    if (!sup) return;
+    const cand = this.fishCand;
+    cand.length = 0;
+    if (visible) for (const r of this.recs) if (r.used && r.alive && r.fishing && r.near && r.show > 0.5) cand.push(r);
+    cand.sort((a, b) => a.d2 - b.d2);
+    if (cand.length > FISH_RIGS) cand.length = FISH_RIGS;
+    // 더는 그리지 않을 유저의 낚싯대를 거둔다
+    for (let i = 0; i < this.rigs.length; i++) {
+      const o = this.rigOwner[i];
+      if (o && !cand.includes(o)) this.freeRig(o);
+    }
+    for (const r of cand) {
+      let rig: FishingRig;
+      if (r.rig < 0) {
+        const i = this.rigOwner.indexOf(null);
+        if (i < 0) continue;
+        this.rigOwner[i] = r;
+        r.rig = i;
+        rig = this.rigs[i];
+        const tg = sup.target(r.x, r.z, r.yaw);
+        rig.begin(tg.x, tg.z, tg.y);
+        rig.setState(null);
+      } else rig = this.rigs[r.rig];
+      if (rig.state !== r.fishing) {
+        // 다시 던지면 찌를 새로 던진다
+        if (r.fishing === 'cast' && rig.state !== null) {
+          const tg = sup.target(r.x, r.z, r.yaw);
+          rig.begin(tg.x, tg.z, tg.y);
+          rig.setState(null);
+        }
+        rig.setState(r.fishing);
+      }
+      rig.update(dt, r.x, r.groundY + r.air + 0.035, r.z, r.yaw, SCALE);
+    }
+  }
+
+  private freeRig(r: Rec) {
+    if (r.rig < 0) return;
+    this.rigs[r.rig].setState(null);
+    this.rigOwner[r.rig] = null;
+    r.rig = -1;
+  }
+
   /** 모두 바로 지운다 (집 안팎을 오갈 때. 사라지는 모습 없이) */
   clear() {
     for (const r of this.recs) if (r.used) this.release(r);
@@ -354,10 +436,12 @@ export class RemotePlayers {
     this.near.dispose();
     this.far.dispose();
     this.tags.dispose();
+    for (const rig of this.rigs) rig.dispose();
     this.byId.clear();
   }
 
   private release(r: Rec) {
+    this.freeRig(r);
     this.tags.give(r.tagSlot);
     r.tagSlot = -1;
     r.used = false;

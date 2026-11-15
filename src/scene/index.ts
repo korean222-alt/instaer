@@ -253,12 +253,23 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   const player = new CatFlock(catModel, 1, 'high');
   player.mesh.visible = false;
   // 다른 유저의 고양이
-  const remotes = new RemotePlayers(catModel);
+  /** (x, z) 에 앉아 yaw 쪽을 보는 고양이가 찌를 던질 물 위의 자리. 낚시터면 그 물, 아니면 바라보는 쪽 2.2 앞 */
+  const fishTarget = (x: number, z: number, yaw: number) => {
+    const spot = fishingSpotAt(x, z);
+    const tx = spot ? spot.x : x + Math.sin(yaw) * 2.2;
+    const tz = spot ? spot.z : z + Math.cos(yaw) * 2.2;
+    // 연못 물은 풀밭보다 조금 높고, 바다는 0 이다
+    const y = spot?.kind === 'pier' ? 0.02 : landAt(tx, tz) > 0 ? GROUND_Y + 0.075 : 0.02;
+    return { x: tx, y, z: tz };
+  };
+  const remotes = new RemotePlayers(catModel, { shared: atmosphere.shared, target: fishTarget });
   // 주민(NPC) 고양이, 낚시 소품, 고양이 그림 찍기
   const npcs = new Npcs(catModel, atmosphere.shared);
   const fishRig = new FishingRig(atmosphere.shared);
   let fishing: FishingState | null = null;
   let fishYaw = 0;
+  /** 낚시를 시작하면 이 시간(초) 동안 카메라를 고양이 뒤로 돌려 물 쪽을 보게 한다 */
+  let fishCamTurn = 0;
   let npcTapCb: ((id: string) => void) | null = null;
   let preview: CatPreview | null = null;
   // 꾸미기(끌어 놓기)와 집 안. 집 안은 처음 들어갈 때 만든다
@@ -655,6 +666,10 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
         // 낚시 중: 움직이지 않고 물 쪽으로 몸을 돌린 채 앉아 있는다
         walker.update(dt, 0, 0, walkCam.yaw, false);
         walker.yaw += wrapAngle(fishYaw - walker.yaw) * (1 - Math.exp(-dt * 8));
+        if (fishCamTurn > 0) {
+          fishCamTurn -= dt;
+          walkCam.yaw += wrapAngle(fishYaw + Math.PI - walkCam.yaw) * (1 - Math.exp(-dt * 4));
+        }
       } else walker.update(dt, controls.moveX, controls.moveY, walkCam.yaw, jump);
       walkCam.update(dt, camera, walker.x, walker.groundY, walker.air, walker.z, controls.takeLook());
       player.setPose(0, walker.x, walker.y + 0.035, walker.z, walker.yaw, PLAYER_SCALE);
@@ -972,13 +987,12 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       if (!walking || inside !== null) return;
       if (fishing === null) {
         // 낚시터면 그 물 쪽으로, 아니면 바라보던 쪽 앞으로 던진다
-        const spot = fishingSpotAt(walker.x, walker.z);
-        const tx = spot ? spot.x : walker.x + Math.sin(walker.yaw) * 2.2;
-        const tz = spot ? spot.z : walker.z + Math.cos(walker.yaw) * 2.2;
-        fishYaw = Math.atan2(tx - walker.x, tz - walker.z);
-        // 연못 물은 풀밭보다 조금 높고, 바다는 0 이다
-        fishRig.begin(tx, tz, spot?.kind === 'pier' ? 0.02 : landAt(tx, tz) > 0 ? GROUND_Y + 0.075 : 0.02);
+        const tg = fishTarget(walker.x, walker.z, walker.yaw);
+        fishYaw = Math.atan2(tg.x - walker.x, tg.z - walker.z);
+        fishRig.begin(tg.x, tg.z, tg.y);
         walker.holdSit = true;
+        // 카메라를 고양이 뒤로 돌려서 찌가 화면에 보이게 한다 (그 뒤에는 손가락으로 다시 돌릴 수 있다)
+        fishCamTurn = 1.2;
       }
       fishing = state;
       fishRig.setState(state);

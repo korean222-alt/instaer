@@ -1,7 +1,7 @@
-import { catLook } from '../../shared/catLook';
+import { CAT_CHOICES, catLook, EYE_CHOICES, patternLabelOf, snapCatChoice } from '../../shared/catLook';
 import { REGIONS } from '../../shared/config';
 import { handleProblem, HANDLE_MAX, HANDLE_PROBLEM_TEXT, normalizeHandle } from '../../shared/handle';
-import type { RegionId } from '../../shared/types';
+import type { CatLook, RegionId } from '../../shared/types';
 import { play } from '../audio/sound';
 import { ApiError, moveIn, saveToken } from '../net/api';
 import { go } from '../router';
@@ -54,10 +54,40 @@ function renderMine(root: HTMLElement, justMoved: { rank: number; total: number;
   root.querySelector('[data-act="decorate"]')?.addEventListener('click', () => go('decorate'));
 }
 
+/** 고양이 그림: 씬이 찍어 준 3D 그림, 안 되면 2D 그림 */
+function catPic(cat: CatLook, size: number, key: string): string {
+  let url = '';
+  try {
+    url = state.scene.renderCatPreview(cat, size * 2, { pose: 'sit', yaw: 0.45 });
+  } catch {
+    url = '';
+  }
+  return url.startsWith('data:image/') ? `<img src="${url}" width="${size}" height="${size}" alt="" />` : catSvg(cat, size, key);
+}
+
 function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
   const options = REGIONS.map((r) => `<option value="${r.id}">${r.label}</option>`).join('');
+  // 처음에는 무늬를 하나 골라 두고, 고양이를 직접 고르기 전까지는 아이디를 적으면 그 아이디의 추천 고양이로 바뀐다
+  const start = CAT_CHOICES[Math.floor(Math.random() * CAT_CHOICES.length)];
+  let cat: CatLook = { pattern: start.pattern, fur: start.furs[0], eyeColor: EYE_CHOICES[0] };
+  let touched = false;
   root.innerHTML = `
-    <p class="lead">집 한 채와 고양이 한 마리를 무료로 받아요.<br />집에는 내 인스타 아이디 이름표가 걸려요.</p>
+    <p class="lead">어서 와요! 함께 살 고양이를 먼저 골라 주세요.<br />집 한 채와 고양이 한 마리를 무료로 받고, 집에는 내 인스타 아이디 이름표가 걸려요.</p>
+    <section class="cat-pick" aria-label="고양이 고르기">
+      <div class="cat-stage" data-stage></div>
+      <div class="pick-label">무늬</div>
+      <div class="pick-patterns" role="radiogroup" aria-label="무늬">
+        ${CAT_CHOICES.map(
+          (k) => `<button type="button" class="pick-pattern" role="radio" data-pattern="${k.pattern}">${catPic({ pattern: k.pattern, fur: k.furs[0], eyeColor: EYE_CHOICES[0] }, 56, `pp-${k.pattern}`)}<span>${esc(k.label)}</span></button>`,
+        ).join('')}
+      </div>
+      <div class="pick-label">털 색</div>
+      <div class="pick-swatches" data-furs role="radiogroup" aria-label="털 색"></div>
+      <div class="pick-label">눈 색</div>
+      <div class="pick-swatches" role="radiogroup" aria-label="눈 색">
+        ${EYE_CHOICES.map((c) => `<button type="button" class="swatch eye" role="radio" data-eye="${c}" style="--c:${c}" aria-label="눈 색 ${c}"></button>`).join('')}
+      </div>
+    </section>
     <form class="form" novalidate>
       <label class="field">
         <span>인스타 아이디</span>
@@ -65,7 +95,6 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
                spellcheck="false" maxlength="${HANDLE_MAX + 1}" placeholder="mochi_nyang" required /></div>
         <small class="hint" data-hint></small>
       </label>
-      <div class="preview" data-preview hidden></div>
       <label class="field">
         <span>사는 지역 <small>한 번 정하면 못 바꿔요</small></span>
         <select name="region" required>
@@ -83,23 +112,52 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
   const select = form.querySelector<HTMLSelectElement>('select')!;
   const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
   const hint = form.querySelector<HTMLElement>('[data-hint]')!;
-  const preview = form.querySelector<HTMLElement>('[data-preview]')!;
+  const stage = root.querySelector<HTMLElement>('[data-stage]')!;
+  const furs = root.querySelector<HTMLElement>('[data-furs]')!;
+
+  /** 큰 그림, 이름, 고른 표시 다시 그리기 */
+  const drawCat = () => {
+    const handle = normalizeHandle(input.value);
+    const named = input.value.trim() && !handleProblem(handle) ? catLook(handle) : null;
+    stage.innerHTML = `<div class="cat-big">${catPic(cat, 150, 'big')}</div>
+      <div class="cat-who"><b>${named ? esc(named.name) : '이름은 아이디로 정해져요'}</b>
+      <span>${esc(patternLabelOf(cat.pattern))} 고양이${named ? ` · ${esc(named.personality)}` : ''}</span></div>`;
+    for (const b of root.querySelectorAll<HTMLElement>('[data-pattern]')) b.setAttribute('aria-checked', String(b.dataset.pattern === cat.pattern));
+    const kind = CAT_CHOICES.find((k) => k.pattern === cat.pattern)!;
+    furs.innerHTML = kind.furs
+      .map((c) => `<button type="button" class="swatch" role="radio" data-fur="${c}" style="--c:${c}" aria-label="털 색 ${c}" aria-checked="${c === cat.fur}"></button>`)
+      .join('');
+    for (const b of root.querySelectorAll<HTMLElement>('[data-eye]')) b.setAttribute('aria-checked', String(b.dataset.eye === cat.eyeColor));
+  };
+  root.querySelector('.cat-pick')!.addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-pattern], [data-fur], [data-eye]');
+    if (!b) return;
+    touched = true;
+    if (b.dataset.pattern) {
+      const kind = CAT_CHOICES.find((k) => k.pattern === b.dataset.pattern)!;
+      cat = { ...cat, pattern: kind.pattern, fur: kind.furs[0] };
+    } else if (b.dataset.fur) cat = { ...cat, fur: b.dataset.fur };
+    else if (b.dataset.eye) cat = { ...cat, eyeColor: b.dataset.eye };
+    play('tap');
+    drawCat();
+  });
 
   const check = () => {
     const handle = normalizeHandle(input.value);
     const problem = input.value.trim() ? handleProblem(handle) : 'empty';
     hint.textContent = problem && problem !== 'empty' ? HANDLE_PROBLEM_TEXT[problem] : '';
     hint.classList.toggle('bad', !!problem && problem !== 'empty');
-    // 입력하는 동안 미리 보는 내 고양이
-    if (!problem) {
+    // 고양이를 직접 고르기 전에는 아이디의 추천 고양이를 보여 준다
+    if (!problem && !touched) {
       const look = catLook(handle);
-      preview.hidden = false;
-      preview.innerHTML = `${catSvg(look, 64, 'pv')}<div><b>${esc(look.name)}</b><span>${esc(look.patternLabel)} 고양이 · ${esc(look.personality)}</span></div>`;
-    } else preview.hidden = true;
+      cat = snapCatChoice({ pattern: look.pattern, fur: look.fur, eyeColor: look.eyeColor });
+    }
+    drawCat();
     button.disabled = !!problem || !select.value;
   };
   input.addEventListener('input', check);
   select.addEventListener('change', check);
+  drawCat();
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -109,7 +167,7 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
     button.textContent = '입주하는 중...';
     try {
       const hide = form.querySelector<HTMLInputElement>('input[name="hide"]')!.checked;
-      const res = await moveIn(handle, select.value as RegionId, hide);
+      const res = await moveIn(handle, select.value as RegionId, hide, cat);
       saveToken(res.token);
       state.hideHandle = res.hideHandle;
       play('fanfare');

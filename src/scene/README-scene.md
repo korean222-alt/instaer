@@ -12,6 +12,7 @@
 | 작업 2: 3인칭 걷기 (`setWalkMode`, `onNearHouse`), 조이스틱, 충돌, 자동 품질, WebGL 복구 | 완료 |
 | 작업 3a: 다른 유저 고양이 표시 (`setRemotePlayers`, `onLocalMove`, `getLocalState`), 데모의 "다른 유저 20명 시험" | 완료 (씬 쪽만. 서버와 통신은 앱 쪽 작업 3b) |
 | 작업 4: 집 안 들어가기 (`enterHouse`, `exitHouse`, `onDoor`, `onExitHouse`), 자유 배치 (`setYardItemsFree`, `startPlacing`, `stopPlacing`, `rotatePlacing`, `onPlace`, `onPick`), 직접 그린 그림 (`setDrawings`) | 완료 (씬 쪽만. 저장, 그리기 화면, 꾸미기 UI 는 앱 쪽) |
+| 다른 유저 낚시 모습(`RemotePlayer.fishing` → 가까운 3명까지 낚싯대/찌), 낚시 시작 때 카메라를 물 쪽으로 (2026-11-15, 사용자 허락으로 Opus 가 함. `tasks/페이블-6-다른유저낚시.md`) | 완료 |
 | 작업 5: 지붕 그림 (`setRoofArt`), 주민 고양이 (`setNpcs`, `onNpcTap`), 낚시 모습 (`setFishing`, `fishingSpotAt`), 부두 걷기와 부두 낚시터, 위치 되돌리기 (`setLocalPosition`), 고양이 그림 찍기 (`renderCatPreview`), 고양이 눈 키우기 | 완료 (씬 쪽만. 앱에 붙이는 일은 아래 "앱 쪽에 알릴 것" 0번) |
 
 **아직 못 한 것**
@@ -24,7 +25,7 @@
 - 집 안에 들어가고 나올 때 화면이 부드럽게 넘어가지 않고 바로 바뀌어요(전환 효과 없음).
 - 옷에 그림 붙이기는 지시문대로 이번에 하지 않았어요.
 - 작업 5 는 씬 데모(가짜 데이터)에서만 확인했어요. 앱에서 실제 서버 데이터로는 아직 못 봤어요. 부두 낚시, 위치 되돌리기, 입양 카드의 3D 고양이는 앱이 새 함수를 불러야 화면에 나와요(앱 쪽 작업).
-- 다른 유저가 낚시하는 모습은 안 보여요(앉아 있는 모습으로만 보여요). 낚싯대는 내 고양이에게만 그려요.
+- 다른 유저 낚싯대는 가까운 3명까지만 그려요(한 명에 그리기 6번). 그보다 먼 낚시꾼은 앉은 모습만 보여요.
 
 **알려진 문제**
 

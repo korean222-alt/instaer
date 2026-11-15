@@ -111,3 +111,67 @@ export function catLook(handle: string): CatProfile {
 export function defaultRoofColor(handle: string): string {
   return ROOF_COLORS[hashString(`roof:${handle.toLowerCase()}`) % ROOF_COLORS.length];
 }
+
+// ── 입주할 때 고르는 고양이 (2026-11-15) ──
+// 고른 고양이는 DB houses.cat 에 'pattern|털색|눈색' 으로 저장한다. 고르지 않은 예전 집은 아이디로 정해진 고양이(catLook)를 쓴다.
+// 이름과 성격은 고르지 않고 아이디로 정해진다.
+
+/** 고를 수 있는 무늬와 털색 (무늬마다 2~3가지, 서로 눈에 띄게 다른 색) */
+export const CAT_CHOICES: ReadonlyArray<{ pattern: CatPattern; label: string; furs: readonly string[] }> = [
+  { pattern: 'cheese', label: '치즈', furs: ['#f4a650', '#f7c27a', '#e0843a'] },
+  { pattern: 'black', label: '까망', furs: ['#34313a', '#4b3e3a'] },
+  { pattern: 'calico', label: '삼색', furs: ['#f0a04b', '#e8b878'] },
+  { pattern: 'white', label: '하양', furs: ['#fffaf2', '#f1e2c8'] },
+  { pattern: 'gray', label: '회색', furs: ['#a9adb8', '#7d8392', '#c9ccd4'] },
+  { pattern: 'tuxedo', label: '턱시도', furs: ['#35323a', '#5d6270'] },
+];
+/** 고를 수 있는 눈 색 */
+export const EYE_CHOICES: readonly string[] = ['#7ac36a', '#f2c94c', '#e0a13a', '#6fb7e8', '#a3b75a', '#d9773a'];
+
+/** 아무 고양이 → 고를 수 있는 값 중 가장 가까운 것 (아이디 추천 고양이를 고르기 화면에 보여 줄 때) */
+export function snapCatChoice(c: CatLook): CatLook {
+  const kind = CAT_CHOICES.find((k) => k.pattern === c.pattern) ?? CAT_CHOICES[0];
+  const rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const near = (list: readonly string[], h: string) => {
+    if (list.includes(h)) return h;
+    const a = rgb(h);
+    let best = list[0];
+    let bd = Infinity;
+    for (const x of list) {
+      const b = rgb(x);
+      const d = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+      if (d < bd) [best, bd] = [x, d];
+    }
+    return best;
+  };
+  return { pattern: kind.pattern, fur: near(kind.furs, c.fur), eyeColor: near(EYE_CHOICES, c.eyeColor) };
+}
+
+export const patternLabelOf = (pattern: CatPattern) => KINDS.find((k) => k.pattern === pattern)?.label ?? '';
+
+/** 화면이 보낸 고양이가 고를 수 있는 값인지 확인한다 (아니면 null) */
+export function parseCatChoice(v: unknown): CatLook | null {
+  if (!v || typeof v !== 'object') return null;
+  const { pattern, fur, eyeColor } = v as Record<string, unknown>;
+  const kind = CAT_CHOICES.find((k) => k.pattern === pattern);
+  if (!kind || typeof fur !== 'string' || typeof eyeColor !== 'string') return null;
+  if (!kind.furs.includes(fur) || !EYE_CHOICES.includes(eyeColor)) return null;
+  return { pattern: kind.pattern, fur, eyeColor };
+}
+
+export const encodeCat = (c: CatLook) => `${c.pattern}|${c.fur}|${c.eyeColor}`;
+
+/** DB 에 저장한 값 → 고양이 (없거나 이상하면 null) */
+export function decodeCat(s: string | null | undefined): CatLook | null {
+  if (!s) return null;
+  const [pattern, fur, eyeColor] = s.split('|');
+  return parseCatChoice({ pattern, fur, eyeColor });
+}
+
+/** 그 집의 고양이: 고른 고양이가 있으면 그것, 없으면 아이디로 정해진 고양이 */
+export function houseCat(handle: string, stored: string | null | undefined): CatLook {
+  const chosen = decodeCat(stored);
+  if (chosen) return chosen;
+  const look = catLook(handle);
+  return { pattern: look.pattern, fur: look.fur, eyeColor: look.eyeColor };
+}

@@ -1,6 +1,6 @@
 // 서버 호출은 전부 여기서 한다. 씬은 서버를 모른다.
 import type { WalletData } from '../../shared/economy';
-import type { Drawing, House, HouseDecor, PlacedItem, RegionId } from '../../shared/types';
+import type { CatLook, Drawing, House, HouseDecor, PlacedItem, RegionId } from '../../shared/types';
 
 export interface Health {
   ok: boolean;
@@ -117,8 +117,9 @@ export async function fetchHealth(): Promise<Health> {
 export const fetchVillage = () => call<Village>('GET', '/api/village');
 export const fetchRegions = () => call<Regions>('GET', '/api/regions');
 export const fetchMe = () => call<{ house: House | null; founder?: boolean; hideHandle?: boolean }>('GET', '/api/me');
-export const moveIn = (handle: string, region: RegionId, hideHandle: boolean) =>
-  call<MoveInResult>('POST', '/api/move-in', { handle, region, hideHandle });
+/** cat: 고른 고양이 (CAT_CHOICES / EYE_CHOICES 안의 값) */
+export const moveIn = (handle: string, region: RegionId, hideHandle: boolean, cat: CatLook) =>
+  call<MoveInResult>('POST', '/api/move-in', { handle, region, hideHandle, cat });
 export const setPrivacy = (hideHandle: boolean) => call<{ ok: true; hideHandle: boolean }>('PUT', '/api/me/privacy', { hideHandle });
 
 /** 지갑 (츄르, 가진 아이템, 퀘스트 진행) */

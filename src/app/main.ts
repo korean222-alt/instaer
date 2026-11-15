@@ -326,8 +326,20 @@ async function boot() {
   else if (state.me && route.id === 'map') scene.focusHouse(state.me.houseNo);
   show(route);
   refreshRegions();
+  // 맨 처음 온 사람: 바로 고양이 고르기(입주 화면)를 연다. 닫으면 섬을 그냥 둘러볼 수 있다 (한 번만)
+  if (!state.me && !state.offline && route.id === 'map' && !welcomed()) go('move-in');
 }
 boot();
+
+function welcomed(): boolean {
+  try {
+    if (localStorage.getItem('ci_welcomed')) return true;
+    localStorage.setItem('ci_welcomed', '1');
+  } catch {
+    /* 저장이 막힌 브라우저: 매번 열어 준다 */
+  }
+  return false;
+}
 
 // 화면에 돌아오면 (1분 넘게 지났으면) 마을을 새로 불러온다
 let lastRefresh = Date.now();

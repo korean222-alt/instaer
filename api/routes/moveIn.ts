@@ -1,4 +1,4 @@
-import { defaultRoofColor } from '../../src/shared/catLook';
+import { defaultRoofColor, encodeCat, parseCatChoice } from '../../src/shared/catLook';
 import { FOUNDER_MAX } from '../../src/shared/config';
 import { handleProblem, HANDLE_PROBLEM_TEXT, normalizeHandle } from '../../src/shared/handle';
 import type { House, RegionId } from '../../src/shared/types';
@@ -21,15 +21,20 @@ export interface MoveInResponse {
   region: { id: RegionId; rank: number; total: number; toFirst: number };
 }
 
-/** POST /api/move-in {handle, region} : 지금은 아이디 입력만으로 입주(미인증). 나중에 DM 코드 인증으로 바꾼다 */
+/**
+ * POST /api/move-in {handle, region, hideHandle?, cat?} : 지금은 아이디 입력만으로 입주(미인증). 나중에 DM 코드 인증으로 바꾼다.
+ * cat: 고른 고양이 {pattern, fur, eyeColor} (CAT_CHOICES / EYE_CHOICES 안의 값). 없으면 아이디로 정해진 고양이.
+ */
 export async function moveIn(request: Request, env: Env): Promise<Response> {
-  const body = await readJson<{ handle?: unknown; region?: unknown; hideHandle?: unknown }>(request);
+  const body = await readJson<{ handle?: unknown; region?: unknown; hideHandle?: unknown; cat?: unknown }>(request);
   if (!body || typeof body.handle !== 'string') return error(400, 'bad_request', '아이디를 적어 주세요');
   const handle = normalizeHandle(body.handle);
   const problem = handleProblem(handle);
   if (problem) return error(400, `handle_${problem}`, HANDLE_PROBLEM_TEXT[problem]);
   if (!isRegion(body.region)) return error(400, 'bad_region', '사는 지역을 골라 주세요');
   const region = body.region;
+  const cat = body.cat === undefined || body.cat === null ? null : parseCatChoice(body.cat);
+  if (body.cat != null && !cat) return error(400, 'bad_cat', '고를 수 없는 고양이예요');
   // 입력이 맞는 요청만 센다 (DB 를 건드리기 전에)
   if (!(await allow(env.RL_MOVE_IN, `move-in:${clientIp(request)}`, 5))) {
     return error(429, 'rate_limited', '잠시 후에 다시 해 주세요');
@@ -47,11 +52,11 @@ export async function moveIn(request: Request, env: Env): Promise<Response> {
   for (let attempt = 0; attempt < 4 && !row; attempt++) {
     try {
       row = await env.DB.prepare(
-        `INSERT INTO houses (house_no, ig_handle, region, roof_color, hide_handle)
-         VALUES ((SELECT COALESCE(MAX(house_no), 0) + 1 FROM houses), ?, ?, ?, ?)
+        `INSERT INTO houses (house_no, ig_handle, region, roof_color, hide_handle, cat)
+         VALUES ((SELECT COALESCE(MAX(house_no), 0) + 1 FROM houses), ?, ?, ?, ?, ?)
          RETURNING ${HOUSE_COLS}`,
       )
-        .bind(handle, region, defaultRoofColor(handle), body.hideHandle === true ? 1 : 0)
+        .bind(handle, region, defaultRoofColor(handle), body.hideHandle === true ? 1 : 0, cat ? encodeCat(cat) : null)
         .first<HouseRow>();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

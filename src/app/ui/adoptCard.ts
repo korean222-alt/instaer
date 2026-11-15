@@ -1,7 +1,7 @@
 // 입양 결과 카드. 스토리에 올리기 좋은 세로(1080x1920) 그림을 SVG 로 만들고, 저장/공유용 PNG 로 바꾼다.
 // 고양이는 씬이 찍어 준 3D 그림(renderCatPreview)을 쓰고, 그게 안 되면(WebGL 끊김 등) 2D 그림을 쓴다.
-import { catLook } from '../../shared/catLook';
-import type { RegionId } from '../../shared/types';
+import { catLook, patternLabelOf } from '../../shared/catLook';
+import type { CatLook, RegionId } from '../../shared/types';
 import { regionColor, regionLabel, state } from '../state';
 import { catSvgInner } from './catSvg';
 import { esc } from './dom';
@@ -33,11 +33,18 @@ function wrap(text: string, max = 15): string[] {
   return [a, words.slice(i).join(' ')].filter(Boolean);
 }
 
+/** 그 집 고양이 (입주할 때 고른 것. 모르면 아이디로 정해진 고양이) */
+function cardCat(info: CardInfo): CatLook {
+  const known = state.houses.get(info.houseNo)?.cat ?? (state.me?.houseNo === info.houseNo ? state.me.cat : null);
+  if (known) return known;
+  const look = catLook(info.handle);
+  return { fur: look.fur, pattern: look.pattern, eyeColor: look.eyeColor };
+}
+
 /** 3D 고양이 그림 (PNG data URL). 안 되면 빈 글자 */
 function catPhoto(info: CardInfo): string {
   try {
-    const look = catLook(info.handle);
-    const cat = state.houses.get(info.houseNo)?.cat ?? { fur: look.fur, pattern: look.pattern, eyeColor: look.eyeColor };
+    const cat = cardCat(info);
     const url = state.scene.renderCatPreview(cat, 512, { houseNo: info.houseNo, pose: 'sit' });
     return typeof url === 'string' && url.startsWith('data:image/') ? url : '';
   } catch {
@@ -47,7 +54,9 @@ function catPhoto(info: CardInfo): string {
 
 /** catImg: 3D 고양이 그림 (없으면 2D 그림) */
 export function cardSvg(info: CardInfo, catImg = ''): string {
-  const look = catLook(info.handle);
+  // 이름과 성격은 아이디로, 무늬와 색은 고른 고양이로
+  const look = { ...catLook(info.handle), ...cardCat(info) };
+  look.patternLabel = patternLabelOf(look.pattern);
   const color = regionColor(info.region);
   const label = regionLabel(info.region);
   const quote = wrap(`“${look.personality}”`);

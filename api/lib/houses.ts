@@ -1,4 +1,4 @@
-import { catLook } from '../../src/shared/catLook';
+import { houseCat } from '../../src/shared/catLook';
 import { REGIONS, ZONE_CAPACITY } from '../../src/shared/config';
 import { maskHandle } from '../../src/shared/handle';
 import type { House, RegionId } from '../../src/shared/types';
@@ -13,9 +13,11 @@ export interface HouseRow {
   likes: number;
   created_at: number;
   hide_handle: number;
+  /** 고른 고양이 'pattern|털색|눈색' (NULL 이면 아이디로 정해진 고양이) */
+  cat: string | null;
 }
 
-export const HOUSE_COLS = 'id, house_no, ig_handle, verified, region, roof_color, likes, created_at, hide_handle';
+export const HOUSE_COLS = 'id, house_no, ig_handle, verified, region, roof_color, likes, created_at, hide_handle, cat';
 
 const REGION_IDS = new Set<string>(REGIONS.map((r) => r.id));
 export const isRegion = (v: unknown): v is RegionId => typeof v === 'string' && REGION_IDS.has(v);
@@ -23,15 +25,14 @@ export const isRegion = (v: unknown): v is RegionId => typeof v === 'string' && 
 /** 다른 사람에게 보여 줄 아이디 (숨기기를 켰으면 가린 아이디) */
 export const publicHandle = (row: Pick<HouseRow, 'ig_handle' | 'hide_handle'>) => (row.hide_handle ? maskHandle(row.ig_handle) : row.ig_handle);
 
-/** DB 한 줄 → 공통 House. 고양이는 저장하지 않고 진짜 아이디로 계산한다 (가려도 고양이는 같다) */
+/** DB 한 줄 → 공통 House. 고양이는 고른 것이 있으면 그것, 없으면 진짜 아이디로 계산한다 (가려도 고양이는 같다) */
 export function toHouse(row: HouseRow, owner = false): House {
-  const look = catLook(row.ig_handle);
   return {
     houseNo: row.house_no,
     igHandle: owner ? row.ig_handle : publicHandle(row),
     roofColor: row.roof_color,
     region: isRegion(row.region) ? row.region : 'other',
-    cat: { fur: look.fur, pattern: look.pattern, eyeColor: look.eyeColor },
+    cat: houseCat(row.ig_handle, row.cat),
     likes: row.likes,
     isNpc: false,
     verified: row.verified === 1,

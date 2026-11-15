@@ -406,3 +406,21 @@ body.playing .actions, body.playing .walk-end, body.playing .inside-bar { displa
 .catch { display: flex; align-items: center; gap: 10px; justify-content: center; text-align: left; }
 .catch small { display: block; }
 .tabbar a span { font-size: 11px; }
+
+/* 입주: 고양이 고르기 */
+.cat-pick { background: #fff6e6; border-radius: 18px; padding: 10px 12px 12px; margin-bottom: 14px; }
+.cat-stage { display: flex; align-items: center; gap: 10px; min-height: 150px; }
+.cat-big { flex: none; width: 150px; height: 150px; display: grid; place-items: center; background: radial-gradient(circle at 50% 70%, #d9f0c4 0 45%, transparent 46%); border-radius: 50%; }
+.cat-big img, .cat-big svg { display: block; width: 150px; height: 150px; }
+.cat-who b { display: block; font-size: 18px; }
+.cat-who span { font-size: 12px; color: var(--ink-soft); line-height: 1.45; }
+.pick-label { font-size: 12px; font-weight: 800; color: var(--ink-soft); margin: 10px 0 6px; }
+.pick-patterns { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.pick-pattern { appearance: none; border: 2px solid transparent; background: #fff; border-radius: 14px; padding: 2px 0 4px; display: grid; justify-items: center; gap: 0; cursor: pointer; font: inherit; color: var(--ink); }
+.pick-pattern img, .pick-pattern svg { width: 44px; height: 44px; display: block; }
+.pick-pattern span { font-size: 11px; font-weight: 700; }
+.pick-pattern[aria-checked='true'] { border-color: var(--accent); background: #fffdf8; }
+.pick-swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+.pick-swatches .swatch { width: 34px; height: 34px; background: var(--c); }
+.pick-swatches .swatch.eye { background: radial-gradient(circle, #2e2a33 0 22%, var(--c) 24%); }
+.pick-swatches .swatch[aria-checked='true'] { border-color: var(--ink); }
