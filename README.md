@@ -24,7 +24,7 @@
 - D1 데이터베이스 `cat-island-db` 를 만들었어요 (위치: 아시아 태평양). ID 는 `wrangler.jsonc` 에 넣었어요.
 - 표(테이블)를 모두 만들었어요 (`db/migrations/0001`, `0002`). 비어 있는 상태예요.
 - 나중에 표를 바꿀 때는 `db/migrations/000N_...sql` 을 추가하고 `npm run db:migrate:remote` (또는 대시보드 D1 Console 에 붙여넣기)로 적용해요.
-- **배포 전에 꼭: `0004_decor_drawings_wallet.sql`(2026-11-15) 을 원격 DB 에 적용해야 해요.** 안 하면 마을 목록 API 가 실패해서 섬이 비어 보여요. 컴퓨터에서 `npm run db:migrate:remote` (0003 이 아직이면 같이 적용돼요).
+- `0003`, `0004_decor_drawings_wallet.sql` 은 원격 DB 에 적용했어요 (0004 는 2026-11-15, Claude 가 커넥터로 적용하고 `d1_migrations` 에도 기록).
 
 ### 직접 하실 일: GitHub 연결 자동 배포 (폰 가능)
 
