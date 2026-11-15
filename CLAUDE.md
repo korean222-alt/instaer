@@ -40,6 +40,7 @@ createIslandScene(canvas) → IslandScene
 - onHouseTap(cb), resize(), dispose()
 - (걷기 작업 시 추가) setWalkMode(on, startHouseNo?), onNearHouse(cb(houseNo|null))
 - (멀티플레이 작업 시 추가) setRemotePlayers(players: RemotePlayer[]), onLocalMove(cb(state: LocalState)), getLocalState()
+- (작업 4에서 추가) enterHouse(houseNo, interior: InteriorItem[], wallpaper?, floor?), exitHouse(), setInteriorItems(items), onDoor(cb(houseNo|null)), onExitHouse(cb(houseNo)), setYardItemsFree(houseNo, items: PlacedItem[]), startPlacing(typeOrItemId?, houseNo?), stopPlacing(), rotatePlacing(step?), onPlace(cb(item)), onPick(cb(itemId)), setDrawings(drawings). 자세한 약속은 `src/scene/README-scene.md`
 - 위치 계산: `houseSlot(houseNo)` → { x, z, zone, neighborhood } (src/scene/layout.ts). 위치는 DB에 저장하지 않는다.
 
 ## 설계 결정 (바꾸지 않는다)
@@ -74,5 +75,5 @@ createIslandScene(canvas) → IslandScene
 
 ## 현재 상태
 (작업이 끝날 때마다 `src/scene/README-scene.md`(씬) 또는 `README.md`(앱, 서버)에 적고, 여기에는 한 줄 요약만 남긴다)
-- 씬(Fable): 작업 1(동네 단위 배치), 작업 2(3인칭 걷기: `setWalkMode`, `onNearHouse`), 작업 3a(다른 유저 고양이 표시: `setRemotePlayers`, `onLocalMove`, `getLocalState`) 완료. 실제 폰 fps 는 미측정.
+- 씬(Fable): 작업 1(동네 단위 배치), 작업 2(3인칭 걷기: `setWalkMode`, `onNearHouse`), 작업 3a(다른 유저 고양이 표시: `setRemotePlayers`, `onLocalMove`, `getLocalState`), 작업 4(집 안 들어가기, 끌어서 놓는 자유 배치, 32x32 그림: 씬 쪽만, 2026-11-15) 완료. 실제 폰 fps 는 미측정. `PlacedItem`/`InteriorItem`/`Drawing` 타입은 `src/scene/free/types.ts` 에 임시로 있으니 shared 로 옮길 것.
 - 앱(Opus): 단계 0, A(입주, 입양 카드, 지역 대항전, 꾸미기, 예뻐요, 오늘의 특이한 집, HUD), B(걷기 버튼, 구경하기), C(Durable Object 실시간 주변 20명, 미니게임 방 인프라, 부하 시험) 완료 (2026-11-14). 원격 D1 `cat-island-db` 생성과 스키마 적용 완료. 실제 배포(GitHub 연결)와 실제 폰 시험은 아직. 소리(배경 음악/효과음, 설정), 아이디 숨기기, 사람 많아져도 D1 무료 한도에 맞게 구역별 요약 표(zone_cache, region_counts) 추가(2026-11-15). 자세한 내용은 README.md, README-realtime.md. `src/shared` 에 RemotePlayer/LocalState 와 실시간 상수가 생겼으니 씬의 임시 타입은 shared 로 바꿀 것(README.md "Fable 에게 요청").

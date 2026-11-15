@@ -6,6 +6,11 @@ import { CatFlock } from '../cat/CatFlock';
 import type { CatModel } from '../cat/catModel';
 import { createGlowLambert, type GlowShared } from '../core/glowLambert';
 import { LABEL_CAPACITY, LabelLayer, regionIndex, type LabelEntry } from '../core/labelLayer';
+import { itemDef, type ItemGeometries } from '../free/catalog';
+import type { DrawingStore } from '../free/drawings';
+import { FreeItems, type FreeGroup } from '../free/FreeItems';
+import { blockersOf, yardSpace, type Space } from '../free/space';
+import type { PlacedItem } from '../free/types';
 import { cellToLocal, ItemField } from '../items/ItemField';
 import { houseSlot, NEIGHBORHOODS, NEIGHBORHOODS_PER_ZONE, ZONE, zoneCenter } from '../layout';
 import { hash01 } from '../util/rand';
@@ -128,6 +133,12 @@ export class HouseLayer {
   private readonly recs = new Map<number, Rec>();
   private readonly zones = new Map<number, ZoneBatch>();
   private readonly yardItems = new Map<number, YardItem[]>();
+  /** 자유 배치 아이템 (집 번호 → 목록) */
+  private readonly freeLists = new Map<number, PlacedItem[]>();
+  private readonly spaces = new Map<number, Space>();
+  readonly free: FreeItems;
+  /** 지금 손에 들고 있어서 따로 그리는 아이템 */
+  private freeSkip: string | null = null;
   private near: Rec[] = [];
   private readonly cats = new Map<number, NearCat>();
   private catOrder: NearCat[] = [];
@@ -141,8 +152,9 @@ export class HouseLayer {
   private readonly box = new THREE.Box3();
   private readonly v = new THREE.Vector3();
 
-  constructor(shared: GlowShared, catModel: CatModel) {
+  constructor(shared: GlowShared, catModel: CatModel, geometries: ItemGeometries, drawings: DrawingStore) {
     this.shared = shared;
+    this.free = new FreeItems(shared, geometries, drawings);
     this.material = createGlowLambert(shared, { instanced: true });
 
     // 깃발 재질: 인스턴스 색은 천에만 입히고, 천은 바람에 펄럭인다
@@ -248,7 +260,7 @@ export class HouseLayer {
     this.flockHi.mesh.visible = false;
     this.items = new ItemField(shared);
     this.labels = new LabelLayer(shared);
-    this.group.add(this.flockLo.mesh, this.flockHi.mesh, this.items.group, this.pools.mesh, this.labels.mesh);
+    this.group.add(this.flockLo.mesh, this.flockHi.mesh, this.items.group, this.free.group, this.pools.mesh, this.labels.mesh);
   }
 
   // ───────────── 데이터 ─────────────
@@ -256,6 +268,7 @@ export class HouseLayer {
   setHouses(houses: House[]) {
     this.clearZones();
     this.recs.clear();
+    this.spaces.clear();
     const byZone = new Map<number, Rec[]>();
     for (const house of houses) {
       const slot = houseSlot(house.houseNo);
@@ -333,6 +346,42 @@ export class HouseLayer {
     if (this.near.some((r) => r.house.houseNo === houseNo)) this.dirty = true;
   }
 
+  /** 자유 배치 아이템 (기존 칸 방식 아이템과 같이 그린다) */
+  setYardItemsFree(houseNo: number, items: readonly PlacedItem[]) {
+    this.freeLists.set(
+      houseNo,
+      items.filter((it) => it && typeof it.id === 'string' && typeof it.type === 'string').map((it) => ({ ...it })),
+    );
+    if (this.near.some((r) => r.house.houseNo === houseNo)) this.redrawFree();
+  }
+
+  /** 그 집의 자유 배치 목록 (끌어 놓기가 이 배열을 직접 고친다) */
+  freeList(houseNo: number): PlacedItem[] {
+    let list = this.freeLists.get(houseNo);
+    if (!list) this.freeLists.set(houseNo, (list = []));
+    return list;
+  }
+
+  /** 그 집 마당 (자유 배치 좌표의 기준). 집이 없으면 null */
+  yardSpace(houseNo: number): Space | null {
+    const r = this.recs.get(houseNo);
+    if (!r) return null;
+    let s = this.spaces.get(houseNo);
+    if (!s) this.spaces.set(houseNo, (s = yardSpace(houseNo, r.x, r.z, r.rot, GROUND_Y)));
+    return s;
+  }
+
+  /** 자유 배치 아이템만 다시 그린다 (skipId: 손에 든 아이템) */
+  redrawFree(skipId: string | null = this.freeSkip) {
+    this.freeSkip = skipId;
+    const groups: FreeGroup[] = [];
+    for (const r of this.near) {
+      const items = this.freeLists.get(r.house.houseNo);
+      if (items?.length) groups.push({ space: this.yardSpace(r.house.houseNo)!, items });
+    }
+    this.free.set(groups, skipId);
+  }
+
   has(houseNo: number) {
     return this.recs.has(houseNo);
   }
@@ -378,6 +427,11 @@ export class HouseLayer {
         b.r = size;
         out.push(b);
       }
+    }
+    for (const r of this.near) {
+      if (Math.abs(r.x - x) > 5.5 || Math.abs(r.z - z) > 5.5) continue;
+      const free = this.freeLists.get(r.house.houseNo);
+      if (free?.length) n = blockersOf(this.yardSpace(r.house.houseNo)!, free, this.blockerPool, n, out);
     }
   }
   private readonly blockerPool: Array<{ x: number; z: number; r: number }> = [];
@@ -601,6 +655,7 @@ export class HouseLayer {
 
     // 꾸미기 아이템
     this.items.set(want.map((r) => ({ x: r.x, z: r.z, rot: r.rot, items: this.yardItems.get(r.house.houseNo) })));
+    this.redrawFree();
 
     // 이름표: 사는 사람이 있는 집만, 화면 가운데에서 가까운 순서로
     const entries: LabelEntry[] = [];
@@ -630,7 +685,10 @@ export class HouseLayer {
   /** 고양이가 피해 다닐 칸 (아이템이 놓인 자리) */
   private blockedCells(houseNo: number): Array<[number, number]> {
     const items = this.yardItems.get(houseNo);
-    return items ? items.map((it) => [cellToLocal(it.x), cellToLocal(it.y)] as [number, number]) : [];
+    const out = items ? items.map((it) => [cellToLocal(it.x), cellToLocal(it.y)] as [number, number]) : [];
+    // 자유 배치 아이템 중 걸어서 못 지나가는 것
+    for (const it of this.freeLists.get(houseNo) ?? []) if (itemDef(it.type).block) out.push([it.x, it.z]);
+    return out;
   }
 
   // ───────────── 탭 ─────────────
@@ -685,6 +743,7 @@ export class HouseLayer {
     this.flockLo.dispose();
     this.flockHi.dispose();
     this.items.dispose();
+    this.free.dispose();
     this.labels.dispose();
     this.pools.dispose();
   }

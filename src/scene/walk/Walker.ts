@@ -71,6 +71,11 @@ export class Walker {
   /** 그때그때 달라지는 막힌 곳 (큰 꾸미기 아이템) */
   blockers: (x: number, z: number, out: Blocker[]) => void = () => {};
   bridges: Bridge[] = [];
+  /**
+   * 집 안에 있을 때의 방 크기. null 이 아니면 섬의 땅/막힌 곳 대신 이 네모 안에서만 움직인다.
+   * 앞쪽 가운데(문, 절반 폭 doorHalf)로는 doorZ 까지 더 나갈 수 있다. 가구는 blockers 로 막는다
+   */
+  room: { minX: number; maxX: number; minZ: number; maxZ: number; y: number; doorHalf: number; doorZ: number } | null = null;
 
   private vx = 0;
   private vz = 0;
@@ -168,6 +173,34 @@ export class Walker {
 
   /** (nx, nz) 로 가려고 할 때 막힌 곳을 피해 실제로 설 자리를 정한다 */
   private resolve(nx: number, nz: number) {
+    const room = this.room;
+    if (room) {
+      for (let iter = 0; iter < 3; iter++) {
+        this.extra.length = 0;
+        this.blockers(nx, nz, this.extra);
+        for (const b of this.extra) {
+          const dx = nx - b.x;
+          const dz = nz - b.z;
+          const d = Math.hypot(dx, dz);
+          const min = b.r + RADIUS;
+          if (d < min && d > 1e-4) {
+            nx = b.x + (dx / d) * min;
+            nz = b.z + (dz / d) * min;
+          }
+        }
+        // 문턱 위에서는 문 폭 안에만 설 수 있다
+        const inDoor = Math.abs(nx) < room.doorHalf - RADIUS;
+        if (nz > room.maxZ - RADIUS && (inDoor || this.z > room.maxZ - RADIUS + 0.01)) {
+          nx = Math.max(-room.doorHalf + RADIUS, Math.min(room.doorHalf - RADIUS, nx));
+          nz = Math.min(room.doorZ - RADIUS, nz);
+        } else nz = Math.min(room.maxZ - RADIUS, nz);
+        nx = Math.max(room.minX + RADIUS, Math.min(room.maxX - RADIUS, nx));
+        nz = Math.max(room.minZ + RADIUS, nz);
+      }
+      this.x = nx;
+      this.z = nz;
+      return;
+    }
     const ox = this.x;
     const oz = this.z;
     for (let iter = 0; iter < 3; iter++) {
@@ -280,6 +313,7 @@ export class Walker {
   }
 
   private heightAt(x: number, z: number): number {
+    if (this.room) return this.room.y;
     return groundHeightAt(this.bridges, x, z);
   }
 }

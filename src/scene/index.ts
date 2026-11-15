@@ -7,6 +7,12 @@ import { CameraRig } from './core/cameraRig';
 import { regionIndex } from './core/labelLayer';
 import { HighlightMark } from './house/highlightMark';
 import { HouseLayer } from './house/HouseLayer';
+import { ItemGeometries } from './free/catalog';
+import { DrawingStore } from './free/drawings';
+import { Placer } from './free/Placer';
+import { blockersOf, pickItem, type Space } from './free/space';
+import type { Drawing, InteriorItem, PlacedItem } from './free/types';
+import { Interior, ROOM_CAM_YAW, ROOM_EXIT_Z, ROOM_START, ROOM_WALK } from './interior/Interior';
 import { RemotePlayers } from './remote/RemotePlayers';
 import type { LocalState, RemotePlayer } from './remote/types';
 import { houseNoAt, houseSlot, LOCAL_SLOTS, lotGate, neighborhoodArea, neighborhoodAt, zoneAt, zoneCenter } from './layout';
@@ -20,6 +26,11 @@ import { World } from './world/World';
 
 export { houseSlot, neighborhoodArea, neighborhoodAt, NEIGHBORHOOD_SIZE } from './layout';
 export type { LocalState, PlayerAnim, RemotePlayer } from './remote/types';
+export type { Drawing, InteriorItem, PlacedItem } from './free/types';
+export { FREE_ITEM_LIST } from './free/catalog';
+export { DEFAULT_PALETTE, DRAWING_SIZE, decodeDrawing, encodeDrawing } from './free/drawings';
+export { ROOM_SIZE } from './free/space';
+export { ROOM_STYLES } from './interior/Interior';
 
 /**
  * 고양이섬 3D 씬.
@@ -58,6 +69,45 @@ export interface IslandScene {
   onLocalMove(cb: (state: LocalState) => void): void;
   /** 내 고양이의 지금 상태 */
   getLocalState(): LocalState;
+
+  // ── 작업 4: 집 안, 자유 배치, 직접 그린 그림 ──
+
+  /**
+   * 집 안으로 들어간다 (방 하나, 8x8). 들어가 있는 동안에는 섬 대신 그 집 안만 그린다.
+   * 걷기 모드가 아니면 기본 고양이로 걷기를 켠 뒤 들어간다(내 고양이로 들어가려면 먼저 setWalkMode(true, 내 집 번호)).
+   * 이미 그 집 안이면 아이템과 벽지/바닥만 바꾼다.
+   * @param wallpaper 'cream' | 'stripe' | 'dots' | '#rrggbb' | 'drawing:그림id'
+   * @param floor     'wood' | 'tile' | 'carpet' | '#rrggbb' | 'drawing:그림id'
+   */
+  enterHouse(houseNo: number, interior: InteriorItem[], wallpaper?: string, floor?: string): void;
+  /** 집 밖(그 집 문 앞)으로 나온다. 이때는 onExitHouse 를 부르지 않는다 */
+  exitHouse(): void;
+  /** 지금 들어가 있는 집의 아이템만 바꾼다 (집 안이 아니면 아무 일도 없다) */
+  setInteriorItems(items: InteriorItem[]): void;
+  /** 걷다가 어떤 집 문 앞에 서면 그 집 번호를, 떠나면 null 을 알린다 ("들어가기" 버튼용) */
+  onDoor(cb: (houseNo: number | null) => void): void;
+  /** 집 안에서 문(앞쪽 발판)을 지나 걸어 나가면 알린다. 씬이 알아서 문 앞으로 내보낸 뒤에 부른다 */
+  onExitHouse(cb: (houseNo: number) => void): void;
+  /** 집 한 채 마당의 자유 배치 아이템 (기존 setYardItems 의 칸 방식 아이템과 같이 그린다) */
+  setYardItemsFree(houseNo: number, items: PlacedItem[]): void;
+  /**
+   * 꾸미기 모드를 켠다. 켜 있는 동안 아이템을 손가락으로 끌어서 옮길 수 있다.
+   * - 아이템 종류 이름(예: 'bed')을 주면 새 아이템을 빈 자리에 꺼내 놓는다 (바로 onPlace 로 알린다)
+   * - 놓여 있는 아이템의 id 를 주면 그 아이템을 고른다 (rotatePlacing 으로 돌릴 수 있다)
+   * - 아무것도 안 주면 꾸미기 모드만 켠다
+   * 집 안이면 그 방을, 밖이면 houseNo 번지의 마당을 꾸민다(안 주면 가장 가까운 집).
+   */
+  startPlacing(typeOrItemId?: string | null, houseNo?: number): void;
+  stopPlacing(): void;
+  /** 지금 고른 아이템을 돌린다 (라디안, 기본 45도) */
+  rotatePlacing(step?: number): void;
+  /** 아이템이 놓일 때마다 (새로 놓았든 옮겼든 돌렸든) 그 아이템의 새 값을 알린다. 같은 id 면 덮어쓰면 된다 */
+  onPlace(cb: (item: PlacedItem) => void): void;
+  /** 아이템을 끌지 않고 짧게 눌렀을 때 (꾸미기 모드에서는 마당/집 안, 꾸미기 모드가 아니면 집 안에서만) */
+  onPick(cb: (itemId: string) => void): void;
+  /** 직접 그린 그림 전체 (가까운 집 것만 넘긴다). drawingId 가 같은 아이템에 붙는다. 목록에서 빠진 그림은 지운다 */
+  setDrawings(drawings: Drawing[]): void;
+
   /** 캔버스 크기가 바뀌면 부른다 */
   resize(): void;
   dispose(): void;
@@ -80,6 +130,12 @@ export interface SceneStats {
   walker: { x: number; z: number; y: number; anim: string } | null;
   /** 지금 그리는 다른 유저 수 (전체 / 그중 자세한 모양 / 이름표) */
   remotes: { shown: number; near: number; tags: number };
+  /** 들어가 있는 집 번호 (밖이면 null) */
+  inside: number | null;
+  /** 지금 그리는 자유 배치 아이템 수 / 그중 그림이 붙은 것 */
+  free: { shown: number; art: number };
+  /** 꾸미기 모드 상태 */
+  placing: { active: boolean; held: PlacedItem | null; valid: boolean; placed: boolean };
 }
 const statsOf = new WeakMap<IslandScene, () => SceneStats>();
 export const getSceneStats = (scene: IslandScene): SceneStats | null => statsOf.get(scene)?.() ?? null;
@@ -90,6 +146,9 @@ export const debugSetQuality = (scene: IslandScene, level: number | 'auto') => q
 const walkOf = new WeakMap<IslandScene, (x: number, z: number, yaw?: number) => void>();
 /** 확인용: 걷기 모드에서 내 고양이를 원하는 곳으로 옮긴다 */
 export const debugPlaceWalker = (scene: IslandScene, x: number, z: number, yaw?: number) => walkOf.get(scene)?.(x, z, yaw);
+const projectOf = new WeakMap<IslandScene, (x: number, y: number, z: number) => { x: number; y: number }>();
+/** 확인용: 화면 좌표(지금 그리는 장면 기준)의 점이 화면 어디에 보이는지 (clientX, clientY) */
+export const debugProject = (scene: IslandScene, x: number, y: number, z: number) => projectOf.get(scene)?.(x, y, z) ?? null;
 /** 확인용: 카메라를 원하는 거리로 바로 옮긴다 */
 export const debugSetCamera = (scene: IslandScene, x: number, z: number, dist: number) => riggedOf.get(scene)?.jumpTo(x, z, dist);
 
@@ -105,6 +164,12 @@ const PLAYER_SCALE = 1.12;
 /** 마당 입구에서 이 거리 안에 들어오면 "가까이 왔다", 이보다 멀어지면 "멀어졌다" */
 const NEAR_IN = 3.3;
 const NEAR_OUT = 4.4;
+/** 문 앞 (마당 가운데 기준 z). 여기서 DOOR_IN 안에 들어오면 "문 앞에 섰다" */
+const DOOR_Z = 0.3;
+const DOOR_IN = 1.0;
+const DOOR_OUT = 1.5;
+/** 집에서 나왔을 때 서는 자리 */
+const DOOR_STAND_Z = 0.62;
 /** 자동 품질 단계별 해상도 비율 (기기 비율, 최대 2 에 곱한다) */
 const QUALITY_SCALE = [1, 0.82, 0.68, 0.56, 0.48];
 
@@ -121,14 +186,28 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
 
   const world = new World(atmosphere);
   const catModel = createProceduralCatModel(atmosphere.shared);
-  const houses = new HouseLayer(atmosphere.shared, catModel);
+  const geometries = new ItemGeometries();
+  const drawings = new DrawingStore();
+  const houses = new HouseLayer(atmosphere.shared, catModel, geometries, drawings);
   const mark = new HighlightMark();
   // 내가 조작하는 고양이 (걷기 모드에서만 보인다)
   const player = new CatFlock(catModel, 1, 'high');
   player.mesh.visible = false;
   // 다른 유저의 고양이
   const remotes = new RemotePlayers(catModel);
-  scene.add(world.group, houses.group, mark.group, player.mesh, remotes.group);
+  // 꾸미기(끌어 놓기)와 집 안. 집 안은 처음 들어갈 때 만든다
+  const placer = new Placer(canvas, camera, geometries, drawings, atmosphere.shared);
+  let interior: Interior | null = null;
+  let inside: number | null = null;
+  let doorCb: ((houseNo: number | null) => void) | null = null;
+  let exitCb: ((houseNo: number) => void) | null = null;
+  let doorHouse: number | null = null;
+  const roomBlockers: Array<{ x: number; z: number; r: number }> = [];
+  scene.add(world.group, houses.group, mark.group, player.mesh, remotes.group, placer.group);
+  placer.onChange = () => {
+    if (inside !== null) interior?.redraw(placer.heldId);
+    else houses.redrawFree(placer.heldId);
+  };
 
   const rig = new CameraRig(camera, canvas, {
     groundY: GROUND_Y,
@@ -141,7 +220,10 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   const walker = new Walker();
   const walkCam = new WalkCamera();
   walker.hasHouse = walkCam.hasHouse = (houseNo) => houses.has(houseNo);
-  walker.blockers = (x, z, out) => houses.blockersNear(x, z, out);
+  walker.blockers = (x, z, out) => {
+    if (inside !== null && interior) blockersOf(interior.space, interior.list, roomBlockers, 0, out);
+    else houses.blockersNear(x, z, out);
+  };
   let walking = false;
   let nearCb: ((houseNo: number | null) => void) | null = null;
   let nearHouse: number | null = null;
@@ -211,6 +293,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     quality = level;
     atmosphere.sun.castShadow = level < 3;
     houses.setNearLimit(level >= 4 ? 16 : level >= 2 ? 24 : 64);
+    interior?.setShadows(level < 3);
     resize();
   };
 
@@ -226,6 +309,13 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   observer?.observe(canvas);
 
   const onTap = (cx: number, cy: number) => {
+    if (inside !== null) {
+      // 집 안: 아이템을 누르면 알린다 (꾸미기 모드에서는 끌어 놓기 쪽이 먼저 받는다)
+      const hit = interior && !placer.active ? pickItem(interior.space, interior.list, rig.rayFrom(cx, cy)) : null;
+      if (hit) placer.onPick?.(hit.id);
+      return;
+    }
+    if (placer.active) return;
     const ray = rig.rayFrom(cx, cy);
     let houseNo = houses.petCat(ray) ?? houses.pickBuilding(ray);
     if (houseNo === null) {
@@ -273,6 +363,69 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       nearHouse = best;
       nearCb?.(best);
     }
+    // 문 앞
+    let door: number | null = null;
+    let doorD = DOOR_OUT;
+    if (zone >= 0) {
+      const c = zoneCenter(zone);
+      const lx = walker.x - c.x;
+      const lz = walker.z - c.z;
+      for (let i = 0; i < LOCAL_SLOTS.length; i++) {
+        const lot = LOCAL_SLOTS[i];
+        if (Math.abs(lot.x - lx) > 5 || Math.abs(lot.z - lz) > 5) continue;
+        const houseNo = zone * ZONE_CAPACITY + i + 1;
+        if (!houses.has(houseNo)) continue;
+        const d = Math.hypot(lot.x + DOOR_Z * Math.sin(lot.rot) - lx, lot.z + DOOR_Z * Math.cos(lot.rot) - lz);
+        if (d < (houseNo === doorHouse ? DOOR_OUT : DOOR_IN) && d < doorD) {
+          doorD = d;
+          door = houseNo;
+        }
+      }
+    }
+    if (door !== doorHouse) {
+      doorHouse = door;
+      doorCb?.(door);
+    }
+  };
+
+  /** (x, z) 에서 가장 가까운 집 */
+  const closestHouse = (x: number, z: number): number | null => {
+    const zone = zoneAt(x, z);
+    if (zone < 0) return null;
+    const c = zoneCenter(zone);
+    let best: number | null = null;
+    let bestD = Infinity;
+    for (let i = 0; i < LOCAL_SLOTS.length; i++) {
+      const houseNo = zone * ZONE_CAPACITY + i + 1;
+      if (!houses.has(houseNo)) continue;
+      const d = Math.hypot(LOCAL_SLOTS[i].x + c.x - x, LOCAL_SLOTS[i].z + c.z - z);
+      if (d < bestD) {
+        bestD = d;
+        best = houseNo;
+      }
+    }
+    return best;
+  };
+
+  /** 집 밖으로: 그 집 문 앞에 집을 등지고 선다 */
+  const leaveHouse = (viaDoor: boolean) => {
+    if (inside === null) return;
+    const houseNo = inside;
+    placer.end();
+    inside = null;
+    scene.add(player.mesh, remotes.group, placer.group);
+    remotes.clear();
+    remotes.flatY = null;
+    walker.room = null;
+    const s = houseSlot(houseNo);
+    walker.place(s.x + DOOR_STAND_Z * Math.sin(s.rot), s.z + DOOR_STAND_Z * Math.cos(s.rot), s.rot);
+    walkCam.snap(walker.x, walker.groundY, walker.z, walkCam.yaw);
+    walkFocus.x = walker.x;
+    walkFocus.z = walker.z;
+    shadowX = Infinity;
+    sent.x = NaN;
+    blend = 1;
+    if (viaDoor) exitCb?.(houseNo);
   };
 
   const wrapAngle = (a: number) => a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
@@ -351,6 +504,31 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     }
 
     atmosphere.update(dt);
+    if (inside !== null && interior) {
+      // 집 안: 섬은 그리지 않고 방 하나만 그린다
+      controls.update();
+      controls.takeLook();
+      walker.update(dt, controls.moveX, controls.moveY, ROOM_CAM_YAW, controls.takeJump());
+      interior.updateCamera(camera, dt, walker.x, walker.z);
+      interior.update();
+      player.setPose(0, walker.x, walker.y + 0.01, walker.z, walker.yaw, PLAYER_SCALE);
+      player.setAnim(0, walker.phase, walker.walk, 0, 0);
+      player.setMood(0, walker.sit, walker.yawn);
+      notifyMove(now);
+      remoteView.focusX = walker.x;
+      remoteView.focusZ = walker.z;
+      remoteView.walking = true;
+      remoteView.dist = WALK_DIST;
+      remoteView.viewportW = viewportW;
+      remoteView.viewportH = viewportH;
+      remoteView.quality = quality;
+      remotes.update(performance.now(), dt, remoteView);
+      renderer.render(interior.scene, camera);
+      cpuMs = cpuMs * 0.9 + (performance.now() - t0) * 0.1;
+      // 문턱을 넘으면 밖으로 내보내고 알린다
+      if (walker.z > ROOM_EXIT_Z && !placer.dragging) leaveHouse(true);
+      return;
+    }
     if (walking) {
       controls.update();
       walker.update(dt, controls.moveX, controls.moveY, walkCam.yaw, controls.takeJump());
@@ -481,6 +659,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       tapCb = cb;
     },
     setWalkMode(on, startHouseNo) {
+      leaveHouse(false);
       if (on) {
         const start = startHouseNo !== undefined && houses.has(startHouseNo) ? startHouseNo : null;
         let look = DEFAULT_CAT;
@@ -528,6 +707,10 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
           nearHouse = null;
           nearCb?.(null);
         }
+        if (doorHouse !== null) {
+          doorHouse = null;
+          doorCb?.(null);
+        }
       }
     },
     onNearHouse(cb) {
@@ -540,6 +723,100 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       moveCb = cb;
     },
     getLocalState: localState,
+    enterHouse(houseNo, items, wallpaper, floor) {
+      if (!houses.has(houseNo)) return;
+      interior ??= new Interior(atmosphere.shared, geometries, drawings);
+      if (inside === houseNo) {
+        interior.restyle(wallpaper, floor);
+        interior.setItems(items);
+        if (placer.active) placer.relist(interior.list);
+        interior.redraw(placer.heldId);
+        return;
+      }
+      if (inside !== null) leaveHouse(false);
+      if (!walking) api.setWalkMode(true);
+      placer.end();
+      interior.setShadows(quality < 3);
+      interior.open(houseNo, items, wallpaper, floor);
+      inside = houseNo;
+      interior.scene.add(player.mesh, remotes.group, placer.group);
+      // 밖에 있던 유저들은 방 안에 보이면 안 된다. 앱이 같은 집 안 사람만 다시 넘긴다
+      remotes.clear();
+      remotes.flatY = 0;
+      walker.room = ROOM_WALK;
+      walker.place(ROOM_START.x, ROOM_START.z, Math.PI);
+      sent.x = NaN;
+      blend = 1;
+      if (nearHouse !== null) {
+        nearHouse = null;
+        nearCb?.(null);
+      }
+      if (doorHouse !== null) {
+        doorHouse = null;
+        doorCb?.(null);
+      }
+    },
+    exitHouse() {
+      leaveHouse(false);
+    },
+    setInteriorItems(items) {
+      if (inside === null || !interior) return;
+      interior.setItems(items);
+      if (placer.active) placer.relist(interior.list);
+      interior.redraw(placer.heldId);
+    },
+    onDoor(cb) {
+      doorCb = cb;
+    },
+    onExitHouse(cb) {
+      exitCb = cb;
+    },
+    setYardItemsFree(houseNo, items) {
+      houses.setYardItemsFree(houseNo, items);
+      const s = placer.space;
+      if (placer.active && s && s.kind === 'yard' && s.houseNo === houseNo) {
+        placer.relist(houses.freeList(houseNo));
+        houses.redrawFree(placer.heldId);
+      }
+    },
+    startPlacing(typeOrItemId, houseNo) {
+      let space: Space | null = null;
+      let list: PlacedItem[] = [];
+      if (inside !== null && interior) {
+        space = interior.space;
+        list = interior.list;
+      } else {
+        const at = walking ? walker : rig.target;
+        const no = houseNo ?? closestHouse(at.x, at.z);
+        space = no === null ? null : houses.yardSpace(no);
+        if (!space || no === null) {
+          console.warn('[scene] startPlacing: 꾸밀 집을 찾지 못했어요');
+          return;
+        }
+        list = houses.freeList(no);
+        // 걷는 중이 아니면 그 마당이 크게 보이게 다가간다
+        if (!walking && placer.space !== space) rig.flyTo(space.ox + 0.5 * space.sin, space.oz + 0.5 * space.cos, 24);
+      }
+      placer.begin(space, list, typeOrItemId ?? null);
+    },
+    stopPlacing() {
+      placer.end();
+    },
+    rotatePlacing(step) {
+      placer.rotate(step);
+    },
+    onPlace(cb) {
+      placer.onPlace = cb;
+    },
+    onPick(cb) {
+      placer.onPick = cb;
+    },
+    setDrawings(list) {
+      if (!drawings.set(list)) return;
+      houses.redrawFree();
+      interior?.refreshDrawings();
+      placer.refresh();
+    },
     resize,
     dispose() {
       disposed = true;
@@ -550,6 +827,10 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       controls.dispose();
       player.dispose();
       remotes.dispose();
+      placer.dispose();
+      interior?.dispose();
+      geometries.dispose();
+      drawings.dispose();
       rig.dispose();
       world.dispose();
       houses.dispose();
@@ -567,6 +848,9 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     zones: world.visibleZones,
     walker: walking ? { x: walker.x, z: walker.z, y: walker.y, anim: walker.anim } : null,
     remotes: { shown: remotes.shown, near: remotes.shownNear, tags: remotes.shownTags },
+    inside,
+    free: inside !== null && interior ? { shown: interior.free.shown, art: interior.free.shownArt } : { shown: houses.free.shown, art: houses.free.shownArt },
+    placing: placer.state,
   }));
   qualityOf.set(api, (level) => {
     qualityAuto = level === 'auto';
@@ -576,5 +860,11 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     if (walking) walker.place(x, z, yaw);
   });
   riggedOf.set(api, rig);
+  const projected = new THREE.Vector3();
+  projectOf.set(api, (x, y, z) => {
+    const r = canvas.getBoundingClientRect();
+    projected.set(x, y, z).project(camera);
+    return { x: r.left + ((projected.x + 1) / 2) * r.width, y: r.top + ((1 - projected.y) / 2) * r.height };
+  });
   return api;
 }

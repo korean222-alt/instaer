@@ -1,4 +1,4 @@
-import { ZONE_CAPACITY } from '../shared/config';
+import { NEIGHBORHOOD_SIZE, ZONE_CAPACITY } from '../shared/config';
 import { hash01, mulberry32, valueNoise2 } from './util/rand';
 
 /**
@@ -16,8 +16,7 @@ import { hash01, mulberry32, valueNoise2 } from './util/rand';
  * 모든 구역이 같은 배치를 쓰므로 한 번만 계산한다.
  */
 
-/** 동네 하나의 집 수. (src/shared/config.ts 에 NEIGHBORHOOD_SIZE 가 생기면 그 값으로 바꾼다) */
-export const NEIGHBORHOOD_SIZE = 10;
+export { NEIGHBORHOOD_SIZE };
 export const NEIGHBORHOODS_PER_ZONE = ZONE_CAPACITY / NEIGHBORHOOD_SIZE;
 
 export const ZONE = {

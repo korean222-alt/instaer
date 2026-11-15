@@ -140,6 +140,8 @@ export interface RemoteView {
 export class RemotePlayers {
   readonly group = new THREE.Group();
   bridges: readonly Bridge[] = [];
+  /** 집 안처럼 바닥이 평평한 곳에서는 그 높이. null 이면 섬의 땅 높이를 쓴다 */
+  flatY: number | null = null;
   /** 확인용: 지금 그리는 수 */
   shown = 0;
   shownNear = 0;
@@ -343,6 +345,11 @@ export class RemotePlayers {
     this.shownTags = nTags;
   }
 
+  /** 모두 바로 지운다 (집 안팎을 오갈 때. 사라지는 모습 없이) */
+  clear() {
+    for (const r of this.recs) if (r.used) this.release(r);
+  }
+
   dispose() {
     this.near.dispose();
     this.far.dispose();
@@ -383,7 +390,7 @@ export class RemotePlayers {
       r.x = tx;
       r.z = tz;
       r.yaw = tyaw;
-      r.groundY = groundHeightAt(this.bridges, tx, tz);
+      r.groundY = this.flatY ?? groundHeightAt(this.bridges, tx, tz);
     } else {
       const ex = tx - r.x;
       const ez = tz - r.z;
@@ -400,7 +407,7 @@ export class RemotePlayers {
         moved = step;
       }
       r.yaw += angleDiff(tyaw, r.yaw) * (1 - Math.exp(-dt * 16));
-      const g = groundHeightAt(this.bridges, r.x, r.z);
+      const g = this.flatY ?? groundHeightAt(this.bridges, r.x, r.z);
       r.groundY += (g - r.groundY) * (1 - Math.exp(-dt * 18));
     }
 
