@@ -2,6 +2,16 @@
 
 새 대화를 시작할 때 이 파일을 먼저 읽는다. 긴 대화 기록 없이도 작업을 이어갈 수 있게 하는 파일이다.
 
+## 배포 규칙 (2026-11-15 사용자: "다음 새 채팅에서도 만들면 바로 배포까지 하게 해줘")
+- **코드를 고쳐 만들면 끝에 바로 배포까지 한다. 사용자에게 배포할지 묻지 않는다.** (README 의 "직접 하실 일"은 이미 끝난 일)
+- Cloudflare 가 배포 기준으로 보는 브랜치는 **`claude/zen-mendel-t7b5sp` 하나뿐**이다(Builds 트리거, 이 브랜치에 push 하면 `npm run build` + `npx wrangler deploy` 가 자동 실행). 새 채팅은 브랜치 이름이 매번 다르니 아래 순서로 한다.
+  1. 타입 검사와 빌드 통과 확인: `npm install`(없으면) → `npm run typecheck` → `npm run build`
+  2. 작업 브랜치에 커밋하고 push
+  3. 같은 커밋을 배포 브랜치에도 push: `git push origin HEAD:claude/zen-mendel-t7b5sp` (이미 앞서 가 있으면 fast-forward 라 그냥 된다. 거절되면 `git fetch origin claude/zen-mendel-t7b5sp` 후 `git rebase`/merge 해서 다시 push. force push 는 하지 않는다)
+  4. 배포 확인: `curl https://api.cloudflare.com/client/v4/accounts/90803ea7738d89a9cb2ad9a14333183f/builds/workers/4aca8f0441074d948625db0ac32eefc5/builds?per_page=1` 의 `build_outcome` 이 `success` 가 될 때까지 본다(보통 1~2분, 인증은 프록시가 붙인다. 실패하면 `.../builds/<build_uuid>/logs` 로 원인을 보고 고쳐서 다시 push).
+- DB 스키마(`db/migrations`)를 바꿨으면 배포 전에 원격 D1(`cat-island-db`)에 먼저 적용한다. 이 세션 환경에서는 `wrangler deploy` 직접 실행이 401 로 막히니 쓰지 않는다.
+- 끝에 사용자에게는 "배포 완료/실패" 와 주소만 짧게 알린다.
+
 ## 프로젝트 요약
 - 인스타 팔로워가 고양이 집을 입양받는 3D 고양이섬 웹게임. 한 섬에 모두가 같이 산다(공유 섬).
 - 입주하면 집 한 채(마당 포함)와 고양이 한 마리를 받고, 집에 인스타 아이디 이름표가 뜬다.
