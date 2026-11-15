@@ -23,7 +23,7 @@ export interface NameTagStyle {
   bg: string;
   fg: string;
 }
-const USER_STYLE: NameTagStyle = { prefix: '@', bg: 'rgba(74, 56, 44, 0.84)', fg: '#fffaf0' };
+const USER_STYLE: NameTagStyle = { prefix: '', bg: 'rgba(74, 56, 44, 0.84)', fg: '#fffaf0' };
 
 export class NameTags {
   readonly mesh: THREE.InstancedMesh;

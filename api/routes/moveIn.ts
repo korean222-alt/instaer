@@ -27,14 +27,14 @@ const FIRST_EMPTY_NO = `CASE WHEN NOT EXISTS (SELECT 1 FROM houses WHERE house_n
   ELSE (SELECT MIN(h.house_no) + 1 FROM houses h WHERE NOT EXISTS (SELECT 1 FROM houses x WHERE x.house_no = h.house_no + 1)) END`;
 
 /**
- * POST /api/move-in {handle, region, hideHandle?, cat?, houseNo?} : 아이디 입력만으로 입주(미인증, soft).
- * 화면이 먼저 운영 계정 팔로우를 부탁하지만 팔로우 여부는 확인하지 않는다 (인스타 메시지 API 는 사업자 인증이 필요해서 못 씀).
+ * POST /api/move-in {handle, region, hideHandle?, cat?, houseNo?} : 닉네임(handle) 입력만으로 입주(미인증, soft).
+ * 화면이 먼저 운영 계정 팔로우를 요구하지만 팔로우 여부는 확인하지 않는다 (인스타 메시지 API 는 사업자 인증이 필요해서 못 씀).
  * cat: 고른 고양이 {pattern, fur, eyeColor} (CAT_CHOICES / EYE_CHOICES 안의 값). 없으면 아이디로 정해진 고양이.
  * houseNo: 고른 빈 집 번지 (열린 구역 안). 없으면 빈 번지 중 가장 앞 번호.
  */
 export async function moveIn(request: Request, env: Env): Promise<Response> {
   const body = await readJson<{ handle?: unknown; region?: unknown; hideHandle?: unknown; cat?: unknown; houseNo?: unknown }>(request);
-  if (!body || typeof body.handle !== 'string') return error(400, 'bad_request', '아이디를 적어 주세요');
+  if (!body || typeof body.handle !== 'string') return error(400, 'bad_request', '닉네임을 적어 주세요');
   const handle = normalizeHandle(body.handle);
   const problem = handleProblem(handle);
   if (problem) return error(400, `handle_${problem}`, HANDLE_PROBLEM_TEXT[problem]);
@@ -61,7 +61,7 @@ export async function moveIn(request: Request, env: Env): Promise<Response> {
     env.DB.prepare('SELECT COALESCE(SUM(n), 0) AS total, (SELECT MAX(house_no) FROM houses) AS max_no FROM region_counts WHERE week = 0'),
   ]);
   const taken = takenRes.results[0] as { house_no: number } | undefined;
-  if (taken) return error(409, 'handle_taken', `@${handle} 은 이미 ${taken.house_no}번지에 입주했어요`, { houseNo: taken.house_no });
+  if (taken) return error(409, 'handle_taken', `${handle} 닉네임은 이미 ${taken.house_no}번지 고양이가 쓰고 있어요. 다른 닉네임을 써 주세요`, { houseNo: taken.house_no });
   if (picked !== null) {
     const c = countRes.results[0] as { total: number; max_no: number | null } | undefined;
     if (picked > maxPickableHouseNo(c?.total ?? 0, c?.max_no ?? 0)) return error(400, 'house_locked', '아직 열리지 않은 집이에요');
@@ -80,7 +80,7 @@ export async function moveIn(request: Request, env: Env): Promise<Response> {
         .first<HouseRow>();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (/ig_handle/i.test(msg)) return error(409, 'handle_taken', `@${handle} 은 이미 입주했어요`);
+      if (/ig_handle/i.test(msg)) return error(409, 'handle_taken', `${handle} 닉네임은 이미 쓰고 있는 고양이가 있어요. 다른 닉네임을 써 주세요`);
       if (!/UNIQUE/i.test(msg)) throw e;
       if (picked !== null) return error(409, 'house_taken', `${picked}번지는 방금 다른 고양이가 입주했어요. 다른 집을 골라 주세요`);
     }

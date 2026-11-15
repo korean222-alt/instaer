@@ -166,11 +166,11 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       if (nearFish && !nearNpc) btns.push(`<button class="act-btn primary" data-act="fish">${hooks.icon('fish')}<span>${nearFish === 'sea' ? '바다 낚시하기' : '낚시하기'}</span></button>`);
       if (inside === null && doorNo !== null) {
         const h = state.houses.get(doorNo);
-        const label = state.me?.houseNo === doorNo ? '내 집 들어가기' : h?.igHandle ? `@${h.igHandle} 집 들어가기` : '주민 집 들어가기';
+        const label = state.me?.houseNo === doorNo ? '내 집 들어가기' : h?.igHandle ? `${h.igHandle} 집 들어가기` : '주민 집 들어가기';
         btns.push(`<button class="act-btn" data-act="enter">${hooks.icon('door')}<span>${esc(label)}</span></button>`);
       } else if (inside === null && nearNo !== null) {
         const h = state.houses.get(nearNo);
-        btns.push(`<button class="act-btn" data-act="look">${hooks.icon('eye')}<span>${esc(h?.igHandle ? `@${h.igHandle} 집 구경하기` : '이 집 구경하기')}</span></button>`);
+        btns.push(`<button class="act-btn" data-act="look">${hooks.icon('eye')}<span>${esc(h?.igHandle ? `${h.igHandle} 집 구경하기` : '이 집 구경하기')}</span></button>`);
       }
     }
     bar.innerHTML = btns.slice(0, 2).join('');
@@ -179,7 +179,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     if (inside !== null) {
       const h = state.houses.get(inside);
       const mine = state.me?.houseNo === inside;
-      const who = mine ? '내 집' : h?.igHandle ? `@${h.igHandle} 집` : `주민 ${residentNpc(inside).name}네 집`;
+      const who = mine ? '내 집' : h?.igHandle ? `${h.igHandle} 집` : `주민 ${residentNpc(inside).name}네 집`;
       insideBar.innerHTML = `
         <span class="pill">${esc(who)} 안</span>
         ${mine ? `<button class="pill btn-pill" data-act="decorate">${hooks.icon('decorate')}<span>집 안 꾸미기</span></button>` : ''}

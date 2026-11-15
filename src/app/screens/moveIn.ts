@@ -68,14 +68,13 @@ function catPic(cat: CatLook, size: number, key: string): string {
 interface Draft {
   handle: string;
   region: string;
-  hide: boolean;
   cat: CatLook | null;
-  /** 고양이를 직접 골랐는지 (안 골랐으면 아이디의 추천 고양이) */
+  /** 고양이를 직접 골랐는지 (안 골랐으면 닉네임의 추천 고양이) */
   touched: boolean;
   /** 고른 빈 집. null 이면 빈 집 중 앞 번호 */
   houseNo: number | null;
 }
-const draft: Draft = { handle: '', region: '', hide: false, cat: null, touched: false, houseNo: null };
+const draft: Draft = { handle: '', region: '', cat: null, touched: false, houseNo: null };
 
 // ── 팔로우 부탁 (soft): 팔로우 여부는 확인하지 않는다. 인스타 메시지 API 는 사업자 인증이 있어야 써서 못 쓴다 ──
 const FOLLOW_KEY = 'ci_follow_asked';
@@ -103,30 +102,15 @@ function renderFollow(root: HTMLElement, ctx: { setTitle(t: string): void }) {
   root.innerHTML = `
     <div class="follow-card">
       <div class="follow-cat">${catPic({ pattern: 'cheese', fur: CAT_CHOICES[0].furs[0], eyeColor: EYE_CHOICES[0] }, 96, 'follow')}</div>
-      <p class="lead"><b>입주 전에 하나만 부탁해요!</b><br />고양이섬 계정 <b>@${h}</b> 를 팔로우해 주세요.<br />새 섬이 열리거나 이벤트가 있을 때 여기서 알려 드려요.</p>
+      <p class="lead"><b>입주하려면 먼저 팔로우!</b><br />고양이섬 계정 <b>@${h}</b> 를 팔로우해야 입주할 수 있어요.<br />새 섬이 열리거나 이벤트가 있을 때 여기서 알려 드려요.</p>
       <a class="btn primary" data-act="follow" href="${followUrl()}" target="_blank" rel="noopener noreferrer">@${h} 팔로우하러 가기</a>
-      <button class="btn" type="button" data-act="done">팔로우했어요, 입주할래요</button>
-      <p class="note">팔로우하고 이 화면으로 돌아오면 바로 고양이와 집을 고를 수 있어요.</p>
+      <p class="note">팔로우하고 이 화면으로 돌아오면 고양이와 집을 고를 수 있어요.</p>
     </div>`;
-  const next = () => {
-    markFollowAsked();
-    renderForm(root, ctx);
-  };
   root.querySelector('[data-act="follow"]')!.addEventListener('click', () => {
     markFollowAsked();
     play('tap');
-    // 인스타 앱이 프로필을 열고, 돌아오면 바로 입주 화면으로 넘어간다
-    const back = () => {
-      if (document.visibilityState !== 'visible') return;
-      document.removeEventListener('visibilitychange', back);
-      if (root.isConnected) renderForm(root, ctx);
-    };
-    document.addEventListener('visibilitychange', back);
-    window.setTimeout(() => root.isConnected && root.querySelector('[data-act="done"]')?.classList.add('primary'), 800);
-  });
-  root.querySelector('[data-act="done"]')!.addEventListener('click', () => {
-    play('tap');
-    next();
+    // 링크가 먼저 열리게 두고, 곧 입주 화면으로 넘어간다 (인스타 앱에서 돌아오면 입주 화면이 기다리고 있다)
+    window.setTimeout(() => root.isConnected && renderForm(root, ctx), 400);
   });
 }
 
@@ -185,7 +169,7 @@ function houseInfo(no: number): string {
 
 function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
   const options = REGIONS.map((r) => `<option value="${r.id}">${r.label}</option>`).join('');
-  // 처음에는 무늬를 하나 골라 두고, 고양이를 직접 고르기 전까지는 아이디를 적으면 그 아이디의 추천 고양이로 바뀐다
+  // 처음에는 무늬를 하나 골라 두고, 고양이를 직접 고르기 전까지는 닉네임을 적으면 그 닉네임의 추천 고양이로 바뀐다
   const start = CAT_CHOICES[Math.floor(Math.random() * CAT_CHOICES.length)];
   let cat: CatLook = draft.cat ?? { pattern: start.pattern, fur: start.furs[0], eyeColor: EYE_CHOICES[0] };
   let touched = draft.touched;
@@ -195,7 +179,7 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
     draft.houseNo = null;
   }
   root.innerHTML = `
-    <p class="lead">어서 와요! 함께 살 고양이를 먼저 골라 주세요.<br />집 한 채와 고양이 한 마리를 무료로 받고, 집에는 내 인스타 아이디 이름표가 걸려요.</p>
+    <p class="lead">어서 와요! 함께 살 고양이를 먼저 골라 주세요.<br />집 한 채와 고양이 한 마리를 무료로 받고, 집에는 내 닉네임 이름표가 걸려요.</p>
     <section class="cat-pick" aria-label="고양이 고르기">
       <div class="cat-stage" data-stage></div>
       <div class="pick-label">무늬</div>
@@ -213,9 +197,9 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
     </section>
     <form class="form" novalidate>
       <label class="field">
-        <span>인스타 아이디</span>
-        <div class="handle-input"><i>@</i><input name="handle" type="text" inputmode="email" autocomplete="off" autocapitalize="off"
-               spellcheck="false" maxlength="${HANDLE_MAX + 1}" placeholder="mochi_nyang" required /></div>
+        <span>닉네임 <small>마음대로 정해요 · 한글, 영문, 숫자, _ · ${HANDLE_MAX}자까지</small></span>
+        <input name="handle" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
+               spellcheck="false" maxlength="${HANDLE_MAX + 1}" placeholder="모찌냥" required />
         <small class="hint" data-hint></small>
       </label>
       <label class="field">
@@ -232,10 +216,9 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
           <button type="button" class="btn small" data-act="pick">섬에서 고르기</button>
         </div>
       </div>
-      <label class="check"><input type="checkbox" name="hide" /> <span>인스타 아이디 숨기기<small>다른 사람에게는 가린 아이디(mo***ng)만 보여요. 설정에서 바꿀 수 있어요.</small></span></label>
       <button class="btn primary" type="submit" disabled>입주하기</button>
     </form>
-    <p class="note">같은 아이디로는 한 번만 입주할 수 있어요. 내 아이디로만 입주해 주세요. 남의 아이디로 들어온 집은 신고가 오면 정리돼요.</p>`;
+    <p class="note">닉네임은 한 고양이만 쓸 수 있어요. 다른 사람이 이미 쓰는 닉네임이면 다른 이름을 써 주세요.</p>`;
 
   const form = root.querySelector('form')!;
   const input = form.querySelector<HTMLInputElement>('input[name="handle"]')!;
@@ -244,15 +227,12 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
   const hint = form.querySelector<HTMLElement>('[data-hint]')!;
   const stage = root.querySelector<HTMLElement>('[data-stage]')!;
   const furs = root.querySelector<HTMLElement>('[data-furs]')!;
-  const hide = form.querySelector<HTMLInputElement>('input[name="hide"]')!;
   const houseInfoEl = root.querySelector<HTMLElement>('[data-house-info]')!;
   input.value = draft.handle;
   select.value = draft.region;
-  hide.checked = draft.hide;
   const saveDraft = () => {
     draft.handle = input.value;
     draft.region = select.value;
-    draft.hide = hide.checked;
     draft.cat = cat;
     draft.touched = touched;
   };
@@ -274,14 +254,13 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
       drawHouse();
     }
   });
-  hide.addEventListener('change', saveDraft);
 
   /** 큰 그림, 이름, 고른 표시 다시 그리기 */
   const drawCat = () => {
     const handle = normalizeHandle(input.value);
     const named = input.value.trim() && !handleProblem(handle) ? catLook(handle) : null;
     stage.innerHTML = `<div class="cat-big">${catPic(cat, 150, 'big')}</div>
-      <div class="cat-who"><b>${named ? esc(named.name) : '이름은 아이디로 정해져요'}</b>
+      <div class="cat-who"><b>${named ? esc(named.name) : '고양이 이름은 닉네임으로 정해져요'}</b>
       <span>${esc(patternLabelOf(cat.pattern))} 고양이${named ? ` · ${esc(named.personality)}` : ''}</span></div>`;
     for (const b of root.querySelectorAll<HTMLElement>('[data-pattern]')) b.setAttribute('aria-checked', String(b.dataset.pattern === cat.pattern));
     const kind = CAT_CHOICES.find((k) => k.pattern === cat.pattern)!;
@@ -309,7 +288,7 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
     const problem = input.value.trim() ? handleProblem(handle) : 'empty';
     hint.textContent = problem && problem !== 'empty' ? HANDLE_PROBLEM_TEXT[problem] : '';
     hint.classList.toggle('bad', !!problem && problem !== 'empty');
-    // 고양이를 직접 고르기 전에는 아이디의 추천 고양이를 보여 준다
+    // 고양이를 직접 고르기 전에는 닉네임의 추천 고양이를 보여 준다
     if (!problem && !touched) {
       const look = catLook(handle);
       cat = snapCatChoice({ pattern: look.pattern, fur: look.fur, eyeColor: look.eyeColor });
@@ -330,8 +309,8 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
     button.disabled = true;
     button.textContent = '입주하는 중...';
     try {
-      const res = await moveIn(handle, select.value as RegionId, hide.checked, cat, draft.houseNo);
-      Object.assign(draft, { handle: '', region: '', hide: false, cat: null, touched: false, houseNo: null });
+      const res = await moveIn(handle, select.value as RegionId, false, cat, draft.houseNo);
+      Object.assign(draft, { handle: '', region: '', cat: null, touched: false, houseNo: null });
       endPicking();
       saveToken(res.token);
       state.hideHandle = res.hideHandle;

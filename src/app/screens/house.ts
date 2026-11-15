@@ -1,4 +1,3 @@
-import { isMaskedHandle } from '../../shared/handle';
 import { play } from '../audio/sound';
 import { ApiError, like } from '../net/api';
 import { go } from '../router';
@@ -33,7 +32,7 @@ export const houseScreen: Screen = {
       <div class="house-head">
         ${house.cat ? catSvg(house.cat, 88, `h${no}`) : ''}
         <div>
-          <div class="house-handle">@${esc(handle)}</div>
+          <div class="house-handle">${esc(handle)}</div>
           <div class="badges">
             <span class="badge-region"><i style="background:${regionColor(house.region)}"></i>${esc(regionLabel(house.region))}</span>
             ${isFounder(no) ? `<span class="badge gold">창립 주민 ${no}번지</span>` : `<span class="badge">${no}번지</span>`}
@@ -42,16 +41,11 @@ export const houseScreen: Screen = {
           <div class="house-meta">꾸미기 ${items}개 · 예뻐요 <b data-likes>${house.likes.toLocaleString()}</b></div>
         </div>
       </div>
-      <div class="row two">
+      <div class="row">
         ${
           mine
             ? '<a class="btn primary" href="#/decorate">내 마당 꾸미기</a>'
             : '<button class="btn primary" data-act="like"><span aria-hidden="true">♥</span> 예뻐요</button>'
-        }
-        ${
-          isMaskedHandle(handle)
-            ? '<span class="btn ghost" aria-disabled="true">아이디 비공개</span>'
-            : `<a class="btn" href="https://www.instagram.com/${encodeURIComponent(handle)}/" target="_blank" rel="noopener noreferrer">인스타 보러 가기</a>`
         }
       </div>
       <div class="row-end"><button class="link small" data-act="report">신고하기</button></div>`;
@@ -78,7 +72,7 @@ export const houseScreen: Screen = {
         btn.disabled = false;
       }
     });
-    root.querySelector('[data-act="report"]')?.addEventListener('click', () => toast('신고 기능은 곧 열려요. 급하면 인스타 DM 으로 알려 주세요', 3000));
+    root.querySelector('[data-act="report"]')?.addEventListener('click', () => toast('신고 기능은 곧 열려요. 급하면 고양이섬 인스타 계정으로 DM 을 보내 주세요', 3000));
     return () => state.scene.highlightHouse(state.todayTop?.houseNo ?? null);
   },
 };

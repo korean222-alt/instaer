@@ -167,7 +167,7 @@ export function setHighlightedRegion(id: RegionId | null) {
   emit();
 }
 
-/** 아이디로 집 찾기 (앞부분이 같은 것부터) */
+/** 닉네임으로 집 찾기 (앞부분이 같은 것부터) */
 export function searchHouses(query: string, limit = 8): House[] {
   const q = query.trim().replace(/^@+/, '').toLowerCase();
   if (!q) return [];
@@ -175,7 +175,7 @@ export function searchHouses(query: string, limit = 8): House[] {
   const contains: House[] = [];
   for (const h of state.houses.values()) {
     const handle = h.igHandle ?? '';
-    if (handle.includes('*')) continue; // 아이디를 숨긴 집은 찾기에 안 나온다
+    if (handle.includes('*')) continue; // 닉네임을 숨긴 집은 찾기에 안 나온다
     if (handle.startsWith(q)) starts.push(h);
     else if (handle.includes(q)) contains.push(h);
     if (starts.length >= limit) break;

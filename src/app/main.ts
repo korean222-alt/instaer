@@ -199,7 +199,7 @@ function drawHud() {
   const top = $('hud-top');
   const t = state.todayTop ? state.houses.get(state.todayTop.houseNo) : null;
   top.hidden = !t;
-  if (t) top.innerHTML = `${icon('star')}<span>오늘의 특이한 집 @${esc(t.igHandle ?? '')}</span>`;
+  if (t) top.innerHTML = `${icon('star')}<span>오늘의 특이한 집 ${esc(t.igHandle ?? '')}</span>`;
   const reg = $('hud-region');
   reg.hidden = !state.highlightedRegion;
   if (state.highlightedRegion) reg.innerHTML = `<span>${esc(regionLabel(state.highlightedRegion))} 강조 중</span>${icon('close')}`;
