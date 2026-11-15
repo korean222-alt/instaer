@@ -6,6 +6,7 @@ import { emit, isFounder, regionColor, regionLabel, state } from '../state';
 import { catSvg } from '../ui/catSvg';
 import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
+import { chooseHouse, pickingHouse } from './moveIn';
 import type { Screen } from './types';
 
 /** 집을 탭했을 때 아래에서 올라오는 구경 팝업 */
@@ -17,10 +18,13 @@ export const houseScreen: Screen = {
     const house = state.houses.get(no);
     ctx.setTitle(`${no}번지`);
     if (!house || !house.igHandle) {
+      // 입주 전이면 이 빈 집을 바로 내 집으로 고를 수 있다
       root.innerHTML = `
         <p class="empty">아직 빈 집이에요. 동네 고양이가 대신 지키고 있어요.</p>
-        ${state.me ? '' : '<a class="btn primary" href="#/move-in">나도 입주하기</a>'}`;
-      return;
+        ${state.me ? '' : `<button class="btn primary" data-act="choose">${pickingHouse() ? '이 집으로 할래요' : '이 집에 입주하기'}</button>`}`;
+      root.querySelector('[data-act="choose"]')?.addEventListener('click', () => chooseHouse(no));
+      state.scene.highlightHouse(no);
+      return () => state.scene.highlightHouse(state.todayTop?.houseNo ?? null);
     }
     const mine = state.me?.houseNo === no;
     const handle = house.igHandle;
@@ -33,7 +37,7 @@ export const houseScreen: Screen = {
           <div class="badges">
             <span class="badge-region"><i style="background:${regionColor(house.region)}"></i>${esc(regionLabel(house.region))}</span>
             ${isFounder(no) ? `<span class="badge gold">창립 주민 ${no}번지</span>` : `<span class="badge">${no}번지</span>`}
-            ${house.verified ? '<span class="badge ok">인증</span>' : '<span class="badge dim">미인증</span>'}
+            ${house.verified ? '<span class="badge ok">인증</span>' : ''}
           </div>
           <div class="house-meta">꾸미기 ${items}개 · 예뻐요 <b data-likes>${house.likes.toLocaleString()}</b></div>
         </div>

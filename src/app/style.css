@@ -82,6 +82,27 @@ button.pill span { overflow: hidden; text-overflow: ellipsis; }
   pointer-events: none !important;
 }
 
+/* 섬에서 입주할 집 고르기 안내 */
+.pick-banner {
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: 6;
+  bottom: calc(var(--tabbar-h) + 76px); max-width: calc(100% - 32px);
+  display: flex; align-items: center; gap: 10px; white-space: nowrap;
+  background: var(--toast); color: var(--on-dark);
+  font-size: 13px; font-weight: 700; padding: 6px 6px 6px 14px; border-radius: 999px;
+  box-shadow: 0 2px 10px var(--shadow);
+}
+.pick-banner button {
+  border: 0; border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12px;
+  background: rgba(255, 255, 255, 0.18); color: inherit;
+}
+.house-pick { display: flex; align-items: center; gap: 10px; background: var(--field); border-radius: 14px; padding: 10px 12px; }
+.house-pick-info { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; }
+.house-pick-info small { color: var(--ink-soft); }
+.house-pick .btn { flex: none; }
+.follow-card { display: flex; flex-direction: column; gap: 10px; text-align: center; }
+.follow-card .lead { margin: 0; }
+.follow-cat { display: flex; justify-content: center; }
+
 /* ── 하단 메뉴 ── */
 .tabbar {
   position: absolute; left: 0; right: 0; bottom: 0; height: var(--tabbar-h);

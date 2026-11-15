@@ -4,6 +4,7 @@ import { FOUNDER_MAX, REGIONS, ZONE_CAPACITY } from '../shared/config';
 import type { House, PlacedItem, RegionId } from '../shared/types';
 import { fetchRegions, fetchVillage, type Regions, type Village, type WalletView } from './net/api';
 import { withEmptyLots } from './village';
+import { openZoneCount } from '../shared/zones';
 
 type Listener = () => void;
 
@@ -65,9 +66,10 @@ export const isFounder = (houseNo: number) => houseNo <= FOUNDER_MAX;
 export const totalHouses = () => state.houses.size;
 /** 다음 섬이 열릴 때까지 남은 입주 수 */
 export function toNextIsland(): number {
-  const maxNo = Math.max(0, ...state.houses.keys());
-  return ZONE_CAPACITY * Math.max(1, Math.ceil(maxNo / ZONE_CAPACITY)) - maxNo || ZONE_CAPACITY;
+  // 집을 골라서 입주하므로 번지가 아니라 입주 수로 센다 (지금 열린 구역이 다 차면 다음 섬이 열린다)
+  return Math.max(1, ZONE_CAPACITY * openZoneCount(state.houses.size, maxHouseNo()) - state.houses.size);
 }
+const maxHouseNo = () => Math.max(0, ...state.houses.keys());
 
 // ── 씬 반영 ──
 let houseTimer = 0;
@@ -113,8 +115,7 @@ export function applyVillage(v: Village) {
   // 마당이 비워진 집도 씬에서 지운다
   const cleared = [...prevYards.keys()].filter((no) => !state.yards.has(no));
   state.todayTop = v.todayTop;
-  const maxNo = Math.max(0, ...state.houses.keys());
-  state.unlockedZones = Math.max(v.unlockedZones, Math.ceil(maxNo / ZONE_CAPACITY), 1);
+  state.unlockedZones = Math.max(v.unlockedZones, openZoneCount(state.houses.size, maxHouseNo()));
   pushHousesToScene(true);
   for (const no of cleared) if (no !== state.editingYard) state.scene.setYardItemsFree(no, []);
   for (const [no, items] of state.yards) if (no !== state.editingYard) state.scene.setYardItemsFree(no, items);
@@ -154,7 +155,8 @@ export function setMe(house: House | null) {
   state.me = house;
   if (house) {
     state.houses.set(house.houseNo, house);
-    state.unlockedZones = Math.max(state.unlockedZones, Math.ceil(house.houseNo / ZONE_CAPACITY));
+    state.unlockedZones = Math.max(state.unlockedZones, openZoneCount(state.houses.size, maxHouseNo()));
+    pushHousesToScene();
   }
   emit();
 }

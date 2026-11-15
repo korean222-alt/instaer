@@ -5,6 +5,7 @@ import { utcDay } from '../http';
 import { cachedJson } from '../lib/cache';
 import { parseItems } from '../lib/decor';
 import { HOUSE_COLS, toHouse, type HouseRow } from '../lib/houses';
+import { openZoneCount } from '../../src/shared/zones';
 
 export interface VillageResponse {
   houses: House[];
@@ -111,7 +112,7 @@ export function village(env: Env, ctx: ExecutionContext): Promise<Response> {
       yards,
       roofArt,
       total: houses.length,
-      unlockedZones: Math.max(1, zoneCount),
+      unlockedZones: openZoneCount(houses.length, maxNo),
       todayTop,
       updatedAt: Date.now(),
     };

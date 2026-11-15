@@ -117,9 +117,9 @@ export async function fetchHealth(): Promise<Health> {
 export const fetchVillage = () => call<Village>('GET', '/api/village');
 export const fetchRegions = () => call<Regions>('GET', '/api/regions');
 export const fetchMe = () => call<{ house: House | null; founder?: boolean; hideHandle?: boolean }>('GET', '/api/me');
-/** cat: 고른 고양이 (CAT_CHOICES / EYE_CHOICES 안의 값) */
-export const moveIn = (handle: string, region: RegionId, hideHandle: boolean, cat: CatLook) =>
-  call<MoveInResult>('POST', '/api/move-in', { handle, region, hideHandle, cat });
+/** cat: 고른 고양이 (CAT_CHOICES / EYE_CHOICES 안의 값). houseNo: 고른 빈 집 (null 이면 빈 집 중 앞 번호) */
+export const moveIn = (handle: string, region: RegionId, hideHandle: boolean, cat: CatLook, houseNo: number | null = null) =>
+  call<MoveInResult>('POST', '/api/move-in', { handle, region, hideHandle, cat, houseNo });
 export const setPrivacy = (hideHandle: boolean) => call<{ ok: true; hideHandle: boolean }>('PUT', '/api/me/privacy', { hideHandle });
 
 /** 지갑 (츄르, 가진 아이템, 퀘스트 진행) */
