@@ -85,7 +85,7 @@ button.pill span { overflow: hidden; text-overflow: ellipsis; }
 /* ── 하단 메뉴 ── */
 .tabbar {
   position: absolute; left: 0; right: 0; bottom: 0; height: var(--tabbar-h);
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   padding: 6px var(--gutter-r) var(--safe-b) var(--gutter-l);
   background: var(--card-solid); border-radius: 22px 22px 0 0;
   box-shadow: 0 -4px 18px var(--shadow);
@@ -303,9 +303,9 @@ body.walking .sheet.open ~ .near-btn { display: none; }
 }
 
 /* ── 츄르, 퀘스트, 상점 (2026-11-15) ── */
-.coin-pill { font-size: 12px; font-weight: 800; position: relative; background: #fff3c4 !important; }
+.coin-pill { font-size: 12px; font-weight: 800; position: relative; padding-right: 22px !important; background: #fff3c4 !important; }
 .coin-dot { width: 12px; height: 12px; border-radius: 4px; background: #ffb347; flex: none; }
-.coin-pill em { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; border-radius: 9px; background: var(--accent); color: #fff; font-style: normal; font-size: 11px; display: grid; place-items: center; padding: 0 4px; }
+.coin-pill em { position: absolute; top: 2px; right: 2px; min-width: 18px; height: 18px; border-radius: 9px; background: var(--accent); color: #fff; font-style: normal; font-size: 11px; display: grid; place-items: center; padding: 0 4px; }
 .coin-card { display: flex; align-items: center; gap: 6px; background: #fff3c4; border-radius: 16px; padding: 10px 14px; margin-bottom: 12px; }
 .coin-card .coin { width: 22px; height: 22px; }
 .coin-card b { font-size: 20px; font-variant-numeric: tabular-nums; }

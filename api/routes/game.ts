@@ -104,7 +104,7 @@ export const fish = (request: Request, env: Env) =>
     if (!Array.isArray(body.catches) || !body.catches.length) return error(400, 'bad_request', '잡은 물고기가 없어요');
     const now = Math.floor(Date.now() / 1000);
     const since = w.data.lastFish ? now - w.data.lastFish : 3600;
-    const allowed = Math.max(1, Math.min(FISH_PER_REPORT, Math.floor(since / FISH_MIN_SEC)));
+    const allowed = Math.min(FISH_PER_REPORT, Math.floor(since / FISH_MIN_SEC));
     const counted: Array<{ id: string; cm: number; coins: number }> = [];
     let total = 0;
     for (const c of (body.catches as Array<Record<string, unknown>>).slice(0, allowed)) {
@@ -121,7 +121,7 @@ export const fish = (request: Request, env: Env) =>
       }
       if (!w.data.dex.includes(def.id)) w.data.dex.push(def.id);
     }
-    w.data.lastFish = now;
+    if (counted.length) w.data.lastFish = now;
     const paid = payGame(w, total);
     return { counted: counted.length, coins: paid, capped: paid < total };
   });

@@ -15,13 +15,14 @@ import { drawScreen } from './screens/draw';
 import { npcScreen } from './screens/npc';
 import { questsScreen } from './screens/quests';
 import { shopScreen } from './screens/shop';
-import { houseSlot } from '../scene';
+import { debugPlaceWalker, houseSlot } from '../scene';
 import { CURRENCY } from '../shared/economy';
 import { loadMyDrawings, setArtCenter, syncArt } from './art';
 import { startArcade } from './play/arcade';
 import { ctl } from './play/ctl';
 import { createExplore, type Explore } from './play/explore';
 import { startFishing } from './play/fishing';
+import { pondsOf, townNpcs } from './play/npcs';
 import { createPlacement } from './play/placement';
 import { claimableCount, coins, refreshWallet } from './wallet';
 import { initSound, play, setMusicMood } from './audio/sound';
@@ -288,7 +289,7 @@ ctl.arcade = () => {
 };
 ctl.fishing = () => startFishing(() => explore.refresh());
 // 확인용 (콘솔에서 __catIsland.realtime.debug())
-(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state, ctl };
+(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state, ctl, place: (x: number, z: number) => debugPlaceWalker(scene, x, z), npcs: () => townNpcs(state.unlockedZones), ponds: () => pondsOf(state.unlockedZones) };
 
 $('btn-walk').addEventListener('click', () => explore.setWalking(true));
 $('btn-walk-end').addEventListener('click', () => explore.setWalking(false));
