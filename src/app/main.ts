@@ -11,6 +11,19 @@ import { moveInScreen } from './screens/moveIn';
 import { rankScreen } from './screens/rank';
 import { searchScreen } from './screens/search';
 import { settingsScreen } from './screens/settings';
+import { drawScreen } from './screens/draw';
+import { npcScreen } from './screens/npc';
+import { questsScreen } from './screens/quests';
+import { shopScreen } from './screens/shop';
+import { houseSlot } from '../scene';
+import { CURRENCY } from '../shared/economy';
+import { loadMyDrawings, setArtCenter, syncArt } from './art';
+import { startArcade } from './play/arcade';
+import { ctl } from './play/ctl';
+import { createExplore, type Explore } from './play/explore';
+import { startFishing } from './play/fishing';
+import { createPlacement } from './play/placement';
+import { claimableCount, coins, refreshWallet } from './wallet';
 import { initSound, play, setMusicMood } from './audio/sound';
 import type { Screen } from './screens/types';
 import {
@@ -39,6 +52,10 @@ const ICON: Record<string, string> = {
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   star: '<path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/>',
+  quests: '<path d="M7 3.5h10a2 2 0 0 1 2 2v15l-3-2-2 2-2-2-2 2-2-2-3 2v-15a2 2 0 0 1 2-2z"/><path d="M9 9h6M9 13h4"/>',
+  chat: '<path d="M4 5.5h16v10H10l-4.5 4v-4H4z"/><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01"/>',
+  fish: '<path d="M3 12c3-4.5 9-6 14-3l4-3v12l-4-3c-5 3-11 1.5-14-3z"/><path d="M8 11.5h.01"/>',
+  door: '<path d="M6 21V4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21"/><path d="M4 21h16M14.5 12.5h.01"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
 };
 const icon = (name: string) =>
@@ -51,12 +68,17 @@ const SCREENS: Record<Exclude<ScreenId, 'map'>, Screen> = {
   house: houseScreen,
   search: searchScreen,
   settings: settingsScreen,
+  quests: questsScreen,
+  shop: shopScreen,
+  draw: drawScreen,
+  npc: npcScreen,
 };
 const TABS: Array<{ id: ScreenId; label: string }> = [
   { id: 'map', label: '지도' },
   { id: 'move-in', label: '입주' },
   { id: 'rank', label: '순위' },
   { id: 'decorate', label: '꾸미기' },
+  { id: 'quests', label: '퀘스트' },
 ];
 
 // ── 화면 높이: 인스타 앱 안 브라우저는 dvh 를 늦게 반영할 때가 있어서 innerHeight 도 같이 쓴다 ──
@@ -82,6 +104,7 @@ app.innerHTML = `
     <div class="hud-row">
       <div class="pill brand"><b>고양이섬</b><span id="hud-count">불러오는 중</span></div>
       <div class="hud-btns">
+        <button class="pill coin-pill" id="hud-coin" hidden aria-label="${CURRENCY} 와 퀘스트"><i class="coin-dot"></i><span></span><em hidden></em></button>
         <button class="round" id="btn-search" aria-label="아이디로 집 찾기">${icon('search')}</button>
         <button class="round" id="btn-settings" aria-label="설정">${icon('gear')}</button>
       </div>
@@ -95,7 +118,6 @@ app.innerHTML = `
   <div class="status" id="status" hidden></div>
   <button class="walk-btn" id="btn-walk" aria-pressed="false">${icon('walk')}<span>걷기</span></button>
   <button class="walk-end" id="btn-walk-end" hidden>${icon('close')}<span>걷기 끝</span></button>
-  <button class="near-btn" id="btn-near" hidden>${icon('eye')}<span>이 집 구경하기</span></button>
   <section class="sheet" id="sheet" aria-hidden="true" role="dialog" aria-labelledby="sheet-title">
     <div class="sheet-head">
       <h2 id="sheet-title"></h2>
@@ -113,8 +135,9 @@ const sheetBody = $('sheet-body');
 let cleanup: (() => void) | void;
 let ready = false;
 
+const TAB_OF: Partial<Record<ScreenId, ScreenId>> = { house: 'map', search: 'map', settings: 'map', npc: 'map', shop: 'decorate', draw: 'decorate' };
 function show(route: Route) {
-  const tabId = route.id === 'house' || route.id === 'search' || route.id === 'settings' ? 'map' : route.id;
+  const tabId = TAB_OF[route.id] ?? route.id;
   for (const a of app.querySelectorAll<HTMLAnchorElement>('[data-tab]')) {
     const on = a.dataset.tab === tabId;
     a.classList.toggle('on', on);
@@ -128,6 +151,7 @@ function show(route: Route) {
     if (wasOpen) play('close');
     sheet.classList.remove('open');
     sheet.setAttribute('aria-hidden', 'true');
+    explore.refresh();
     return;
   }
   const screen = SCREENS[route.id];
@@ -144,6 +168,7 @@ function show(route: Route) {
   if (!wasOpen) play('open');
   sheet.classList.add('open');
   sheet.setAttribute('aria-hidden', 'false');
+  explore.refresh();
 }
 
 $('sheet-close').addEventListener('click', () => go('map'));
@@ -151,7 +176,10 @@ $('btn-search').addEventListener('click', () => go('search'));
 $('btn-settings').addEventListener('click', () => go('settings'));
 onRoute(show);
 scene.onHouseTap((no) => {
+  if (ctl.placement?.active()) return;
   play('meow');
+  const s = houseSlot(no);
+  setArtCenter(s.x, s.z);
   openHouse(no);
 });
 
@@ -174,26 +202,44 @@ function drawHud() {
   const reg = $('hud-region');
   reg.hidden = !state.highlightedRegion;
   if (state.highlightedRegion) reg.innerHTML = `<span>${esc(regionLabel(state.highlightedRegion))} 강조 중</span>${icon('close')}`;
+  const coin = $('hud-coin');
+  coin.hidden = !state.me || !state.wallet;
+  coin.querySelector('span')!.textContent = `${coins().toLocaleString()} ${CURRENCY}`;
+  const ready = claimableCount();
+  const dot = coin.querySelector('em')!;
+  dot.hidden = ready === 0;
+  dot.textContent = String(ready);
   drawStatus();
 }
+$('hud-coin').addEventListener('click', () => go('quests'));
 $('hud-top').addEventListener('click', () => state.todayTop && openHouse(state.todayTop.houseNo));
 $('hud-region').addEventListener('click', () => setHighlightedRegion(null));
 onChange(drawHud);
+// 마을을 새로 받으면 (마당/지붕 그림이 바뀌었을 수 있으니) 주변 그림을 다시 모은다
+let seenYards = state.yards;
+onChange(() => {
+  if (seenYards === state.yards) return;
+  seenYards = state.yards;
+  syncArt();
+});
 
 // ── 상태 줄 (혼자 둘러보는 중 등) ──
 let rtSolo = false;
-let walking = false;
-let nearHouse: number | null = null;
 function drawStatus() {
   const el = $('status');
-  const text = state.offline ? '서버에 연결할 수 없어 혼자 둘러보는 중' : walking && rtSolo ? '혼자 둘러보는 중' : '';
+  const walking = explore?.walking() ?? false;
+  const text = state.offline ? '서버에 연결할 수 없어 혼자 둘러보는 중' : walking && rtSolo && state.me ? '혼자 둘러보는 중' : '';
   el.textContent = text;
   el.hidden = !text;
 }
 
-// ── 걷기 (단계 B) ──
+// ── 걷기, 집 안, 주민, 낚시 (단계 B + 작업 4 연결) ──
 let lastAnim = 'idle';
-const realtime = createRealtime(scene, {
+// 실시간이 받은 다른 유저는 explore 를 거쳐 주민(NPC)과 섞어서 씬에 넘긴다
+let explore: Explore;
+const rtScene = Object.create(scene) as typeof scene;
+rtScene.setRemotePlayers = (players) => explore?.setNetPlayers(players);
+const realtime = createRealtime(rtScene, {
   onSolo(solo) {
     rtSolo = solo;
     drawStatus();
@@ -207,47 +253,45 @@ const realtime = createRealtime(scene, {
 // 미니게임 방 시험: 주소에 ?room=test 를 붙이고 걷기를 누르면 방 'test' 에 들어간다 (방 안은 거리와 상관없이 모두 보임)
 const testRoom = new URLSearchParams(location.search).get('room');
 if (testRoom) realtime.joinRoom(testRoom);
-// 확인용 (콘솔에서 __catIsland.realtime.debug())
-(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state };
 
-function setWalking(on: boolean) {
-  if (walking === on) return;
-  walking = on;
-  play('tap');
-  document.body.classList.toggle('walking', on);
-  $('btn-walk').setAttribute('aria-pressed', String(on));
-  $('btn-walk-end').hidden = !on;
-  if (on) {
-    go('map');
-    scene.setWalkMode(true, state.me?.houseNo);
-    if (state.me) {
-      realtime.start();
-      if (testRoom) toast(`미니게임 시험 방 '${testRoom}' 에 들어왔어요`);
+explore = createExplore(scene, realtime, {
+  icon,
+  onWalking(on) {
+    $('btn-walk').setAttribute('aria-pressed', String(on));
+    $('btn-walk-end').hidden = !on;
+    if (on) {
+      go('map');
+      if (state.me && testRoom) toast(`미니게임 시험 방 '${testRoom}' 에 들어왔어요`);
+    } else {
+      ctl.placement?.cancel();
+      rtSolo = false;
     }
-    else {
-      rtSolo = true;
-      toast('입주하면 다른 고양이들도 보여요');
-    }
-  } else {
-    scene.setWalkMode(false);
-    realtime.stop();
-    rtSolo = false;
-    nearHouse = null;
-    $('btn-near').hidden = true;
-  }
-  drawStatus();
-}
-$('btn-walk').addEventListener('click', () => setWalking(true));
-$('btn-walk-end').addEventListener('click', () => setWalking(false));
-scene.onNearHouse((no) => {
-  nearHouse = no;
-  const btn = $('btn-near');
-  const h = no !== null ? state.houses.get(no) : null;
-  if (no !== null && btn.hidden && walking) play('ding');
-  btn.hidden = no === null || !walking;
-  if (no !== null) btn.querySelector('span')!.textContent = h?.igHandle ? `@${h.igHandle} 집 구경하기` : '이 집 구경하기';
+    drawStatus();
+  },
+  onInside() {
+    if (ctl.placement?.active()) ctl.placement.cancel();
+  },
+  talk(npc) {
+    go('npc', npc.role === 'resident' ? `resident-${npc.houseNo}` : npc.role);
+  },
+  fish() {
+    play('tap');
+    startFishing(() => explore.refresh());
+    explore.refresh();
+  },
 });
-$('btn-near').addEventListener('click', () => nearHouse !== null && go('house', nearHouse));
+ctl.explore = explore;
+ctl.placement = createPlacement(scene, explore);
+ctl.arcade = () => {
+  startArcade(() => explore.refresh());
+  explore.refresh();
+};
+ctl.fishing = () => startFishing(() => explore.refresh());
+// 확인용 (콘솔에서 __catIsland.realtime.debug())
+(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state, ctl };
+
+$('btn-walk').addEventListener('click', () => explore.setWalking(true));
+$('btn-walk-end').addEventListener('click', () => explore.setWalking(false));
 
 // ── 데이터 불러오기 ──
 async function boot() {
@@ -256,7 +300,12 @@ async function boot() {
     state.hideHandle = !!meRes.value.hideHandle;
     setMe(meRes.value.house);
     pushHousesToScene();
+    const s = houseSlot(meRes.value.house.houseNo);
+    setArtCenter(s.x, s.z);
+    void refreshWallet();
+    void loadMyDrawings().then(syncArt);
   }
+  syncArt();
   ready = true;
   drawHud();
   const route = currentRoute();
@@ -276,7 +325,7 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 setInterval(() => {
-  if (document.visibilityState === 'visible' && !walking) {
+  if (document.visibilityState === 'visible' && !explore.walking()) {
     lastRefresh = Date.now();
     refreshVillage();
   }

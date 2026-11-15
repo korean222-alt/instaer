@@ -10,6 +10,7 @@ import { mountCard } from '../ui/adoptCard';
 import { catSvg } from '../ui/catSvg';
 import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
+import { refreshWallet } from '../wallet';
 import type { Screen } from './types';
 
 /** 입주한 사람: 내 입양 카드와 지역 순위 */
@@ -113,6 +114,7 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
       state.hideHandle = res.hideHandle;
       play('fanfare');
       setMe(res.house);
+      void refreshWallet();
       refreshRegions();
       state.scene.focusHouse(res.house.houseNo);
       ctx.setTitle('입양 결과');

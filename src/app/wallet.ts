@@ -1,6 +1,6 @@
 // 내 지갑(츄르, 가진 아이템, 퀘스트)을 들고 있고, 서버 응답이 올 때마다 바꾼다.
-import { decorItem } from '../shared/config';
-import { CURRENCY, DAILY_QUESTS, dailyQuests, kstDay, normalizeWallet, owns, questValue, STARTER_ITEMS } from '../shared/economy';
+import { decorItem, STARTER_ITEMS } from '../shared/config';
+import { CURRENCY, DAILY_QUESTS, dailyQuests, kstDay, normalizeWallet, owns, questValue } from '../shared/economy';
 import { play } from './audio/sound';
 import { fetchWallet, type WalletView } from './net/api';
 import { setWallet, state } from './state';
