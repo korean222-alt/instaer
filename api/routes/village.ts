@@ -1,14 +1,17 @@
 import { ZONE_CAPACITY } from '../../src/shared/config';
-import type { House, YardItem } from '../../src/shared/types';
+import type { House, PlacedItem } from '../../src/shared/types';
 import type { Env } from '../env';
 import { utcDay } from '../http';
 import { cachedJson } from '../lib/cache';
+import { parseItems } from '../lib/decor';
 import { HOUSE_COLS, toHouse, type HouseRow } from '../lib/houses';
 
 export interface VillageResponse {
   houses: House[];
-  /** 번지 → 마당 아이템 (아이템이 있는 집만) */
-  yards: Record<number, YardItem[]>;
+  /** 번지 → 마당 자유 배치 아이템 (아이템이 있는 집만) */
+  yards: Record<number, PlacedItem[]>;
+  /** 번지 → 지붕 그림 id (그림을 붙인 집만). 그림 내용은 /api/drawings 로 받는다 */
+  roofArt: Record<number, string>;
   total: number;
   /** 열린 구역 수 (집이 있는 구역 + 0채면 1) */
   unlockedZones: number;
@@ -19,33 +22,37 @@ export interface VillageResponse {
 
 interface ZoneData {
   houses: House[];
-  yards: Record<number, YardItem[]>;
+  yards: Record<number, PlacedItem[]>;
+  roofArt?: Record<number, string>;
 }
 
-export const VILLAGE_KEY = 'village-v2';
+export const VILLAGE_KEY = 'village-v3';
 /** 집/마당이 바뀐 구역은 이 시간이 지나면 다시 만든다 (여러 요청이 한꺼번에 다시 만들지 않게) */
 const REBUILD_STRUCT_SEC = 20;
 /** 예뻐요 수만 바뀐 구역은 15분에 한 번 */
 const REBUILD_LIKES_SEC = 900;
 
-/** 구역 하나의 목록을 DB 에서 새로 만든다 (그 구역 집 100채 + 아이템만 읽는다) */
+/** 구역 하나의 목록을 DB 에서 새로 만든다 (그 구역 집 100채 + 꾸미기 100줄만 읽는다) */
 async function buildZone(db: D1Database, zone: number): Promise<ZoneData> {
   const lo = zone * ZONE_CAPACITY + 1;
   const hi = lo + ZONE_CAPACITY - 1;
-  const [houses, items] = await db.batch([
+  const [houses, decor] = await db.batch([
     db.prepare(`SELECT ${HOUSE_COLS} FROM houses WHERE house_no BETWEEN ? AND ? ORDER BY house_no`).bind(lo, hi),
     db
       .prepare(
-        `SELECT h.house_no AS house_no, y.item_type AS item_type, y.x AS x, y.y AS y, y.rotation AS rotation
-         FROM houses h JOIN yard_items y ON y.house_id = h.id WHERE h.house_no BETWEEN ? AND ?`,
+        `SELECT h.house_no AS house_no, d.yard AS yard, d.roof_art AS roof_art
+         FROM houses h JOIN house_decor d ON d.house_id = h.id WHERE h.house_no BETWEEN ? AND ?`,
       )
       .bind(lo, hi),
   ]);
-  const yards: Record<number, YardItem[]> = {};
-  for (const r of items.results as Array<{ house_no: number; item_type: YardItem['type']; x: number; y: number; rotation: YardItem['rotation'] }>) {
-    (yards[r.house_no] ??= []).push({ type: r.item_type, x: r.x, y: r.y, rotation: r.rotation });
+  const yards: Record<number, PlacedItem[]> = {};
+  const roofArt: Record<number, string> = {};
+  for (const r of decor.results as Array<{ house_no: number; yard: string; roof_art: string | null }>) {
+    const items = parseItems(r.yard);
+    if (items.length) yards[r.house_no] = items;
+    if (r.roof_art) roofArt[r.house_no] = r.roof_art;
   }
-  return { houses: (houses.results as unknown as HouseRow[]).map((h) => toHouse(h)), yards };
+  return { houses: (houses.results as unknown as HouseRow[]).map((h) => toHouse(h)), yards, roofArt };
 }
 
 /**
@@ -91,7 +98,8 @@ export function village(env: Env, ctx: ExecutionContext): Promise<Response> {
     if (writes.length) ctx.waitUntil(db.batch(writes).catch((e) => console.error('[village] zone_cache', e)));
 
     const houses = zones.flatMap((d) => d.houses);
-    const yards = Object.assign({}, ...zones.map((d) => d.yards)) as Record<number, YardItem[]>;
+    const yards = Object.assign({}, ...zones.map((d) => d.yards)) as Record<number, PlacedItem[]>;
+    const roofArt = Object.assign({}, ...zones.map((d) => d.roofArt ?? {})) as Record<number, string>;
     const topRow = topRes.results[0] as { house_no: number; likes_today: number } | undefined;
     let todayTop: VillageResponse['todayTop'] = topRow ? { houseNo: topRow.house_no, likesToday: topRow.likes_today } : null;
     if (!todayTop && houses.length) {
@@ -101,6 +109,7 @@ export function village(env: Env, ctx: ExecutionContext): Promise<Response> {
     return {
       houses,
       yards,
+      roofArt,
       total: houses.length,
       unlockedZones: Math.max(1, zoneCount),
       todayTop,

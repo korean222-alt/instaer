@@ -1,5 +1,6 @@
 // 서버 호출은 전부 여기서 한다. 씬은 서버를 모른다.
-import type { House, RegionId, YardItem } from '../../shared/types';
+import type { WalletData } from '../../shared/economy';
+import type { Drawing, House, HouseDecor, PlacedItem, RegionId } from '../../shared/types';
 
 export interface Health {
   ok: boolean;
@@ -10,7 +11,10 @@ export interface Health {
 
 export interface Village {
   houses: House[];
-  yards: Record<number, YardItem[]>;
+  /** 번지 → 마당 자유 배치 아이템 */
+  yards: Record<number, PlacedItem[]>;
+  /** 번지 → 지붕 그림 id */
+  roofArt: Record<number, string>;
   total: number;
   unlockedZones: number;
   todayTop: { houseNo: number; likesToday: number } | null;
@@ -116,7 +120,34 @@ export const fetchMe = () => call<{ house: House | null; founder?: boolean; hide
 export const moveIn = (handle: string, region: RegionId, hideHandle: boolean) =>
   call<MoveInResult>('POST', '/api/move-in', { handle, region, hideHandle });
 export const setPrivacy = (hideHandle: boolean) => call<{ ok: true; hideHandle: boolean }>('PUT', '/api/me/privacy', { hideHandle });
-export const saveYard = (houseNo: number, items: YardItem[], roofColor: string) =>
-  call<{ ok: true; items: YardItem[]; roofColor: string }>('PUT', `/api/yard/${houseNo}`, { items, roofColor });
+
+/** 지갑 (츄르, 가진 아이템, 퀘스트 진행) */
+export interface WalletView {
+  coins: number;
+  data: WalletData;
+  /** 오늘의 퀘스트 id 3개 */
+  daily: string[];
+}
+type WithWallet<T> = T & { ok: true; wallet: WalletView };
+
+export const fetchDecor = (houseNo: number) => call<HouseDecor & { roofColor: string }>('GET', `/api/house/${houseNo}`);
+export type DecorPatch = Partial<Pick<HouseDecor, 'yard' | 'room' | 'wallpaper' | 'floor' | 'roofArt'>> & { roofColor?: string };
+export const saveDecor = (houseNo: number, patch: DecorPatch) =>
+  call<WithWallet<{ decor: HouseDecor; roofColor: string }>>('PUT', `/api/house/${houseNo}`, patch);
+
+export const fetchMyDrawings = () => call<{ drawings: Drawing[] }>('GET', '/api/me/drawings');
+export const fetchDrawings = (ids: string[]) => call<{ drawings: Drawing[] }>('GET', `/api/drawings?ids=${ids.map(encodeURIComponent).join(',')}`);
+export const saveDrawing = (pixels: string, palette: string[]) => call<{ ok: true; drawing: Drawing }>('POST', '/api/drawings', { pixels, palette });
+export const deleteDrawing = (id: string) => call<{ ok: true }>('DELETE', `/api/drawings/${encodeURIComponent(id)}`);
+
+export const fetchWallet = () => call<{ wallet: WalletView }>('GET', '/api/wallet');
+export const buyItem = (type: string) => call<WithWallet<{ bought: string }>>('POST', '/api/shop/buy', { type });
+export const claimQuest = (id: string) => call<WithWallet<{ coins: number; item?: string }>>('POST', '/api/quest/claim', { id });
+export const reportFish = (catches: Array<{ id: string; cm: number }>) =>
+  call<WithWallet<{ counted: number; coins: number; capped: boolean }>>('POST', '/api/game/fish', { catches });
+export const reportArcade = (score: number, ms: number) =>
+  call<WithWallet<{ score: number; coins: number; prize: string | null; morePaid: number }>>('POST', '/api/game/arcade', { score, ms });
+export const reportVisit = (houseNo: number) =>
+  call<WithWallet<{ coins: number; already?: boolean; full?: boolean }>>('POST', '/api/game/visit', { houseNo });
 export const like = (houseNo: number) =>
   call<{ ok: boolean; likes: number; code?: string; message?: string }>('POST', `/api/like/${houseNo}`);

@@ -11,7 +11,7 @@ let seed = 7;
 const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const pick = (l) => l[Math.floor(rnd() * l.length)];
 const now = Math.floor(Date.now() / 1000);
-const out = ['DELETE FROM yard_items; DELETE FROM likes_log; DELETE FROM sessions; DELETE FROM houses; DELETE FROM zone_cache; DELETE FROM region_counts;'];
+const out = ['DELETE FROM drawings; DELETE FROM wallets; DELETE FROM house_decor; DELETE FROM yard_items; DELETE FROM likes_log; DELETE FROM sessions; DELETE FROM houses; DELETE FROM zone_cache; DELETE FROM region_counts;'];
 const used = new Set();
 for (let i = 1; i <= n; i++) {
   let h;
@@ -29,6 +29,9 @@ for (let i = 1; i <= n; i++) {
   }
 }
 // 지역 수 다시 세기 (전체 + 주별, 한국 시간 월요일 0시 기준)
+// 칸 방식 마당 → 자유 배치 (db/migrations/0004 와 같은 변환)
+out.push(`INSERT INTO house_decor (house_id, yard) SELECT house_id, json_group_array(json_object('id', 'g' || rowid, 'type', item_type, 'x', x - 2.5, 'z', y - 2.5, 'rotY', round(-rotation * 0.017453292519943295, 4))) FROM yard_items GROUP BY house_id;`);
+out.push(`INSERT INTO wallets (house_id, coins, data) SELECT house_id, 50, json_object('owned', json_group_array(DISTINCT item_type)) FROM yard_items GROUP BY house_id;`);
 out.push(`INSERT INTO region_counts (region, week, n) SELECT region, 0, COUNT(*) FROM houses GROUP BY region;`);
 out.push(`INSERT INTO region_counts (region, week, n) SELECT region, CAST(strftime('%s', date(created_at + 32400, 'unixepoch', 'weekday 0', '-6 days')) AS INTEGER) - 32400 AS wk, COUNT(*) FROM houses GROUP BY region, wk;`);
 console.log(out.join('\n'));

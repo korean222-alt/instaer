@@ -1,8 +1,8 @@
 // 앱 전체가 같이 보는 상태 (내 집, 마을, 지역 순위) 와 씬 반영.
 import type { IslandScene } from '../scene';
 import { FOUNDER_MAX, REGIONS, ZONE_CAPACITY } from '../shared/config';
-import type { House, RegionId, YardItem } from '../shared/types';
-import { fetchRegions, fetchVillage, type Regions, type Village } from './net/api';
+import type { House, PlacedItem, RegionId } from '../shared/types';
+import { fetchRegions, fetchVillage, type Regions, type Village, type WalletView } from './net/api';
 import { withEmptyLots } from './village';
 
 type Listener = () => void;
@@ -14,7 +14,14 @@ export interface AppState {
   hideHandle: boolean;
   /** 입주한 집 (빈 집 제외), 번지 → 집 */
   houses: Map<number, House>;
-  yards: Map<number, YardItem[]>;
+  /** 번지 → 마당 자유 배치 아이템 */
+  yards: Map<number, PlacedItem[]>;
+  /** 번지 → 지붕 그림 id */
+  roofArt: Map<number, string>;
+  /** 내 지갑 (입주 전이나 서버가 안 되면 null) */
+  wallet: WalletView | null;
+  /** 지금 꾸미는 중인 마당 번지 (마을을 새로 받아도 이 집 마당은 덮어쓰지 않는다) */
+  editingYard: number | null;
   todayTop: Village['todayTop'];
   unlockedZones: number;
   regions: Regions | null;
@@ -40,6 +47,9 @@ export function initState(scene: IslandScene): AppState {
     hideHandle: false,
     houses: new Map(),
     yards: new Map(),
+    roofArt: new Map(),
+    wallet: null,
+    editingYard: null,
     todayTop: null,
     unlockedZones: 1,
     regions: null,
@@ -73,18 +83,41 @@ export function pushHousesToScene(immediate = false) {
   else houseTimer = window.setTimeout(run, 180);
 }
 
+/** 내 지붕 그림을 이 화면에서 바꾼 적이 있으면 (서버 캐시보다 새롭다) */
+let myRoofKnown = false;
+export function setMyRoofArt(id: string | null) {
+  if (!state.me) return;
+  myRoofKnown = true;
+  if (id) state.roofArt.set(state.me.houseNo, id);
+  else state.roofArt.delete(state.me.houseNo);
+  emit();
+}
+
 export function applyVillage(v: Village) {
   state.houses = new Map(v.houses.map((h) => [h.houseNo, h]));
   // 내 집은 서버 캐시(최대 1분)보다 내가 아는 값이 더 새롭다
   if (state.me) state.houses.set(state.me.houseNo, state.me);
   const prevYards = state.yards;
-  state.yards = new Map(Object.entries(v.yards).map(([k, items]) => [Number(k), items]));
-  if (state.me && prevYards.has(state.me.houseNo)) state.yards.set(state.me.houseNo, prevYards.get(state.me.houseNo)!);
+  const prevRoof = state.roofArt;
+  state.yards = new Map(Object.entries(v.yards ?? {}).map(([k, items]) => [Number(k), items]));
+  state.roofArt = new Map(Object.entries(v.roofArt ?? {}).map(([k, id]) => [Number(k), id]));
+  if (state.me) {
+    const no = state.me.houseNo;
+    // 내 집은 서버 캐시(최대 1분)보다 내가 아는 값이 더 새롭다
+    if (prevYards.has(no)) state.yards.set(no, prevYards.get(no)!);
+    if (myRoofKnown) {
+      if (prevRoof.has(no)) state.roofArt.set(no, prevRoof.get(no)!);
+      else state.roofArt.delete(no);
+    }
+  }
+  // 마당이 비워진 집도 씬에서 지운다
+  const cleared = [...prevYards.keys()].filter((no) => !state.yards.has(no));
   state.todayTop = v.todayTop;
   const maxNo = Math.max(0, ...state.houses.keys());
   state.unlockedZones = Math.max(v.unlockedZones, Math.ceil(maxNo / ZONE_CAPACITY), 1);
   pushHousesToScene(true);
-  for (const [no, items] of state.yards) state.scene.setYardItems(no, items);
+  for (const no of cleared) if (no !== state.editingYard) state.scene.setYardItemsFree(no, []);
+  for (const [no, items] of state.yards) if (no !== state.editingYard) state.scene.setYardItemsFree(no, items);
   state.scene.highlightHouse(state.todayTop?.houseNo ?? null);
   emit();
 }
@@ -109,6 +142,11 @@ export async function refreshRegions(): Promise<Regions | null> {
     /* 순위는 없어도 된다 */
   }
   return state.regions;
+}
+
+export function setWallet(w: WalletView | null) {
+  state.wallet = w;
+  emit();
 }
 
 /** 내 집 정보가 바뀌었을 때 (입주, 지붕 색) */

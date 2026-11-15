@@ -8,7 +8,8 @@ import { me, moveIn, setPrivacy } from './routes/moveIn';
 import { regions } from './routes/regions';
 import { village } from './routes/village';
 import { realtimeConnect, realtimeUsage } from './routes/realtime';
-import { getYard, putYard } from './routes/yard';
+import { deleteDrawing, getDecor, getDrawings, getWallet, myDrawings, postDrawing, putDecor } from './routes/decor';
+import { arcade, buy, claim, fish, visit } from './routes/game';
 
 export { RealtimeRoom } from './realtime/RealtimeRoom';
 
@@ -35,18 +36,30 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (method === 'POST' && path === '/api/move-in') return moveIn(request, env);
   if (method === 'PUT' && path === '/api/me/privacy') return setPrivacy(request, env);
 
+  if (method === 'GET' && path === '/api/wallet') return getWallet(request, env);
+  if (method === 'GET' && path === '/api/me/drawings') return myDrawings(request, env);
+  if (method === 'GET' && path === '/api/drawings') return getDrawings(url, env);
+  if (method === 'POST' && path === '/api/drawings') return postDrawing(request, env);
+  if (method === 'POST' && path === '/api/shop/buy') return buy(request, env);
+  if (method === 'POST' && path === '/api/quest/claim') return claim(request, env);
+  if (method === 'POST' && path === '/api/game/fish') return fish(request, env);
+  if (method === 'POST' && path === '/api/game/arcade') return arcade(request, env);
+  if (method === 'POST' && path === '/api/game/visit') return visit(request, env);
+
   let m = path.match(/^\/api\/rt\/(zone|room)\/([A-Za-z0-9%-]{1,64})$/);
   if (m && method === 'GET') return realtimeConnect(m[1], m[2], request, env);
   m = path.match(/^\/api\/rt\/usage\/(zone|room)\/([a-z0-9-]{1,32})$/);
   if (m && method === 'GET') return realtimeUsage(m[1], m[2], env);
 
-  m = path.match(/^\/api\/yard\/(\d+)$/);
+  m = path.match(/^\/api\/house\/(\d+)$/);
   if (m) {
     const no = houseNoOf(m[1]);
     if (!no) return error(400, 'bad_house', '번지가 이상해요');
-    if (method === 'GET') return getYard(no, env);
-    if (method === 'PUT') return putYard(no, request, env);
+    if (method === 'GET') return getDecor(no, env);
+    if (method === 'PUT') return putDecor(no, request, env);
   }
+  m = path.match(/^\/api\/drawings\/([A-Za-z0-9_-]{1,24})$/);
+  if (m && method === 'DELETE') return deleteDrawing(m[1], request, env);
   m = path.match(/^\/api\/like\/(\d+)$/);
   if (m && method === 'POST') {
     const no = houseNoOf(m[1]);

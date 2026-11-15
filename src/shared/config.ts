@@ -63,3 +63,64 @@ export const REGIONS = [
   { id: 'jeju', label: '제주', color: '#ff8a3d' },
   { id: 'other', label: '기타', color: '#9aa3ad' },
 ] as const;
+
+// ── 자유 배치 꾸미기 (씬 작업 4) ──
+
+/**
+ * 자유 배치 아이템 전체. 씬의 src/scene/free/catalog.ts 와 종류 이름이 같아야 한다.
+ * - mount: floor(바닥), rug(깔개), wall(벽, 집 안만)
+ * - art: 직접 그린 그림을 붙일 수 있는지
+ * - price: 상점 가격(츄르). null 이면 처음부터 가진 기본 아이템
+ * - quest: 퀘스트로도 받을 수 있으면 true (상점에서도 살 수 있다)
+ */
+export const DECOR_ITEMS = [
+  { type: 'cushion', label: '방석', mount: 'floor', art: false, price: null },
+  { type: 'sign', label: '간판', mount: 'floor', art: true, price: null },
+  { type: 'lantern', label: '등불', mount: 'floor', art: false, price: null },
+  { type: 'bench', label: '벤치', mount: 'floor', art: false, price: null },
+  { type: 'chair', label: '의자', mount: 'floor', art: false, price: null },
+  { type: 'table', label: '탁자', mount: 'floor', art: false, price: null },
+  { type: 'rug', label: '러그', mount: 'rug', art: true, price: null },
+  { type: 'frame', label: '액자', mount: 'wall', art: true, price: null },
+  { type: 'plant', label: '화분', mount: 'floor', art: false, price: 40 },
+  { type: 'window', label: '창문', mount: 'wall', art: false, price: 50 },
+  { type: 'fish_rack', label: '생선 건조대', mount: 'floor', art: false, price: 60 },
+  { type: 'floor_lamp', label: '스탠드 조명', mount: 'floor', art: false, price: 70 },
+  { type: 'hammock', label: '해먹', mount: 'floor', art: false, price: 90 },
+  { type: 'bookshelf', label: '책장', mount: 'floor', art: false, price: 100 },
+  { type: 'cat_tower', label: '캣타워', mount: 'floor', art: false, price: 130 },
+  { type: 'bed', label: '침대', mount: 'floor', art: false, price: 140 },
+  { type: 'sofa', label: '소파', mount: 'floor', art: false, price: 160 },
+] as const;
+export type DecorType = (typeof DECOR_ITEMS)[number]['type'];
+/** 처음부터 가진 아이템 */
+export const STARTER_ITEMS: readonly string[] = DECOR_ITEMS.filter((i) => i.price === null).map((i) => i.type);
+export const decorItem = (type: string) => DECOR_ITEMS.find((i) => i.type === type);
+
+/** 마당 한 변의 절반 (자유 배치 좌표 -3 ~ 3) */
+export const YARD_HALF = 3;
+/** 집 안 한 변의 절반 (자유 배치 좌표 -4 ~ 4) */
+export const ROOM_HALF = 4;
+/** 마당 / 집 안에 놓을 수 있는 아이템 수 */
+export const FREE_YARD_MAX = 20;
+export const FREE_ROOM_MAX = 30;
+
+/** 벽지, 바닥 기본 무늬 (씬의 ROOM_STYLES 와 같다). 이 밖에 '#rrggbb' 와 'drawing:그림id' 도 된다 */
+export const WALLPAPERS = [
+  { id: 'cream', label: '크림' },
+  { id: 'stripe', label: '줄무늬' },
+  { id: 'dots', label: '물방울' },
+] as const;
+export const FLOORS = [
+  { id: 'wood', label: '나무' },
+  { id: 'tile', label: '타일' },
+  { id: 'carpet', label: '카펫' },
+] as const;
+/** 벽지/바닥 단색 고르기 */
+export const ROOM_COLORS = ['#fff4e0', '#ffe1d6', '#e6f2d9', '#d9ecf2', '#e8e0f5', '#f2e6c9', '#d8c3a5', '#bfd8c9'] as const;
+
+/** 직접 그린 그림: 32x32 픽셀, 16색, 512바이트 */
+export const DRAWING_SIZE = 32;
+export const DRAWING_BYTES = 512;
+/** 집 한 채가 가질 수 있는 그림 수 */
+export const DRAWING_MAX = 12;
