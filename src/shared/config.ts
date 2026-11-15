@@ -15,7 +15,7 @@ export const NEIGHBORHOOD_SIZE = 10;
  * 입주 전에 팔로우해 달라고 보낼 인스타 계정 (@ 없이). 비워 두면 팔로우 단계를 건너뛴다.
  * 팔로우했는지는 확인하지 않는다(인스타 메시지 API 는 사업자 인증이 필요해서 못 쓴다). 2026-11-15
  */
-export const FOLLOW_HANDLE = '';
+export const FOLLOW_HANDLE = 'goyangi.seom';
 
 /** 실시간: 내 주변에서 보이는 다른 유저 수 상한 */
 export const NEARBY_MAX = 20;

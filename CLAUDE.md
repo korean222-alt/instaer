@@ -20,7 +20,7 @@
 
 ## 공통 설정 (src/shared/config.ts)
 - ZONE_CAPACITY = 100 (구역 하나 = 동네 10개 = 집 100채)
-- FOLLOW_HANDLE = '' (입주 전에 팔로우를 부탁할 운영 계정, @ 없이. 비면 팔로우 단계 없음)
+- FOLLOW_HANDLE = 'goyangi.seom' (입주 전에 팔로우를 부탁할 운영 계정, @ 없이. 비면 팔로우 단계 없음)
 - NEIGHBORHOOD_SIZE = 10 (동네 하나 = 집 10채)
 - YARD_SIZE = 6
 - FOUNDER_MAX = 100
