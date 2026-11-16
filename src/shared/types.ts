@@ -118,4 +118,6 @@ export interface HouseDecor {
   floor: string;
   /** 지붕에 붙인 그림 id (없으면 null) */
   roofArt: string | null;
+  /** 지붕 뒷면 그림 id (2026-11-16. 없으면 null) */
+  roofArtBack?: string | null;
 }

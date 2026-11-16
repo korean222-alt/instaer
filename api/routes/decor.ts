@@ -5,7 +5,7 @@ import type { Drawing } from '../../src/shared/types';
 import type { Env } from '../env';
 import { clientIp, error, json, readJson } from '../http';
 import { invalidate } from '../lib/cache';
-import { cleanFree, cleanSurface, ID_RE, readDecor, toDecor } from '../lib/decor';
+import { cleanFree, cleanSurface, ID_RE, joinRoof, readDecor, toDecor } from '../lib/decor';
 import { houseByNo, markZoneDirty } from '../lib/houses';
 import { allow } from '../lib/rateLimit';
 import { sessionHouse } from '../lib/session';
@@ -57,7 +57,7 @@ export async function putDecor(houseNo: number, request: Request, env: Env): Pro
     c.drawings.forEach((d) => usedDrawings.add(d));
   }
   if (body.room !== undefined) {
-    const c = cleanFree(body.room, 'room');
+    const c = cleanFree(body.room, 'room', wallet.data.owned.includes('room_big'));
     if ('problem' in c) return error(400, 'bad_items', c.problem);
     cur.room = c.items;
     c.types.forEach((t) => usedTypes.add(t));
@@ -70,10 +70,16 @@ export async function putDecor(houseNo: number, request: Request, env: Env): Pro
     cur[kind] = s.value;
     if (s.drawing) usedDrawings.add(s.drawing);
   }
-  if (body.roofArt !== undefined) {
-    if (body.roofArt !== null && (typeof body.roofArt !== 'string' || !ID_RE.test(body.roofArt))) return error(400, 'bad_roof', '지붕 그림이 이상해요');
-    cur.roofArt = body.roofArt as string | null;
-    if (cur.roofArt) usedDrawings.add(cur.roofArt);
+  // 지붕 그림 (앞, 뒤): 2026-11-16 부터 한 번 100츄르를 내야 붙일 수 있다 (전에 붙인 집은 그대로 쓸 수 있게 열어 준다)
+  const hadRoof = !!(cur.roofArt || cur.roofArtBack);
+  if (hadRoof && !wallet.data.owned.includes('roof_art')) wallet.data.owned.push('roof_art');
+  for (const key of ['roofArt', 'roofArtBack'] as const) {
+    const v = body[key];
+    if (v === undefined) continue;
+    if (v !== null && (typeof v !== 'string' || !ID_RE.test(v))) return error(400, 'bad_roof', '지붕 그림이 이상해요');
+    if (v && !wallet.data.owned.includes('roof_art')) return error(403, 'not_owned', '지붕 그림은 한 번 100츄르를 내면 계속 그릴 수 있어요');
+    cur[key] = v as string | null;
+    if (v) usedDrawings.add(v as string);
   }
   const roof = body.roofColor ?? mine.house.roof_color;
   if (typeof roof !== 'string' || !(ROOF_COLORS as readonly string[]).includes(roof)) return error(400, 'bad_roof', '없는 지붕 색이에요');
@@ -89,11 +95,11 @@ export async function putDecor(houseNo: number, request: Request, env: Env): Pro
          ON CONFLICT (house_id) DO UPDATE SET yard = excluded.yard, room = excluded.room, wallpaper = excluded.wallpaper,
            floor = excluded.floor, roof_art = excluded.roof_art, updated_at = excluded.updated_at`,
       )
-      .bind(id, JSON.stringify(cur.yard), JSON.stringify(cur.room), cur.wallpaper, cur.floor, cur.roofArt),
+      .bind(id, JSON.stringify(cur.yard), JSON.stringify(cur.room), cur.wallpaper, cur.floor, joinRoof(cur.roofArt, cur.roofArtBack)),
     saveWallet(db, id, wallet),
   ];
   // 마당/지붕이 바뀌면 다른 사람 화면(마을 목록)도 다시 만든다. 집 안만 바뀌면 필요 없다
-  const publicChanged = body.yard !== undefined || body.roofArt !== undefined || roof !== mine.house.roof_color;
+  const publicChanged = body.yard !== undefined || body.roofArt !== undefined || body.roofArtBack !== undefined || roof !== mine.house.roof_color;
   if (publicChanged) stmts.push(markZoneDirty(db, houseNo, 2));
   if (roof !== mine.house.roof_color) stmts.push(db.prepare('UPDATE houses SET roof_color = ? WHERE id = ?').bind(roof, id));
   await db.batch(stmts);

@@ -2,8 +2,9 @@
 // 연못과 항구 부두에서 낚시, 동굴 탐험(광석 캐기, 더 깊이).
 // 씬과는 공개 함수(setWalkMode, onNearHouse, onDoor, enterHouse, enterNpcHome, enterCave, setCaveNodes,
 // exitHouse, exitCave, onExitHouse, onExitCave, setRemotePlayers, setNpcs, onNpcTap, getLocalState, fishingSpotAt)로만 주고받는다.
-import { CAVE_DEEPER, caveMouths, fishingSpotAt, townSquares, type CaveNode, type IslandScene } from '../../scene';
-import { CAVE_LEVELS, CAVE_NODES, oreDef, rollOre, type FishWhere } from '../../shared/economy';
+import { CAVE_DEEPER, caveMouths, fishingSpotAt, mailboxPos, townSquares, type CaveNode, type IslandScene } from '../../scene';
+import { CAVE_LEVELS, CAVE_NODES, oreDef, rollOre, unreadMail, type FishWhere } from '../../shared/economy';
+import { hasItem } from '../wallet';
 import type { HouseDecor, InteriorItem, RemotePlayer } from '../../shared/types';
 import { pinDrawings, setArtCenter, surfaceDrawing } from '../art';
 import { play } from '../audio/sound';
@@ -14,7 +15,7 @@ import { state } from '../state';
 import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
 import { applyWallet } from '../wallet';
-import { homeNpc, toSceneNpc, townHomes, townNpcs, type Home, type Npc } from './npcs';
+import { toSceneNpc, townHomes, townNpcs, type Home, type Npc } from './npcs';
 
 export interface ExploreHooks {
   onWalking(on: boolean): void;
@@ -47,6 +48,10 @@ export interface Explore {
   fishSpot(): FishWhere | null;
   /** 버튼 다시 그리기 (판이 열리고 닫힐 때 등) */
   refresh(): void;
+  /** 고양이 자동차: 지금 타는 모습 (null 이면 걷는 중) */
+  riding(): 'drive' | 'passenger' | null;
+  /** 서버가 자동차 상태를 받아들인 결과 (뒷자리에 못 타면 0) */
+  carAck(c: number): void;
 }
 
 /** 주민 집 안 (집마다 정해진 모양) */
@@ -114,8 +119,11 @@ function caveOres(level: number): Ore[] {
   return out;
 }
 
-/** 캐는 데 필요한 두드림 수 */
-const HITS = 3;
+/** 캐기 버튼을 이만큼 꾹 누르고 있으면 캐진다 (ms). 2026-11-16 사용자: 세 번 누르기 → 꾹 누르기 */
+const HOLD_MS = 1100;
+/** 이 안이면 우편함 열기, 남의 차 뒷자리 타기 */
+const MAIL_REACH = 1.9;
+const RIDE_REACH = 2.8;
 
 export function createExplore(scene: IslandScene, realtime: Realtime, hooks: ExploreHooks): Explore {
   let walking = false;
@@ -134,7 +142,16 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
   let ores: Ore[] = [];
   let nearOre: Ore | null = null;
   let nearDeeper = false;
-  let hits = 0;
+  /** 캐기 버튼을 누르기 시작한 시각 (0 = 안 누름) */
+  let holdAt = 0;
+  let holdRaf = 0;
+  /** 내 우편함 앞 */
+  let nearMail = false;
+  /** 고양이 자동차 */
+  let riding: 'drive' | 'passenger' | null = null;
+  let rideId: string | null = null;
+  /** 가까이 있는, 뒷자리가 빈 남의 차 */
+  let nearDriver: RemotePlayer | null = null;
   let mined: Array<{ id: string; level: number }> = [];
   /** 서 있는 곳의 낚시터 */
   let nearFish: FishWhere | null = null;
@@ -151,6 +168,34 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
   insideBar.hidden = true;
   app.appendChild(insideBar);
 
+  const carBtn = document.createElement('button');
+  carBtn.className = 'car-btn';
+  carBtn.hidden = true;
+  carBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15.5V12l2-4.5h9l2.5 4.5H20v3.5z"/><path d="M6.5 7.5 6 4.5l2.5 2M13.5 7.5l.5-3-2.5 2"/><circle cx="7.5" cy="16.5" r="1.8"/><circle cx="16.5" cy="16.5" r="1.8"/></svg><span>타기</span>`;
+  app.appendChild(carBtn);
+  carBtn.addEventListener('click', () => {
+    play('tap');
+    setCar(riding === 'drive' ? null : 'drive');
+  });
+
+  /** 자동차 타고 내리기. passenger 면 driver 의 뒷자리 */
+  function setCar(mode: 'drive' | 'passenger' | null, driver?: string) {
+    if (mode === riding && (mode !== 'passenger' || driver === rideId)) return;
+    const wasPassenger = riding === 'passenger';
+    riding = mode;
+    rideId = mode === 'passenger' ? (driver ?? null) : null;
+    scene.setRiding(mode, rideId ?? undefined);
+    realtime.setCar(mode === 'drive' ? 1 : mode === 'passenger' ? 2 : 0, rideId ?? undefined);
+    if (wasPassenger && !mode) {
+      // 차 옆으로 내린다
+      const me = scene.getLocalState();
+      scene.setLocalPosition(me.x + Math.cos(me.rotY) * 1.1, me.z - Math.sin(me.rotY) * 1.1, me.rotY);
+    }
+    if (mode === 'drive') toast('부릉! 고양이 자동차를 탔어요. 뒤에 한 명 더 탈 수 있어요', 2200);
+    play(mode ? 'open' : 'close');
+    draw();
+  }
+
   const pushPlayers = () => scene.setRemotePlayers(net);
   const pushNpcs = () => scene.setNpcs(shownNpcs.map(toSceneNpc));
 
@@ -166,7 +211,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     const me = scene.getLocalState();
     let list: Npc[];
     if (cave) list = [];
-    else if (inside !== null) list = inside < 0 ? [homeNpc(-inside - 1)] : [];
+    else if (inside !== null) list = [];
     else
       list = townNpcs(state.unlockedZones)
         .map((n) => ({ n, d: Math.hypot(n.x - me.x, n.z - me.z) }))
@@ -203,11 +248,39 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       ore = id ? (ores.find((o) => o.id === id) ?? null) : null;
       deeper = cave < CAVE_LEVELS && Math.hypot(CAVE_DEEPER.x - me.x, CAVE_DEEPER.z - me.z) < 1.9;
     }
+    // 우편함, 남의 차 뒷자리
+    let mailHere = false;
+    let driver: RemotePlayer | null = null;
+    if (inside === null && !cave && state.me) {
+      const mb = mailboxPos(state.me.houseNo);
+      mailHere = Math.hypot(mb.x - me.x, mb.z - me.z) < MAIL_REACH;
+    }
+    if (inside === null && !cave && !riding && state.me) {
+      let bd = RIDE_REACH;
+      for (const p of net) {
+        if (p.car !== 'drive' || net.some((o) => o.car === 'ride' && o.rideWith === p.id)) continue;
+        const d = Math.hypot(p.x - me.x, p.z - me.z);
+        if (d < bd) {
+          bd = d;
+          driver = p;
+        }
+      }
+    }
+    if (riding === 'passenger' && rideId && !net.some((p) => p.id === rideId && p.car === 'drive')) {
+      toast('운전하던 고양이가 차에서 내렸어요');
+      setCar(null);
+    }
+    if (mailHere !== nearMail || driver?.id !== nearDriver?.id) {
+      if ((mailHere && !nearMail) || (driver && !nearDriver)) play('ding');
+      nearMail = mailHere;
+      nearDriver = driver;
+      draw();
+    }
     const spot = inside === null && !cave ? fishingSpotAt(me.x, me.z) : null;
     const fishHere: FishWhere | null = spot ? (spot.kind === 'pier' ? 'sea' : 'pond') : null;
     if (best?.id !== nearNpc?.id || fishHere !== nearFish || home?.id !== nearHome?.id || caveHere !== nearCave || ore?.id !== nearOre?.id || deeper !== nearDeeper || boardHere !== nearBoard) {
       if ((best && !nearNpc) || (fishHere && !nearFish) || (home && !nearHome) || (caveHere && !nearCave) || (ore && !nearOre)) play('ding');
-      if (ore?.id !== nearOre?.id) hits = 0;
+      if (ore?.id !== nearOre?.id) stopHold();
       nearNpc = best;
       nearFish = fishHere;
       nearHome = home;
@@ -224,7 +297,13 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     const sheetOpen = document.getElementById('sheet')?.classList.contains('open');
     const btns: string[] = [];
     if (walking && !sheetOpen && !document.body.classList.contains('playing')) {
-      if (nearOre) btns.push(`<button class="act-btn primary" data-act="mine">${hooks.icon('pick')}<span>캐기${hits ? ` ${'●'.repeat(hits)}${'○'.repeat(HITS - hits)}` : ''}</span></button>`);
+      if (riding === 'passenger') btns.push(`<button class="act-btn primary" data-act="getoff">${hooks.icon('close')}<span>차에서 내리기</span></button>`);
+      if (nearOre) btns.push(`<button class="act-btn primary hold" data-act="mine"><i class="hold-fill"></i>${hooks.icon('pick')}<span>꾹 눌러 캐기</span></button>`);
+      if (nearDriver && !riding) btns.push(`<button class="act-btn primary" data-act="ride">${hooks.icon('cat')}<span>${esc(nearDriver.handle)} 차 뒷자리 타기</span></button>`);
+      if (nearMail && !riding) {
+        const n = state.wallet ? unreadMail(state.wallet.data) : 0;
+        btns.push(`<button class="act-btn${n ? ' primary' : ''}" data-act="mail">${hooks.icon('mail')}<span>우편함 열기${n ? ` (${n})` : ''}</span></button>`);
+      }
       if (nearDeeper) btns.push(`<button class="act-btn" data-act="deeper">${hooks.icon('door')}<span>더 깊이 들어가기 (${cave + 1}층)</span></button>`);
       if (nearNpc) btns.push(`<button class="act-btn primary" data-act="talk">${hooks.icon('chat')}<span>${esc(nearNpc.name)}에게 말 걸기</span></button>`);
       if (nearFish && !nearNpc) btns.push(`<button class="act-btn primary" data-act="fish">${hooks.icon('fish')}<span>${nearFish === 'sea' ? '바다 낚시하기' : '낚시하기'}</span></button>`);
@@ -241,6 +320,9 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       }
     }
     bar.innerHTML = btns.slice(0, 2).join('');
+    carBtn.hidden = !(walking && inside === null && !cave && state.me && hasItem('cat_car') && riding !== 'passenger' && !sheetOpen);
+    carBtn.classList.toggle('on', riding === 'drive');
+    carBtn.querySelector('span')!.textContent = riding === 'drive' ? '내리기' : '자동차';
 
     const roomish = inside !== null || cave > 0;
     insideBar.hidden = !roomish || !!sheetOpen || document.body.classList.contains('decorating') || document.body.classList.contains('playing');
@@ -267,19 +349,55 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     if (act === 'talk' && nearNpc) {
       play('meow');
       hooks.talk(nearNpc);
-    } else if (act === 'fish' && nearFish) hooks.fish(nearFish);
+    } else if (act === 'fish' && nearFish) {
+      setCar(null);
+      hooks.fish(nearFish);
+    }
     else if (act === 'enter' && doorNo !== null) void api.enter(doorNo);
     else if (act === 'home' && nearHome) api.enterHome(nearHome.id);
     else if (act === 'cave') enterCave(1);
     else if (act === 'board') go('board');
     else if (act === 'deeper' && cave < CAVE_LEVELS) enterCave(cave + 1);
-    else if (act === 'mine') mineHit();
+    else if (act === 'mail') go('mail');
+    else if (act === 'ride' && nearDriver) setCar('passenger', nearDriver.id);
+    else if (act === 'getoff') setCar(null);
     else if (act === 'look' && nearNo !== null) go('house', nearNo);
     else if (act === 'exit') api.exit();
     else if (act === 'decorate') go('decorate', 'room');
   };
   bar.addEventListener('click', onClick);
+  // 캐기: 버튼을 꾹 누르고 있으면 채워지고, 다 차면 캐진다. 손을 떼면 처음부터
+  bar.addEventListener('pointerdown', (e) => {
+    const t = (e.target as HTMLElement).closest<HTMLElement>('[data-act="mine"]');
+    if (!t || !nearOre) return;
+    e.preventDefault();
+    stopHold();
+    holdAt = performance.now();
+    play('tap');
+    const step = () => {
+      if (!holdAt) return;
+      const k = Math.min(1, (performance.now() - holdAt) / HOLD_MS);
+      const fill = bar.querySelector<HTMLElement>('.hold-fill');
+      if (fill) fill.style.width = `${k * 100}%`;
+      if (k >= 1) {
+        stopHold();
+        mineHit();
+        return;
+      }
+      holdRaf = requestAnimationFrame(step);
+    };
+    holdRaf = requestAnimationFrame(step);
+  });
+  for (const ev of ['pointerup', 'pointercancel']) window.addEventListener(ev, () => holdAt && stopHold());
+  bar.addEventListener('contextmenu', (e) => e.preventDefault());
   insideBar.addEventListener('click', onClick);
+
+  function stopHold() {
+    holdAt = 0;
+    cancelAnimationFrame(holdRaf);
+    const fill = bar.querySelector<HTMLElement>('.hold-fill');
+    if (fill) fill.style.width = '0';
+  }
 
   // ── 동굴 ──
   function enterCave(level: number) {
@@ -289,12 +407,13 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     cave = level;
     ores = caveOres(level);
     nearOre = null;
-    hits = 0;
+    stopHold();
+    setCar(null);
     scene.enterCave(level, ores);
     play('open');
     realtime.joinRoom(`cave-${level}`);
     if (first) {
-      toast(level === 1 ? '동굴에 들어왔어요. 반짝이는 바위 옆에서 "캐기"!' : `${level}층: 더 귀한 광석이 있어요`, 2400);
+      toast(level === 1 ? '동굴에 들어왔어요. 반짝이는 바위 옆에서 "캐기"를 꾹 누르고 있어요!' : `${level}층: 더 귀한 광석이 있어요`, 2400);
     } else toast(`${level}층: 더 귀한 광석이 있어요`, 2000);
     hooks.onInside(null);
     updateNpcs(true);
@@ -304,13 +423,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
   function mineHit() {
     const o = nearOre;
     if (!o) return;
-    hits++;
     play('place');
-    if (hits < HITS) {
-      draw();
-      return;
-    }
-    hits = 0;
     ores = ores.filter((x) => x.id !== o.id);
     scene.setCaveNodes(ores);
     nearOre = null;
@@ -407,6 +520,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
         clearInterval(tick);
         tick = window.setInterval(updateNpcs, 200);
       } else {
+        setCar(null);
         if (inside !== null) leftHouse();
         if (cave) leftCave();
         scene.setWalkMode(false);
@@ -434,6 +548,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       }
       const lived = state.houses.get(houseNo);
       if (!lived) return;
+      setCar(null);
       let d: HouseDecor;
       try {
         const res = await fetchDecor(houseNo);
@@ -453,6 +568,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     },
     enterHome(homeId) {
       if (!walking) api.setWalking(true);
+      setCar(null);
       const d = homeRoom(homeId);
       inside = -homeId - 1;
       decor = d;
@@ -496,6 +612,16 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     },
     fishSpot: () => nearFish,
     refresh: draw,
+    riding: () => riding,
+    carAck(c) {
+      if (riding === 'passenger' && c !== 2) {
+        toast('뒷자리에 탈 수 없어요 (이미 누가 탔어요)');
+        riding = null;
+        rideId = null;
+        scene.setRiding(null);
+        draw();
+      }
+    },
   };
   return api;
 }

@@ -58,6 +58,9 @@ interface Att extends RtUser {
   d?: number;
   cl?: number;
   el?: number;
+  /** 자동차: 0 안 탐, 1 운전, 2 뒷자리 / 뒷자리면 운전자 연결 id */
+  cr?: number;
+  rw?: string;
 }
 
 interface Usage {
@@ -230,6 +233,22 @@ export class RealtimeRoom extends DurableObject<Env> {
       att.d = d;
       ws.serializeAttachment(att);
       this.schedule();
+    } else if (msg.t === 'car') {
+      // 고양이 자동차. 뒷자리는 그 방에서 운전 중이고 뒷자리가 빈 사람에게만 탈 수 있다
+      let c = msg.c === 1 || msg.c === 2 ? msg.c : 0;
+      let w: string | undefined;
+      if (c === 2) {
+        const all = this.ctx.getWebSockets().filter((o) => o !== ws && o.readyState === WebSocket.OPEN).map((o) => o.deserializeAttachment() as Att);
+        const drv = typeof msg.w === 'string' ? all.find((o) => o.id === msg.w && o.cr === 1) : undefined;
+        const taken = drv && all.some((o) => o.cr === 2 && o.rw === drv.id);
+        if (drv && !taken) w = drv.id;
+        else c = 0;
+      }
+      att.cr = c;
+      att.rw = w;
+      ws.serializeAttachment(att);
+      this.sendTo(ws, { t: 'car', c });
+      this.schedule();
     } else if (msg.t === 'room') {
       ws.serializeAttachment(att);
       if (!att.room.startsWith('room:')) return;
@@ -360,7 +379,11 @@ export class RealtimeRoom extends DurableObject<Env> {
       }
       const p = near
         .filter(({ e }) => e.a.t > 0 || isGame)
-        .map(({ e }): PlayerTuple => [e.a.id, e.a.x, e.a.z, e.a.r, e.a.a, e.a.f, e.a.q ?? 0, e.a.i ?? 0, e.a.p ?? [], e.a.d ?? 0]);
+        .map(({ e }): PlayerTuple =>
+          e.a.cr
+            ? [e.a.id, e.a.x, e.a.z, e.a.r, e.a.a, e.a.f, e.a.q ?? 0, e.a.i ?? 0, e.a.p ?? [], e.a.d ?? 0, e.a.cr, e.a.rw ?? '']
+            : [e.a.id, e.a.x, e.a.z, e.a.r, e.a.a, e.a.f, e.a.q ?? 0, e.a.i ?? 0, e.a.p ?? [], e.a.d ?? 0],
+        );
       const sig = JSON.stringify(p);
       if (sig === this.lastSig.get(me.ws)) continue;
       this.lastSig.set(me.ws, sig);

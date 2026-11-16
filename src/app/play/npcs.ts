@@ -2,7 +2,7 @@
 // 구역마다 주민 집 8채: 탐험가 두더지, 잡화점 보리, 오락실 콩이, 낚시꾼 멸치, 정원사 쑥이, 이웃 셋.
 // 주민은 자기 집 문 옆에 서 있다가 둘레를 조금 걷는다 (씬 setNpcs). 집 안에 들어가면 그 주민이 안에도 있다.
 import { mapHills, npcHomes, townSquares, type SceneNpc } from '../../scene';
-import { homeRole, NPC_INFO, residentName, type HomeRole } from '../../shared/economy';
+import { homeRole, NPC_INFO, residentName, STALL_ROLES, type HomeRole } from '../../shared/economy';
 import type { CatLook } from '../../shared/types';
 
 /** 이장 (2026-11-15): 마을 광장 게시판 옆. 업데이트 소식을 알려 준다 */
@@ -39,6 +39,8 @@ const LOOK: Record<HomeRole, CatLook> = {
   fisher: { fur: '#a9adb8', pattern: 'gray', eyeColor: '#f0b44a' },
   gardener: { fur: '#f0a04b', pattern: 'calico', eyeColor: '#6fb7e8' },
   explorer: { fur: '#7d6a5e', pattern: 'black', eyeColor: '#f2c94c' },
+  painter: { fur: '#e8e4ec', pattern: 'calico', eyeColor: '#9b7be0' },
+  mailman: { fur: '#c9ccd4', pattern: 'tuxedo', eyeColor: '#7ac36a' },
   resident: { fur: '#fffaf2', pattern: 'white', eyeColor: '#6fb7e8' },
 };
 const RESIDENT_LOOKS: CatLook[] = [
@@ -64,15 +66,19 @@ function build(zones: number) {
     return { id: h.id, role, label: `${owner}네 집`, x: h.x, z: h.z, rot: h.rot, door: h.door };
   });
   const squares = townSquares(zones);
+  // 주민은 자기 집 문 옆에 서 있다 (집 안에는 없다: 2026-11-16 안팎에 둘이 보이던 것을 하나로)
   cachedNpcs = npcHomes(zones).map((h) => {
     const role = homeRole(h.id);
-    // 잡화점과 오락실 주인은 마을 광장 장터 가판대 앞에 있다 (집은 그대로 모서리에)
-    const sq = squares[h.zone];
-    const stall = sq?.stalls.find((st) => st.kind === role);
-    if (stall) return { id: `npc-${h.id}`, role, name: npcName(role, h.id), x: stall.front.x, z: stall.front.z, rotY: stall.rot, cat: npcLook(role, h.id), homeId: h.id };
     return { id: `npc-${h.id}`, role, name: npcName(role, h.id), x: h.stand.x, z: h.stand.z, rotY: h.rot, cat: npcLook(role, h.id), homeId: h.id };
   });
-  for (const sq of squares) cachedNpcs.push({ id: `mayor-${sq.zone}`, role: 'mayor', name: MAYOR_NAME, x: sq.mayor.x, z: sq.mayor.z, rotY: 0.3, cat: MAYOR_LOOK, homeId: -1 });
+  for (const sq of squares) {
+    cachedNpcs.push({ id: `mayor-${sq.zone}`, role: 'mayor', name: MAYOR_NAME, x: sq.mayor.x, z: sq.mayor.z, rotY: 0.3, cat: MAYOR_LOOK, homeId: -1 });
+    // 잡화점과 오락실 주인은 집 없이 마을 광장 장터 가판대 앞에만 있다
+    for (const role of STALL_ROLES) {
+      const stall = sq.stalls.find((st) => st.kind === role);
+      if (stall) cachedNpcs.push({ id: `stall-${role}-${sq.zone}`, role, name: npcName(role, -1), x: stall.front.x, z: stall.front.z, rotY: stall.rot, cat: npcLook(role, -1), homeId: -1 });
+    }
+  }
 }
 
 /** 열린 구역의 주민 전체 (섬 좌표) */
@@ -92,7 +98,7 @@ export function pondsOf(unlockedZones: number) {
   return mapHills(unlockedZones).ponds;
 }
 
-/** 주민 집 안의 주인 고양이 (방 좌표) */
+/** 주민 집 안의 주인 고양이 (방 좌표). 2026-11-16 부터 집 안에는 두지 않는다 (밖에 서 있다) */
 export function homeNpc(homeId: number): Npc {
   const role = homeRole(homeId);
   return { id: `npc-in-${homeId}`, role, name: npcName(role, homeId), x: 1.5, z: -1.2, rotY: -0.4, cat: npcLook(role, homeId), homeId };

@@ -39,6 +39,8 @@ export interface RealtimeHooks {
   onReplaced?(): void;
   /** 내 번지 (같은 번지의 고양이는 다른 창에 남은 내 연결이므로 그리지 않는다) */
   myHouseNo?(): number | null;
+  /** 서버가 내 자동차 상태를 받아들인 결과 (뒷자리에 못 타면 0) */
+  onCar?(c: number): void;
 }
 
 export interface Realtime {
@@ -54,6 +56,8 @@ export interface Realtime {
   sendEmote(emote: number): boolean;
   /** 내 춤 (DANCES id, null 이면 멈춤) */
   setDance(id: string | null): void;
+  /** 고양이 자동차: 0 내림, 1 운전, 2 남의 차 뒷자리 (driverId: 운전자 연결 id) */
+  setCar(c: 0 | 1 | 2, driverId?: string): void;
   /** 받은 유저 정보 (이름, 번지) */
   playerInfo(id: string): { handle: string; houseNo: number | null } | null;
   /** 지금 연결되어 있는지 */
@@ -97,6 +101,9 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
   let sentPose = 0;
   /** 내 춤 번호 */
   let danceNo = 0;
+  /** 내 자동차 상태와 (뒷자리면) 운전자 */
+  let carNo = 0;
+  let carWith = '';
   let sent = 0;
   let received = 0;
   const info = new Map<string, { handle: string; houseNo: number | null; cat: RemotePlayer['cat'] }>();
@@ -115,6 +122,8 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     a: number;
     f: number;
     d: number;
+    c: number;
+    w: string;
   }
   const tracks = new Map<string, Track>();
   let visibleIds: string[] = [];
@@ -206,6 +215,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       }
       sendNow(true);
       if (danceNo) send({ t: 'd', d: danceNo });
+      if (carNo) send({ t: 'car', c: carNo, ...(carWith ? { w: carWith } : {}) });
       return;
     }
     if (c !== conn) return; // 옮기는 중인 연결의 위치는 아직 쓰지 않는다
@@ -229,13 +239,17 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
         const step = (tup[7] as number | undefined) ?? 0;
         const p = (tup[8] as number[] | undefined) ?? [];
         const d = (tup[9] as number | undefined) ?? 0;
+        const cc = (tup[10] as number | undefined) ?? 0;
+        const cw = (tup[11] as string | undefined) ?? '';
         if (!info.has(id)) continue;
         visibleIds.push(id);
         let tr = tracks.get(id);
-        if (!tr) tracks.set(id, (tr = { q: -2, pts: [], a, f, d }));
+        if (!tr) tracks.set(id, (tr = { q: -2, pts: [], a, f, d, c: cc, w: cw }));
         tr.a = a;
         tr.f = f;
         tr.d = d;
+        tr.c = cc;
+        tr.w = cw;
         if (q === tr.q) continue;
         tr.q = q;
         const n = step ? Math.floor(p.length / 3) : 0;
@@ -254,6 +268,8 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       if (Number.isInteger(msg.e) && info.has(msg.from)) hooks.onEmote?.(msg.from, msg.e);
     } else if (msg.t === 'room') {
       hooks.onRoomMessage?.(msg.from, msg.d);
+    } else if (msg.t === 'car') {
+      hooks.onCar?.(msg.c);
     } else if (msg.t === 'cfg') {
       if (Number.isFinite(msg.si)) sendMs = Math.max(500, Math.min(5000, msg.si));
     } else if (msg.t === 'bye') {
@@ -368,6 +384,8 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
         cat: meta.cat,
         fishing,
         dance: tr.d > 0 ? (DANCES[tr.d - 1]?.id ?? null) : null,
+        car: tr.c === 1 ? 'drive' : tr.c === 2 ? 'ride' : null,
+        rideWith: tr.c === 2 ? tr.w : null,
       });
     }
     players = list;
@@ -463,6 +481,8 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       players = [];
       fishPose = sentPose = 0;
       danceNo = 0;
+      carNo = 0;
+      carWith = '';
       scene.setRemotePlayers([]);
       setSolo(false);
     },
@@ -491,6 +511,11 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     },
     sendEmote(e) {
       return send({ t: 'e', e });
+    },
+    setCar(c, driverId) {
+      carNo = c;
+      carWith = c === 2 ? (driverId ?? '') : '';
+      send({ t: 'car', c, ...(carWith ? { w: carWith } : {}) });
     },
     setDance(id) {
       const n = id ? DANCES.findIndex((d) => d.id === id) + 1 : 0;

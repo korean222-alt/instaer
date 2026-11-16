@@ -3,7 +3,7 @@ import type { House, PlacedItem } from '../../src/shared/types';
 import type { Env } from '../env';
 import { utcDay } from '../http';
 import { cachedJson } from '../lib/cache';
-import { parseItems } from '../lib/decor';
+import { parseItems, splitRoof } from '../lib/decor';
 import { HOUSE_COLS, toHouse, type HouseRow } from '../lib/houses';
 import { openZoneCount } from '../../src/shared/zones';
 
@@ -13,6 +13,8 @@ export interface VillageResponse {
   yards: Record<number, PlacedItem[]>;
   /** 번지 → 지붕 그림 id (그림을 붙인 집만). 그림 내용은 /api/drawings 로 받는다 */
   roofArt: Record<number, string>;
+  /** 번지 → 지붕 뒷면 그림 id (2026-11-16) */
+  roofArtBack: Record<number, string>;
   total: number;
   /** 열린 구역 수 (집이 있는 구역 + 0채면 1) */
   unlockedZones: number;
@@ -25,9 +27,10 @@ interface ZoneData {
   houses: House[];
   yards: Record<number, PlacedItem[]>;
   roofArt?: Record<number, string>;
+  roofArtBack?: Record<number, string>;
 }
 
-export const VILLAGE_KEY = 'village-v3';
+export const VILLAGE_KEY = 'village-v4';
 /** 집/마당이 바뀐 구역은 이 시간이 지나면 다시 만든다 (여러 요청이 한꺼번에 다시 만들지 않게) */
 const REBUILD_STRUCT_SEC = 20;
 /** 예뻐요 수만 바뀐 구역은 15분에 한 번 */
@@ -48,12 +51,15 @@ async function buildZone(db: D1Database, zone: number): Promise<ZoneData> {
   ]);
   const yards: Record<number, PlacedItem[]> = {};
   const roofArt: Record<number, string> = {};
+  const roofArtBack: Record<number, string> = {};
   for (const r of decor.results as Array<{ house_no: number; yard: string; roof_art: string | null }>) {
     const items = parseItems(r.yard);
     if (items.length) yards[r.house_no] = items;
-    if (r.roof_art) roofArt[r.house_no] = r.roof_art;
+    const roof = splitRoof(r.roof_art);
+    if (roof.roofArt) roofArt[r.house_no] = roof.roofArt;
+    if (roof.roofArtBack) roofArtBack[r.house_no] = roof.roofArtBack;
   }
-  return { houses: (houses.results as unknown as HouseRow[]).map((h) => toHouse(h)), yards, roofArt };
+  return { houses: (houses.results as unknown as HouseRow[]).map((h) => toHouse(h)), yards, roofArt, roofArtBack };
 }
 
 /**
@@ -101,6 +107,7 @@ export function village(env: Env, ctx: ExecutionContext): Promise<Response> {
     const houses = zones.flatMap((d) => d.houses);
     const yards = Object.assign({}, ...zones.map((d) => d.yards)) as Record<number, PlacedItem[]>;
     const roofArt = Object.assign({}, ...zones.map((d) => d.roofArt ?? {})) as Record<number, string>;
+    const roofArtBack = Object.assign({}, ...zones.map((d) => d.roofArtBack ?? {})) as Record<number, string>;
     const topRow = topRes.results[0] as { house_no: number; likes_today: number } | undefined;
     let todayTop: VillageResponse['todayTop'] = topRow ? { houseNo: topRow.house_no, likesToday: topRow.likes_today } : null;
     if (!todayTop && houses.length) {
@@ -111,6 +118,7 @@ export function village(env: Env, ctx: ExecutionContext): Promise<Response> {
       houses,
       yards,
       roofArt,
+      roofArtBack,
       total: houses.length,
       unlockedZones: openZoneCount(houses.length, maxNo),
       todayTop,

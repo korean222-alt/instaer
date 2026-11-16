@@ -15,6 +15,7 @@ export interface Village {
   yards: Record<number, PlacedItem[]>;
   /** 번지 → 지붕 그림 id */
   roofArt: Record<number, string>;
+  roofArtBack?: Record<number, string>;
   total: number;
   unlockedZones: number;
   todayTop: { houseNo: number; likesToday: number } | null;
@@ -132,7 +133,7 @@ export interface WalletView {
 type WithWallet<T> = T & { ok: true; wallet: WalletView };
 
 export const fetchDecor = (houseNo: number) => call<HouseDecor & { roofColor: string }>('GET', `/api/house/${houseNo}`);
-export type DecorPatch = Partial<Pick<HouseDecor, 'yard' | 'room' | 'wallpaper' | 'floor' | 'roofArt'>> & { roofColor?: string };
+export type DecorPatch = Partial<Pick<HouseDecor, 'yard' | 'room' | 'wallpaper' | 'floor' | 'roofArt' | 'roofArtBack'>> & { roofColor?: string };
 export const saveDecor = (houseNo: number, patch: DecorPatch) =>
   call<WithWallet<{ decor: HouseDecor; roofColor: string }>>('PUT', `/api/house/${houseNo}`, patch);
 
@@ -143,6 +144,8 @@ export const deleteDrawing = (id: string) => call<{ ok: true }>('DELETE', `/api/
 
 export const fetchWallet = () => call<{ wallet: WalletView }>('GET', '/api/wallet');
 export const buyItem = (type: string) => call<WithWallet<{ bought: string }>>('POST', '/api/shop/buy', { type });
+/** 우편함 편지 읽기 (든 츄르를 받는다) */
+export const openMail = (id: string) => call<WithWallet<{ coins: number }>>('POST', '/api/mail/open', { id });
 export const claimQuest = (id: string) => call<WithWallet<{ coins: number; item?: string }>>('POST', '/api/quest/claim', { id });
 export const acceptQuest = (id: string) => call<WithWallet<{ accepted: string }>>('POST', '/api/quest/accept', { id });
 export const reportFish = (catches: Array<{ id: string; cm: number }>) =>

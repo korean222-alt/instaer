@@ -9,7 +9,7 @@ import { regions } from './routes/regions';
 import { village } from './routes/village';
 import { realtimeConnect, realtimeUsage } from './routes/realtime';
 import { deleteDrawing, getDecor, getDrawings, getWallet, myDrawings, postDrawing, putDecor } from './routes/decor';
-import { accept, arcade, buy, claim, fish, mine, sell, visit } from './routes/game';
+import { accept, arcade, buy, claim, fish, mine, openMail, sell, visit } from './routes/game';
 import { deleteBoard, deleteGuestbook, friendAction, getBoard, getFriends, houseSocial, postBoard, postGuestbook } from './routes/social';
 
 export { RealtimeRoom } from './realtime/RealtimeRoom';
@@ -42,6 +42,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (method === 'GET' && path === '/api/drawings') return getDrawings(url, env);
   if (method === 'POST' && path === '/api/drawings') return postDrawing(request, env);
   if (method === 'POST' && path === '/api/shop/buy') return buy(request, env);
+  if (method === 'POST' && path === '/api/mail/open') return openMail(request, env);
   if (method === 'POST' && path === '/api/quest/claim') return claim(request, env);
   if (method === 'POST' && path === '/api/quest/accept') return accept(request, env);
   if (method === 'POST' && path === '/api/shop/sell') return sell(request, env);

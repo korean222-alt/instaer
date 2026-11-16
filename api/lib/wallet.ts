@@ -1,17 +1,18 @@
 // 츄르 지갑 읽기/쓰기. 지갑은 집 한 채당 한 줄(coins + data JSON)이라 무엇을 하든 쓰기 1행이다.
-import { DAILY_GAME_CAP, dailyQuests, normalizeWallet, WELCOME_COINS, type Wallet, type WalletData } from '../../src/shared/economy';
+import { DAILY_GAME_CAP, dailyQuests, normalizeWallet, welcomeMail, type Wallet, type WalletData } from '../../src/shared/economy';
 
 export interface WalletRow {
   coins: number;
   data: string;
 }
 
-/** 지갑을 읽는다. 없으면 환영 츄르를 넣어 새로 만든다 */
+/** 지갑을 읽는다. 없으면 새로 만든다 (2026-11-16: 환영 츄르는 바로 주지 않고 우편함 환영 편지에 넣는다) */
 export async function loadWallet(db: D1Database, houseId: number): Promise<Wallet> {
   let row = await db.prepare('SELECT coins, data FROM wallets WHERE house_id = ?').bind(houseId).first<WalletRow>();
   if (!row) {
-    await db.prepare('INSERT OR IGNORE INTO wallets (house_id, coins, data) VALUES (?, ?, ?)').bind(houseId, WELCOME_COINS, '{}').run();
-    row = { coins: WELCOME_COINS, data: '{}' };
+    const data = JSON.stringify({ mail: [welcomeMail()] });
+    await db.prepare('INSERT OR IGNORE INTO wallets (house_id, coins, data) VALUES (?, ?, ?)').bind(houseId, 0, data).run();
+    row = (await db.prepare('SELECT coins, data FROM wallets WHERE house_id = ?').bind(houseId).first<WalletRow>()) ?? { coins: 0, data };
   }
   let parsed: unknown = {};
   try {

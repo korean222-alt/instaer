@@ -16,6 +16,9 @@ import { npcScreen } from './screens/npc';
 import { questsScreen } from './screens/quests';
 import { shopScreen } from './screens/shop';
 import { boardScreen, friendsScreen, newsUnseen } from './screens/social';
+import { mailScreen } from './screens/mail';
+import { createWalkQuests } from './play/walkQuests';
+import { showArt } from './ui/artView';
 import { debugPlaceWalker, houseSlot } from '../scene';
 import { CURRENCY, type FishWhere } from '../shared/economy';
 import { loadMyDrawings, setArtCenter, syncArt } from './art';
@@ -68,6 +71,7 @@ const ICON: Record<string, string> = {
   board: '<path d="M4 5h16v11H4z"/><path d="M8 20l1.5-4M16 20l-1.5-4M8 9h4M8 12h7"/>',
   news: '<path d="M4 10v4l3 .5L15 19V5L7 9.5z"/><path d="M18 9.5c1.2.9 1.2 4.1 0 5"/>',
   sit: '<path d="M6 12h12v3H6z"/><path d="M7 15v5M17 15v5M8 12V6"/>',
+  mail: '<path d="M4 9a4 4 0 0 1 8 0v9H4z"/><path d="M12 9h6a2 2 0 0 1 2 2v7h-8"/><path d="M8 14v-2M16 6V3h3"/>',
 };
 const icon = (name: string) =>
   `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[name]}</svg>`;
@@ -85,6 +89,7 @@ const SCREENS: Record<Exclude<ScreenId, 'map'>, Screen> = {
   npc: npcScreen,
   board: boardScreen,
   friends: friendsScreen,
+  mail: mailScreen,
 };
 // 2026-11-15: 입주 탭은 뺐다 (입주 전에는 위쪽 "입주하기" 버튼, 내 고양이 카드는 설정에서)
 const TABS: Array<{ id: ScreenId; label: string }> = [
@@ -152,7 +157,7 @@ const sheetBody = $('sheet-body');
 let cleanup: (() => void) | void;
 let ready = false;
 
-const TAB_OF: Partial<Record<ScreenId, ScreenId>> = { house: 'map', search: 'map', settings: 'map', npc: 'map', board: 'map', shop: 'decorate', draw: 'decorate', 'move-in': 'map' };
+const TAB_OF: Partial<Record<ScreenId, ScreenId>> = { house: 'map', search: 'map', settings: 'map', npc: 'map', board: 'map', mail: 'map', shop: 'decorate', draw: 'decorate', 'move-in': 'map' };
 function show(route: Route) {
   const tabId = TAB_OF[route.id] ?? route.id;
   for (const a of app.querySelectorAll<HTMLAnchorElement>('[data-tab]')) {
@@ -275,6 +280,7 @@ const realtime = createRealtime(rtScene, {
     toast('다른 창에서 같은 고양이로 접속했어요. 이 창에서는 혼자 걸어요', 3200);
   },
   myHouseNo: () => state.me?.houseNo ?? null,
+  onCar: (c) => explore?.carAck(c),
   onLocalMove(s) {
     if (s.anim === 'jump' && lastAnim !== 'jump') play('jump');
     lastAnim = s.anim;
@@ -333,6 +339,15 @@ function fishHere(where: FishWhere) {
   explore.refresh();
 }
 ctl.explore = explore;
+// 걷는 동안 받은 퀘스트 보기 (2026-11-16)
+const walkQuests = createWalkQuests(icon);
+onChange(() => walkQuests.refresh());
+// 그림이 붙은 가구(캔버스, 액자, 간판, 러그)를 누르면 크게 보기 (2026-11-16)
+scene.onArtTap((id, type) => {
+  if (ctl.placement?.active()) return;
+  play('tap');
+  showArt(id, type);
+});
 social = createSocial(scene, realtime, icon);
 // 지나가는 고양이를 누르면 그 고양이의 집(프로필)
 scene.onRemoteTap((id) => {

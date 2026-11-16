@@ -1,5 +1,6 @@
 // 자유 배치 꾸미기 검사와 읽기.
 import { decorItem, FLOORS, FREE_ROOM_MAX, FREE_YARD_MAX, ROOM_HALF, WALLPAPERS, YARD_HALF } from '../../src/shared/config';
+import { FREE_ROOM_MAX_BIG, ROOM_HALF_BIG } from '../../src/shared/economy';
 import type { HouseDecor, PlacedItem } from '../../src/shared/types';
 
 export const ID_RE = /^[A-Za-z0-9_-]{1,24}$/;
@@ -31,9 +32,17 @@ export function toDecor(houseNo: number, row: DecorRow | null): HouseDecor {
     room: parseItems(row?.room),
     wallpaper: row?.wallpaper ?? 'cream',
     floor: row?.floor ?? 'wood',
-    roofArt: row?.roof_art ?? null,
+    ...splitRoof(row?.roof_art ?? null),
   };
 }
+
+/** DB roof_art 칸: '앞' 또는 '앞|뒤' (2026-11-16 지붕 뒷면. 앞이 비면 '|뒤') */
+export function splitRoof(v: string | null): { roofArt: string | null; roofArtBack: string | null } {
+  if (!v) return { roofArt: null, roofArtBack: null };
+  const [a, b] = v.split('|');
+  return { roofArt: a || null, roofArtBack: b || null };
+}
+export const joinRoof = (front: string | null, back: string | null | undefined) => (back ? `${front ?? ''}|${back}` : front);
 
 export const readDecor = (db: D1Database, houseId: number) =>
   db.prepare('SELECT yard, room, wallpaper, floor, roof_art FROM house_decor WHERE house_id = ?').bind(houseId).first<DecorRow>();
@@ -45,11 +54,11 @@ const round = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d;
  * 문제가 있으면 이유, 없으면 정리된 목록과 쓰인 종류, 그림 id.
  * (겹침은 씬이 막으니 서버는 범위와 종류, 개수만 본다)
  */
-export function cleanFree(raw: unknown, where: 'yard' | 'room'): { items: PlacedItem[]; types: Set<string>; drawings: Set<string> } | { problem: string } {
+export function cleanFree(raw: unknown, where: 'yard' | 'room', big = false): { items: PlacedItem[]; types: Set<string>; drawings: Set<string> } | { problem: string } {
   if (!Array.isArray(raw)) return { problem: '아이템 목록이 이상해요' };
-  const max = where === 'yard' ? FREE_YARD_MAX : FREE_ROOM_MAX;
+  const max = where === 'yard' ? FREE_YARD_MAX : big ? FREE_ROOM_MAX_BIG : FREE_ROOM_MAX;
   if (raw.length > max) return { problem: `아이템은 ${max}개까지 놓을 수 있어요` };
-  const half = (where === 'yard' ? YARD_HALF : ROOM_HALF) + 0.01;
+  const half = (where === 'yard' ? YARD_HALF : big ? ROOM_HALF_BIG : ROOM_HALF) + 0.01;
   const ids = new Set<string>();
   const types = new Set<string>();
   const drawings = new Set<string>();

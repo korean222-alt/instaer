@@ -607,3 +607,54 @@ body.decorating .route-pill, body.playing .route-pill, body:has(.sheet.open) .ro
 .btn.checking { opacity: 0.85; pointer-events: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,0.45); border-top-color: #fff; animation: spin 0.8s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── 2026-11-16: 꾸미는 동안 조이스틱/점프 숨기기, 걷기 퀘스트, 자동차, 캐기 꾹 누르기, 우편함, 그림 크게 보기 ── */
+body.decorating [data-walk-ui] { display: none !important; }
+.walk-quest {
+  position: absolute; right: var(--gutter-r); top: calc(104px + env(safe-area-inset-top, 0px));
+  appearance: none; border: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  padding: 8px 12px; border-radius: 999px; background: var(--card); color: var(--ink);
+  font-weight: 800; font-size: 12px; box-shadow: 0 2px 10px var(--shadow);
+}
+.walk-quest svg { width: 15px; height: 15px; }
+.walk-quest em { font-style: normal; min-width: 18px; height: 18px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; display: inline-grid; place-items: center; padding: 0 5px; }
+.walk-quest em.done { background: #3fb67a; }
+.quest-peek {
+  position: absolute; right: var(--gutter-r); top: calc(146px + env(safe-area-inset-top, 0px)); z-index: 12;
+  width: min(300px, calc(100% - 32px)); max-height: 46%; overflow: auto; background: var(--card-solid); border-radius: 18px;
+  box-shadow: 0 6px 22px var(--shadow); padding: 10px 12px;
+}
+.quest-peek[hidden] { display: none; }
+.quest-peek h4 { margin: 0 0 6px; font-size: 13px; }
+.quest-peek ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.quest-peek li b { display: block; font-size: 13px; }
+.quest-peek li small { display: block; font-size: 11px; color: var(--ink-soft); }
+.quest-peek .q-prog { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+.quest-peek .ok { color: #2f9d64; font-weight: 800; font-size: 12px; }
+.quest-peek .empty { font-size: 12px; color: var(--ink-soft); }
+.quest-peek .btn { margin-top: 8px; width: 100%; }
+body:not(.walking) .walk-quest, body:not(.walking) .quest-peek, body.decorating .walk-quest, body.playing .walk-quest,
+body.decorating .quest-peek, body.playing .quest-peek, body:has(.sheet.open) .quest-peek, body.social-open .walk-quest, body.social-open .quest-peek { display: none !important; }
+.car-btn {
+  position: absolute; right: var(--gutter-r); bottom: calc(env(safe-area-inset-bottom, 0px) + 202px);
+  appearance: none; border: 0; cursor: pointer; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  width: 58px; height: 58px; border-radius: 50%; background: var(--card-solid); color: #e9794f; font-weight: 800; font-size: 11px; box-shadow: 0 4px 14px var(--shadow);
+}
+.car-btn svg { width: 24px; height: 24px; }
+.car-btn span { color: var(--ink); }
+.car-btn.on { background: #ffe1d6; box-shadow: inset 0 0 0 2px var(--accent), 0 4px 14px var(--shadow); }
+.car-btn[hidden], body.playing .car-btn, body.decorating .car-btn, body:has(.sheet.open) .car-btn, body.social-open .car-btn { display: none !important; }
+.act-btn.hold { position: relative; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.act-btn.hold .hold-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(255, 255, 255, 0.35); pointer-events: none; }
+.act-btn.hold > svg, .act-btn.hold > span { position: relative; }
+.art-view { position: absolute; inset: 0; z-index: 40; background: rgba(30, 22, 16, 0.55); display: grid; place-items: center; padding: 20px; }
+.art-view[hidden] { display: none; }
+.art-card { background: var(--card-solid); border-radius: 22px; padding: 14px; box-shadow: 0 8px 30px var(--shadow); display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 100%; }
+.art-card canvas { width: min(78vw, 360px); height: auto; aspect-ratio: 1; image-rendering: pixelated; border-radius: 10px; border: 6px solid #fffaf2; box-shadow: 0 2px 10px var(--shadow); }
+.mail-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mail-row { background: var(--field); border-radius: 14px; padding: 10px 12px; }
+.mail-row.unread { background: #fff1e2; box-shadow: inset 0 0 0 2px #ffd2b0; }
+.mail-row b { display: block; font-size: 14px; }
+.mail-row small { display: block; color: var(--ink-soft); font-size: 12px; margin-bottom: 4px; }
+.mail-row p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; }
+.mail-row .btn { margin-top: 8px; }

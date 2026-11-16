@@ -6,8 +6,8 @@ export const ANIMS: readonly PlayerAnim[] = ['idle', 'walk', 'sit', 'jump'];
 /** 낚시 단계 번호 (0 = 낚시 안 함) */
 export const FISH_POSES: readonly (FishingPose | null)[] = [null, 'cast', 'wait', 'bite', 'reel', 'caught'];
 
-/** 내 고양이가 1초에 갈 수 있는 최대 거리 (걷기 최고 속도 약 4.7 + 점프, 지연 여유) */
-export const MAX_SPEED = 9;
+/** 내 고양이가 1초에 갈 수 있는 최대 거리 (걷기 최고 속도 약 4.7, 고양이 자동차 약 8.2 + 점프, 지연 여유) */
+export const MAX_SPEED = 14;
 /** 이보다 크게 튀면 순간이동으로 보고 되돌린다 (월드 단위) */
 export const MAX_JUMP = 4;
 /** 한 연결이 1초에 보낼 수 있는 메시지 수 (MOVE_SEND_HZ 8 + 여유) */
@@ -45,14 +45,17 @@ export type ClientMsg =
   /** 이모티콘 (EMOTES 번호) */
   | { t: 'e'; e: number }
   /** 춤 (DANCES 번호 + 1, 0 = 멈춤) */
-  | { t: 'd'; d: number };
+  | { t: 'd'; d: number }
+  /** 고양이 자동차 (2026-11-16): c 0 내림, 1 운전, 2 뒷자리 (w: 운전자 연결 id) */
+  | { t: 'car'; c: number; w?: string };
 
-/** 유저 한 명의 위치: [id, x, z, r, a, f, q, i, p, d] (q: 위치 순번, 바뀌었을 때만 새 위치. i, p: 지난 위치 묶음. d: 춤 번호) */
+/** 유저 한 명의 위치: [id, x, z, r, a, f, q, i, p, d, c, w] (q: 위치 순번, 바뀌었을 때만 새 위치. i, p: 지난 위치 묶음. d: 춤 번호. c: 자동차, w: 운전자 id) */
 export type PlayerTuple =
   | [string, number, number, number, number]
   | [string, number, number, number, number, number]
   | [string, number, number, number, number, number, number, number, number[]]
-  | [string, number, number, number, number, number, number, number, number[], number];
+  | [string, number, number, number, number, number, number, number, number[], number]
+  | [string, number, number, number, number, number, number, number, number[], number, number, string];
 
 /** 서버 → 화면 */
 export type ServerMsg =
@@ -72,6 +75,8 @@ export type ServerMsg =
   | { t: 'c'; from: string; s: string }
   /** 이모티콘 */
   | { t: 'e'; from: string; e: number }
+  /** 자동차 상태를 받아들인 결과 (뒷자리에 못 타면 c = 0) */
+  | { t: 'car'; c: number }
   /** 연결을 끊는 이유 (full: 꽉 참, replaced: 다른 창에서 접속, limit: 너무 많이 보냄) */
   | { t: 'bye'; reason: 'full' | 'replaced' | 'limit' | 'bad' };
 

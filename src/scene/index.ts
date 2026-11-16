@@ -822,7 +822,9 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       // 집 안: 섬은 그리지 않고 방 하나만 그린다
       controls.update();
       controls.takeLook();
-      walker.update(dt, controls.moveX, controls.moveY, ROOM_CAM_YAW, controls.takeJump());
+      // 꾸미는 동안에는 조이스틱이 숨고 고양이도 가만히 있는다 (2026-11-16)
+      const jumpIn = controls.takeJump();
+      walker.update(dt, placer.active ? 0 : controls.moveX, placer.active ? 0 : controls.moveY, ROOM_CAM_YAW, !placer.active && jumpIn);
       interior.updateCamera(camera, dt, walker.x, walker.z);
       interior.update();
       const dmi = drawPlayer(dt, 0.01);
@@ -872,7 +874,8 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
           walker.groundY = d.y;
           walker.y = d.y;
         }
-      } else walker.update(dt, controls.moveX, controls.moveY, walkCam.yaw, jump);
+      } else if (placer.active) walker.update(dt, 0, 0, walkCam.yaw, false);
+      else walker.update(dt, controls.moveX, controls.moveY, walkCam.yaw, jump);
       walkCam.update(dt, camera, walker.x, walker.groundY, walker.air, walker.z, controls.takeLook());
       // 물고기를 낚으면 눈웃음을 짓는다
       const dmw = drawPlayer(dt, 0.035, fishing === 'caught' ? 1 : 0, fishing === null);

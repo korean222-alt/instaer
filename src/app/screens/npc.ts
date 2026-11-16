@@ -17,11 +17,12 @@ import type { Screen } from './types';
 import type { CatLook } from '../../shared/types';
 
 const RESIDENT_TALK = [
-  '놀러 와 줘서 고마워! 오늘도 좋은 하루 보내.',
-  '섬 북서쪽 산에 동굴이 있대. 두더지가 매일 들어간다더라.',
-  '물고기는 잡화점 보리한테 팔면 츄르로 바꿔 줘!',
-  '오락실 콩이는 생선 받기 50점 넘으면 선물을 준대.',
-  '바위 언덕 위에 올라가 보고 싶다... 냥.',
+  '놀러 와 줘서 고맙다냥! 오늘도 좋은 하루 보내자냥.',
+  '섬 북서쪽 산에 동굴이 있다냥. 두더지가 매일 들어간다더라냥.',
+  '물고기는 마을 광장 잡화점 보리한테 팔면 츄르로 바꿔 준다냥!',
+  '오락실 콩이는 생선 받기 50점 넘으면 선물을 준다냥.',
+  '고양이 자동차 타 봤냥? 뒤에 친구도 태울 수 있다냥!',
+  '집 앞 우편함에 편지가 왔을지도 모른다냥. 열어 보자냥.',
 ];
 
 /** 3D 고양이 그림 (안 되면 2D) */
@@ -90,7 +91,7 @@ export const npcScreen: Screen = {
       ctx.setTitle(MAYOR_NAME);
       root.innerHTML = `
         <div class="npc-head">${face(npcLook('mayor', -1), 'mayor')}
-          <p class="bubble">${state.me ? `${esc(state.me.igHandle ?? '')} 주민, 반가워요! 섬에 새로 생긴 소식을 알려 줄게요.` : '어서 와요! 고양이섬 이장이에요. 입주하면 이웃들이 반겨 줄 거예요.'}</p></div>
+          <p class="bubble">${state.me ? `${esc(state.me.igHandle ?? '')} 주민, 반갑다냥! 섬에 새로 생긴 소식을 알려 주겠다냥.` : '어서 오라냥! 고양이섬 이장이다냥. 입주하면 이웃들이 반겨 줄 거다냥.'}</p></div>
         <div class="row two"><a class="btn primary" href="#/board">마을 게시판</a><a class="btn" href="#/friends">친구</a></div>
         <h3 class="sub">업데이트 소식</h3>
         ${newsHtml()}`;
@@ -115,9 +116,11 @@ export const npcScreen: Screen = {
       root.innerHTML = `
         <div class="npc-head">${face(npcLook(role, 0), `n${role}`)}<p class="bubble">${esc(info.hello)}</p></div>
         ${role === 'arcade' ? '<button class="btn primary" data-act="arcade">생선 받기 한 판 (30초)</button><p class="note">15점 10츄르 · 30점 25츄르 · 50점 40츄르, 하루 처음 50점을 넘기면 선물 상자!</p>' : ''}
-        ${role === 'fisher' ? '<p class="note">연못 둘레나 1구역 남쪽 부두 끝에 가면 "낚시하기" 버튼이 생겨요. 낚은 물고기는 가방에 모이고, 잡화점 보리에게 팔아요.</p>' : ''}
-        ${role === 'explorer' ? '<p class="note">섬 북서쪽 큰 산에 동굴이 있어. 입구 앞에서 "동굴 들어가기", 반짝이는 바위 옆에서 "캐기"를 세 번! 안쪽 굴로 더 들어가면 자수정, 금, 다이아도 나와.</p>' : ''}
-        ${role === 'gardener' ? '<p class="note">꾸미기 탭에서 마당을 꾸미고 그림을 그려 봐. 예쁜 집에는 예뻐요도 눌러 주고!</p>' : ''}
+        ${role === 'fisher' ? '<p class="note">연못 둘레나 1구역 남쪽 부두 끝에 가면 "낚시하기" 버튼이 생겨요. 낚은 물고기는 가방에 모이고, 마을 광장 잡화점 보리에게 팔아요.</p>' : ''}
+        ${role === 'explorer' ? '<p class="note">섬 북서쪽 큰 산에 동굴이 있다냥. 입구 앞에서 "동굴 들어가기", 반짝이는 바위 옆에서 "캐기" 버튼을 꾹 누르고 있으면 캐진다냥! 안쪽 굴로 더 들어가면 자수정, 금, 다이아도 나온다냥.</p>' : ''}
+        ${role === 'gardener' ? '<p class="note">꾸미기 탭에서 마당을 꾸며 보자냥. 예쁜 집에는 예뻐요도 눌러 주자냥!</p>' : ''}
+        ${role === 'painter' ? '<p class="note">꾸미기 탭에서 그림을 그리고, 그림 캔버스에 걸어 두자냥. 캔버스를 누르면 누구나 그림을 크게 볼 수 있다냥.</p>' : ''}
+        ${role === 'mailman' ? '<p class="note">집 앞 우편함 옆에 서면 "우편함 열기"가 나온다냥. 섬 모서리 주민 집에 들르면 방문 보상도 있다냥.</p>' : ''}
         ${state.me ? npcQuestHtml(role) : '<p class="note">입주하면 부탁을 받을 수 있어요.</p>'}
         ${
           role === 'shop'

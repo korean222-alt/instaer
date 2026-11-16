@@ -396,8 +396,9 @@ export function tuft(seed: number): Pieces {
 const HOME_STYLE: ReadonlyArray<{ roof: string; awning: string; wall: string; sign: 'pick' | 'leaf' | 'bag' | 'star' | 'fish' | 'flower' | 'heart' }> = [
   { roof: '#8d7a6b', awning: '#f4c95d', wall: '#f3e3cc', sign: 'pick' },
   { roof: '#9fb7d9', awning: '#ffffff', wall: '#fff3dc', sign: 'heart' },
-  { roof: '#ff8f7a', awning: '#ff8f7a', wall: '#fff6e6', sign: 'bag' },
-  { roof: '#9f8cf0', awning: '#7cc4f2', wall: '#f6f0ff', sign: 'star' },
+  // 2026-11-16: 북동 두 집은 화가(별), 우체부(하트)의 집 (잡화점/오락실 가게 모양을 없앴다)
+  { roof: '#d97bc4', awning: '#ffffff', wall: '#fff6f8', sign: 'star' },
+  { roof: '#5aa0d8', awning: '#ffffff', wall: '#f2f7ff', sign: 'heart' },
   { roof: '#5cc2b5', awning: '#5cc2b5', wall: '#f2f6f2', sign: 'fish' },
   { roof: '#e6a37e', awning: '#ffffff', wall: '#fff3dc', sign: 'heart' },
   { roof: '#7fc98a', awning: '#ff9ec2', wall: '#f8fbef', sign: 'flower' },

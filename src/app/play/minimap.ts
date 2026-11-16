@@ -20,6 +20,8 @@ const ROLE_MARK: Record<NpcKind, { c: string; t: string; desc: string }> = {
   fisher: { c: '#3fb6b0', t: '낚', desc: '낚시 부탁을 줘요' },
   gardener: { c: '#6fc275', t: '정', desc: '꾸미기, 그림 부탁을 줘요' },
   explorer: { c: '#b8875c', t: '탐', desc: '동굴 탐험 부탁을 줘요' },
+  painter: { c: '#d97bc4', t: '화', desc: '그림 부탁을 줘요, 그림 캔버스를 줘요' },
+  mailman: { c: '#5aa0d8', t: '우', desc: '이웃 방문 부탁을 줘요' },
   resident: { c: '#9ab3d6', t: '이', desc: '놀러 가면 방문 보상' },
   mayor: { c: '#3d5a80', t: '장', desc: '업데이트 소식을 알려 줘요' },
 };
@@ -134,7 +136,7 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
         <div class="map-zoom"><button data-zoom="in" aria-label="확대">+</button><button data-zoom="out" aria-label="축소">−</button><button data-zoom="home" aria-label="우리 집 / 내 위치">◎</button></div>
       </div>
       <div class="map-info" hidden></div>
-      <div class="legend">${(['mayor', 'shop', 'arcade', 'fisher', 'gardener', 'explorer', 'resident'] as NpcKind[])
+      <div class="legend">${(['mayor', 'shop', 'arcade', 'fisher', 'gardener', 'explorer', 'painter', 'mailman', 'resident'] as NpcKind[])
         .map((r) => `<span><i style="background:${ROLE_MARK[r].c}">${ROLE_MARK[r].t}</i>${r === 'resident' ? '이웃' : r === 'mayor' ? '이장' : NPC_INFO[r].title}</span>`)
         .join('')}<span><i style="background:#e2574c">광</i>마을 광장</span><span><i style="background:#4a90c8">물</i>낚시터</span><span><i style="background:#3b2f2a">굴</i>동굴</span><span><i class="home">집</i>우리 집</span><span><i class="me"></i>나</span></div></div>`;
   app.appendChild(big);

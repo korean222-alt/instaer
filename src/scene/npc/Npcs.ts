@@ -149,6 +149,30 @@ function wateringCan(): Piece[] {
   return out;
 }
 
+function beret(color: string): Piece[] {
+  const top = new THREE.SphereGeometry(0.17, 12, 7).scale(1.15, 0.42, 1.1).translate(0.04, HEAD_TOP.y + 0.03, HEAD_TOP.z - 0.01);
+  return [pc(top, color), pc(new THREE.SphereGeometry(0.025, 6, 4).translate(0.04, HEAD_TOP.y + 0.1, HEAD_TOP.z), '#5b4636')];
+}
+function palette(): Piece[] {
+  const x = 0.6;
+  const z = 0.12;
+  const out: Piece[] = [pc(new THREE.CylinderGeometry(0.2, 0.2, 0.03, 14).scale(1.2, 1, 0.9).translate(x, 0.03, z), '#e2b98a')];
+  const dots: Array<[number, number, string]> = [[-0.1, -0.06, '#ff6f61'], [0.02, -0.1, '#ffd166'], [0.12, -0.02, '#7cc4f2'], [0.08, 0.09, '#7fd8b0']];
+  for (const [dx, dz, c] of dots) out.push(pc(new THREE.SphereGeometry(0.035, 6, 4).scale(1, 0.5, 1).translate(x + dx, 0.05, z + dz), c));
+  out.push(pc(new THREE.CylinderGeometry(0.012, 0.012, 0.36, 5).rotateZ(1.2).translate(x - 0.05, 0.08, z + 0.12), '#8a6a52'));
+  return out;
+}
+function mailBag(): Piece[] {
+  const x = 0.6;
+  const z = 0.1;
+  return [
+    pc(new RoundedBoxGeometry(0.42, 0.32, 0.2, 1, 0.05).translate(x, 0.16, z), '#c98a52'),
+    pc(new RoundedBoxGeometry(0.44, 0.12, 0.22, 1, 0.04).translate(x, 0.3, z + 0.01), '#a2734c'),
+    pc(new THREE.BoxGeometry(0.2, 0.13, 0.01).translate(x, 0.36, z + 0.08), '#fffaf0'),
+    pc(new THREE.BoxGeometry(0.04, 0.04, 0.012).translate(x + 0.06, 0.37, z + 0.09), '#ff6f61'),
+  ];
+}
+
 const ROLE_PARTS: Record<string, { worn: () => Piece[]; prop?: () => Piece[] }> = {
   shop: { worn: () => scarf('#ff8f7a', true), prop: basket },
   arcade: { worn: () => cap('#7c8cf0', '#fff6ea'), prop: gameBox },
@@ -156,6 +180,9 @@ const ROLE_PARTS: Record<string, { worn: () => Piece[]; prop?: () => Piece[] }> 
   gardener: { worn: () => strawHat('#ff9ec2', '#ff8fa3'), prop: wateringCan },
   resident: { worn: () => scarf('#8fd3e8') },
   explorer: { worn: () => cap('#f4c95d', '#9a6645') },
+  // 2026-11-16: 화가(베레모 + 이젤 대신 팔레트), 우체부(파란 모자 + 가방)
+  painter: { worn: () => beret('#d97bc4'), prop: palette },
+  mailman: { worn: () => [...cap('#5aa0d8', '#fffaf0'), ...scarf('#5aa0d8')], prop: mailBag },
   // 이장 (2026-11-15): 금색 목도리 + 남색 모자
   mayor: { worn: () => [...scarf('#f4c95d', true), ...cap('#3d5a80', '#f4c95d')] },
 };

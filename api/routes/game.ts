@@ -30,6 +30,7 @@ import {
   prizeItem,
   questValue,
   storyQuest,
+  upgradeDef,
   VISIT_COINS,
   VISIT_MAX,
   type Wallet,
@@ -69,6 +70,15 @@ export const buy = (request: Request, env: Env) =>
       w.coins -= dd.price;
       w.data.owned.push(key);
       return { bought: key };
+    }
+    // 한 번 사면 계속 쓰는 것 (2026-11-16: 고양이 자동차, 집 넓히기, 지붕 그림)
+    const up = typeof body.type === 'string' ? upgradeDef(body.type) : undefined;
+    if (up) {
+      if (w.data.owned.includes(up.key)) return error(400, 'owned', '이미 가지고 있어요');
+      if (w.coins < up.price) return error(400, 'no_coins', `츄르가 ${up.price - w.coins}개 모자라요`);
+      w.coins -= up.price;
+      w.data.owned.push(up.key);
+      return { bought: up.key };
     }
     const def = typeof body.type === 'string' ? decorItem(body.type) : undefined;
     if (!def || def.price === null) return error(400, 'not_for_sale', '파는 물건이 아니에요');
@@ -280,4 +290,16 @@ export const visit = (request: Request, env: Env) =>
     d.visits.push(key);
     w.data.life.visits += 1;
     return { coins: payGame(w, VISIT_COINS) };
+  });
+
+/** POST /api/mail/open {id} : 우편함 편지를 읽는다. 든 츄르가 있으면 받는다 (하루 미니게임 상한과 따로) */
+export const openMail = (request: Request, env: Env) =>
+  withWallet(request, env, (w, body) => {
+    const m = w.data.mail.find((x) => x.id === body.id);
+    if (!m) return error(404, 'no_mail', '없는 편지예요');
+    const coins = m.coins;
+    w.coins += coins;
+    m.coins = 0;
+    m.read = true;
+    return { coins };
   });
