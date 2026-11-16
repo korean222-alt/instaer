@@ -16,7 +16,8 @@ import { FishingRig, type FishingState } from './fishing/FishingRig';
 import { Placer } from './free/Placer';
 import { blockersOf, pickItem, type Space } from './free/space';
 import type { Drawing, InteriorItem, PlacedItem } from './free/types';
-import { Interior, ROOM_CAM_YAW, ROOM_EXIT_Z, ROOM_START, ROOM_WALK } from './interior/Interior';
+import { Interior, ROOM_CAM_YAW, ROOM_EXIT, ROOM_START, ROOM_WALK } from './interior/Interior';
+import { ROOM_HALF, ROOM_HALF_BIG } from './free/space';
 import { Npcs, type SceneNpc } from './npc/Npcs';
 import { RemotePlayers } from './remote/RemotePlayers';
 import { danceMotion } from './cat/dance';
@@ -36,6 +37,8 @@ import {
   neighborhoodAt,
   zoneAt,
   zoneCenter,
+  YARD_HALF,
+  MAILBOX_LOCAL,
   type Collider,
 } from './layout';
 import { ZONE_CAPACITY } from '../shared/config';
@@ -61,6 +64,14 @@ export type { CatPreviewOptions } from './cat/catPreview';
 export type { CaveNode } from './cave/Cave';
 export { CAVE_DEEPER } from './cave/Cave';
 export { landAt, npcHomes, caveMouths, mapHills, townSquares, benchNear, TOWN_SQUARE, walkCost } from './layout';
+
+/** 2026-11-16: 그 집 우편함의 세계 좌표 (마당 앞 오른쪽, 대문 옆) */
+export function mailboxPos(houseNo: number): { x: number; z: number } {
+  const s = houseSlot(houseNo);
+  const c = Math.cos(s.rot);
+  const n = Math.sin(s.rot);
+  return { x: s.x + MAILBOX_LOCAL.x * c + MAILBOX_LOCAL.z * n, z: s.z - MAILBOX_LOCAL.x * n + MAILBOX_LOCAL.z * c };
+}
 
 /**
  * 고양이섬 3D 씬.
@@ -109,7 +120,7 @@ export interface IslandScene {
    * @param wallpaper 'cream' | 'stripe' | 'dots' | '#rrggbb' | 'drawing:그림id'
    * @param floor     'wood' | 'tile' | 'carpet' | '#rrggbb' | 'drawing:그림id'
    */
-  enterHouse(houseNo: number, interior: InteriorItem[], wallpaper?: string, floor?: string): void;
+  enterHouse(houseNo: number, interior: InteriorItem[], wallpaper?: string, floor?: string, big?: boolean): void;
   /** 집 밖(그 집 문 앞)으로 나온다. 이때는 onExitHouse 를 부르지 않는다 */
   exitHouse(): void;
   /** 지금 들어가 있는 집의 아이템만 바꾼다 (집 안이 아니면 아무 일도 없다) */
@@ -556,7 +567,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
         const houseNo = zone * ZONE_CAPACITY + i + 1;
         if (!houses.has(houseNo)) continue;
         // 마당 입구(대문 자리)까지의 거리. 지금 가까운 집은 조금 더 멀어져야 놓는다
-        const d = Math.hypot(lot.x + 3 * Math.sin(lot.rot) - lx, lot.z + 3 * Math.cos(lot.rot) - lz);
+        const d = Math.hypot(lot.x + YARD_HALF * Math.sin(lot.rot) - lx, lot.z + YARD_HALF * Math.cos(lot.rot) - lz);
         const limit = houseNo === nearHouse ? NEAR_OUT : NEAR_IN;
         if (d < limit && d - (houseNo === nearHouse ? NEAR_OUT - NEAR_IN : 0) < bestD) {
           bestD = d - (houseNo === nearHouse ? NEAR_OUT - NEAR_IN : 0);
@@ -798,7 +809,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       renderer.render(interior.scene, camera);
       cpuMs = cpuMs * 0.9 + (performance.now() - t0) * 0.1;
       // 문턱을 넘으면 밖으로 내보내고 알린다
-      if (walker.z > ROOM_EXIT_Z && !placer.dragging) leaveHouse(true);
+      if (walker.z > ROOM_EXIT.z && !placer.dragging) leaveHouse(true);
       return;
     }
     if (walking) {
@@ -916,7 +927,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   canvas.addEventListener('webglcontextrestored', onRestored);
 
   /** 방 하나(집 안) 열기. houseNo 가 음수면 주민 집 -(id+1) */
-  const openRoom = (houseNo: number, items: InteriorItem[], wallpaper?: string, floor?: string) => {
+  const openRoom = (houseNo: number, items: InteriorItem[], wallpaper?: string, floor?: string, big = false) => {
       if (inCave) leaveCave(false);
       interior ??= new Interior(atmosphere.shared, geometries, drawings);
       if (inside === houseNo) {
@@ -931,7 +942,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       stopFishing();
       placer.end();
       interior.setShadows(quality < 3);
-      interior.open(houseNo, items, wallpaper, floor);
+      interior.open(houseNo, items, wallpaper, floor, big ? ROOM_HALF_BIG : ROOM_HALF);
       inside = houseNo;
       interior.scene.add(player.mesh, remotes.group, npcs.group, placer.group);
       // 밖에 있던 유저들은 방 안에 보이면 안 된다. 앱이 같은 집 안 사람만 다시 넘긴다
@@ -1052,9 +1063,9 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       moveCb = cb;
     },
     getLocalState: localState,
-    enterHouse(houseNo, items, wallpaper, floor) {
+    enterHouse(houseNo, items, wallpaper, floor, big) {
       if (!houses.has(houseNo)) return;
-      openRoom(houseNo, items, wallpaper, floor);
+      openRoom(houseNo, items, wallpaper, floor, !!big);
     },
     enterNpcHome(homeId, items, wallpaper, floor) {
       if (!Number.isInteger(homeId) || homeId < 0) return;

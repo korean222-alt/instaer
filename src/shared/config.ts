@@ -104,7 +104,7 @@ export const STARTER_ITEMS: readonly string[] = DECOR_ITEMS.filter((i) => i.pric
 export const decorItem = (type: string) => DECOR_ITEMS.find((i) => i.type === type);
 
 /** 마당 한 변의 절반 (자유 배치 좌표 -3 ~ 3) */
-export const YARD_HALF = 3;
+export const YARD_HALF = 3.6;
 /** 집 안 한 변의 절반 (자유 배치 좌표 -4 ~ 4) */
 export const ROOM_HALF = 4;
 /** 마당 / 집 안에 놓을 수 있는 아이템 수 */

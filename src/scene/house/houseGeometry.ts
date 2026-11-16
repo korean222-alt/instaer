@@ -284,6 +284,20 @@ export function buildYardGeometry(size: number, houseFrontZ: number): THREE.Buff
   post(-h, h, 0.5);
   post(h, h, 0.5);
 
+  // 우편함 (2026-11-16): 앞 오른쪽 대문 옆. 나무 기둥 위에 둥근 지붕 통, 옆에 빨간 깃발
+  {
+    const mx = 1.75;
+    const mz = size / 2 - 0.3;
+    parts.push(piece(new RoundedBoxGeometry(0.12, 0.78, 0.12, 1, 0.03).translate(mx, 0.39, mz), '#b98557'));
+    parts.push(piece(new RoundedBoxGeometry(0.34, 0.26, 0.48, 2, 0.06).translate(mx, 0.9, mz), '#7cc4f2'));
+    // 반원 지붕: 축이 앞뒤(z)로 눕고 둥근 쪽이 위
+    const lid = new THREE.CylinderGeometry(0.17, 0.17, 0.48, 12, 1, false, Math.PI / 2, Math.PI).rotateX(Math.PI / 2);
+    parts.push(piece(lid.translate(mx, 1.02, mz), '#7cc4f2'));
+    parts.push(piece(new THREE.BoxGeometry(0.2, 0.08, 0.012).translate(mx, 0.92, mz + 0.245), '#fffaf0'));
+    parts.push(piece(new THREE.BoxGeometry(0.025, 0.28, 0.025).translate(mx + 0.185, 1.02, mz - 0.05), '#5b4636'));
+    parts.push(piece(new THREE.BoxGeometry(0.02, 0.1, 0.14).translate(mx + 0.19, 1.12, mz + 0.02), '#ff6f61'));
+  }
+
   // 디딤돌
   const stones = 3;
   for (let i = 0; i < stones; i++) {

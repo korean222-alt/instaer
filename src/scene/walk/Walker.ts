@@ -30,6 +30,8 @@ export const SPEED_FAST = 4.7;
 export const STRIDE = 0.66;
 export const JUMP_V = 4.7;
 export const GRAVITY = 17;
+/** 이 높이 이하인 막힌 것은 점프로 넘을 수 있다 (울타리 0.5) */
+const LOW_OBSTACLE = 0.55;
 /** 이보다 바다 쪽으로는 못 간다 (모래사장까지는 내려갈 수 있다) */
 const MIN_LAND = 1.0;
 
@@ -82,6 +84,8 @@ export class Walker {
   room: { minX: number; maxX: number; minZ: number; maxZ: number; y: number; doorHalf: number; doorZ: number } | null = null;
   /** true 인 동안에는 가만히 있으면 바로 앉는다 (낚시할 때) */
   holdSit = false;
+  /** 빠르기 배수 (고양이 자동차를 타면 1보다 크다. 2026-11-16) */
+  speedMul = 1;
 
   private vx = 0;
   private vz = 0;
@@ -122,7 +126,7 @@ export class Walker {
       const dx = (mx * c - my * s) / m;
       const dz = (-mx * s - my * c) / m;
       const e = m * m * (3 - 2 * m);
-      const sp = SPEED_SLOW + (SPEED_FAST - SPEED_SLOW) * e;
+      const sp = (SPEED_SLOW + (SPEED_FAST - SPEED_SLOW) * e) * this.speedMul;
       tx = dx * sp;
       tz = dz * sp;
       // 가는 방향으로 부드럽게 몸을 돌린다
@@ -220,6 +224,8 @@ export class Walker {
         let pz = lz;
         for (const col of collidersNear(lx, lz, RADIUS + 0.2, this.near)) {
           if (col.lot >= 0 && !this.hasHouse(zone * ZONE_CAPACITY + col.lot + 1)) continue;
+          // 2026-11-16: 점프로 높이 뜨면 낮은 것(울타리, 벤치, 바위)은 넘어간다
+          if (col.h > 0 && col.h <= LOW_OBSTACLE && this.air > col.h * 0.55) continue;
           const dx = px - col.x;
           const dz = pz - col.z;
           if (col.r > 0) {

@@ -35,6 +35,10 @@ export interface RealtimeHooks {
   onChat?(id: string, text: string): void;
   /** 이모티콘이 왔을 때 */
   onEmote?(id: string, emote: number): void;
+  /** 같은 계정이 다른 창(다른 앱/탭)에서 접속해서 이 창의 연결이 끊겼을 때 */
+  onReplaced?(): void;
+  /** 내 번지 (같은 번지의 고양이는 다른 창에 남은 내 연결이므로 그리지 않는다) */
+  myHouseNo?(): number | null;
 }
 
 export interface Realtime {
@@ -80,6 +84,8 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
   let pending: Conn | null = null;
   let gameRoom: string | null = null;
   let fails = 0;
+  /** 다른 창에 밀려남 (이 창에서는 다시 걷기를 켤 때까지 접속하지 않는다) */
+  let replaced = false;
   let solo = false;
   let retryTimer = 0;
   let hiddenTimer = 0;
@@ -252,6 +258,11 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       if (Number.isFinite(msg.si)) sendMs = Math.max(500, Math.min(5000, msg.si));
     } else if (msg.t === 'bye') {
       if (msg.reason === 'full' || msg.reason === 'limit') fails = SOLO_AFTER_FAILS; // 바로 단독 모드
+      // 2026-11-16: 다른 창에서 같은 계정으로 들어와 밀려났으면 다시 붙지 않는다 (서로 밀어내며 내 고양이가 둘로 보이던 문제)
+      if (msg.reason === 'replaced') {
+        replaced = true;
+        hooks.onReplaced?.();
+      }
     } else if (msg.t === 'fix') {
       // 서버가 받아들이지 않은 위치(순간이동 등). 내 고양이를 서버가 아는 자리로 되돌린다.
       // 방을 옮기는 중(집 안 ↔ 섬)에는 좌표 기준이 달라서 엉뚱한 곳으로 갈 수 있으니 무시한다.
@@ -273,6 +284,10 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     visibleIds = [];
     scene.setRemotePlayers([]);
     if (!running) return;
+    if (replaced) {
+      setSolo(true);
+      return;
+    }
     if (!wasOpen) fails++;
     else fails = Math.max(0, fails - 1);
     if (fails >= SOLO_AFTER_FAILS) {
@@ -315,10 +330,12 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
   function playback() {
     const at = performance.now() - (sendMs + 350);
     const list: RemotePlayer[] = [];
+    const mine = hooks.myHouseNo?.() ?? null;
     for (const id of visibleIds) {
       const tr = tracks.get(id);
       const meta = info.get(id);
       if (!tr || !meta || !tr.pts.length) continue;
+      if (mine !== null && meta.houseNo === mine) continue;
       const pts = tr.pts;
       // 다 지난 점은 하나만 남기고 버린다
       while (pts.length > 2 && pts[1].t < at) pts.shift();
@@ -405,7 +422,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       }, HIDDEN_CLOSE_MS);
     } else {
       clearTimeout(hiddenTimer);
-      if (!conn) {
+      if (!conn && !replaced) {
         fails = 0;
         connect();
       }
@@ -418,6 +435,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       if (running) return;
       running = true;
       fails = 0;
+      replaced = false;
       latest = scene.getLocalState();
       lastSent = null;
       connect();

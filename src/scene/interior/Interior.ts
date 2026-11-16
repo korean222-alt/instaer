@@ -3,7 +3,7 @@ import { createGlowLambert, GLOW_ATTRS, type GlowShared } from '../core/glowLamb
 import type { ItemGeometries } from '../free/catalog';
 import type { DrawingStore } from '../free/drawings';
 import { FreeItems } from '../free/FreeItems';
-import { ROOM_HALF, ROOM_SIZE, roomSpace, WALL_HEIGHT, type Space } from '../free/space';
+import { ROOM_HALF, roomSpace, WALL_HEIGHT, type Space } from '../free/space';
 import type { PlacedItem } from '../free/types';
 import { fillAttr, mergeParts, paint } from '../util/geo';
 
@@ -20,7 +20,7 @@ export const ROOM_FOV = 38;
 export const DOOR_HALF = 0.8;
 export const DOOR_STEP = 0.7;
 
-/** 걷기에 쓰는 방 크기 (Walker.room) */
+/** 걷기에 쓰는 방 크기 (Walker.room). 방 크기가 바뀌면 (집 넓히기) 값이 바뀐다 */
 export const ROOM_WALK = {
   minX: -ROOM_HALF + 0.12,
   maxX: ROOM_HALF - 0.12,
@@ -32,8 +32,13 @@ export const ROOM_WALK = {
 };
 /** 들어왔을 때 서는 자리 */
 export const ROOM_START = { x: 0, z: ROOM_HALF - 1.1 };
-/** 이 선을 넘어 문턱으로 나가면 "문으로 나갔다" */
-export const ROOM_EXIT_Z = ROOM_HALF + 0.28;
+/** 이 선을 넘어 문턱으로 나가면 "문으로 나갔다" (exitZ) */
+export const ROOM_EXIT = { z: ROOM_HALF + 0.28 };
+function setRoomWalk(half: number) {
+  Object.assign(ROOM_WALK, { minX: -half + 0.12, maxX: half - 0.12, minZ: -half + 0.12, maxZ: half - 0.1, doorZ: half + DOOR_STEP });
+  ROOM_START.z = half - 1.1;
+  ROOM_EXIT.z = half + 0.28;
+}
 
 const FLOOR_STYLES = ['wood', 'tile', 'carpet'] as const;
 const WALL_STYLES = ['cream', 'stripe', 'dots'] as const;
@@ -101,6 +106,7 @@ export class Interior {
   private readonly focus = new THREE.Vector3();
   private readonly dir = new THREE.Vector3(Math.sin(ROOM_CAM_YAW) * Math.cos(CAM_PITCH), Math.sin(CAM_PITCH), Math.cos(ROOM_CAM_YAW) * Math.cos(CAM_PITCH));
   private zoom = 1;
+  private half = 0;
   private readonly c = new THREE.Color();
 
   constructor(
@@ -118,13 +124,29 @@ export class Interior {
     this.lamp.shadow.bias = -0.0008;
     this.lamp.shadow.normalBias = 0.03;
     const cam = this.lamp.shadow.camera;
-    cam.left = cam.bottom = -7.5;
-    cam.right = cam.top = 7.5;
+    cam.left = cam.bottom = -9.5;
+    cam.right = cam.top = 9.5;
     cam.near = 1;
     cam.far = 30;
     this.scene.add(this.hemi, this.lamp, this.lamp.target);
 
-    const H = ROOM_HALF;
+    this.build(ROOM_HALF);
+
+    this.free = new FreeItems(shared, geometries, drawings);
+    this.scene.add(this.free.group);
+    this.applyStyle();
+  }
+
+  /** 방 뼈대(바닥, 벽, 문턱)를 그 크기로 만든다 */
+  private build(half: number) {
+    this.half = half;
+    for (const m of this.meshes) {
+      this.scene.remove(m);
+      m.geometry.dispose();
+    }
+    this.meshes.length = 0;
+    const H = half;
+    const ROOM_SIZE = half * 2;
     const add = (geo: THREE.BufferGeometry, mat: THREE.Material, cast = false) => {
       const mesh = new THREE.Mesh(geo, mat);
       mesh.receiveShadow = true;
@@ -166,14 +188,14 @@ export class Interior {
     );
     add(shell, this.shellMat, true);
 
-    this.free = new FreeItems(shared, geometries, drawings);
-    this.scene.add(this.free.group);
     this.applyStyle();
   }
 
-  /** 집에 들어간다: 방을 그 집 것으로 채운다 */
-  open(houseNo: number, items: readonly PlacedItem[], wallpaper?: string, floor?: string) {
-    this.space = roomSpace(houseNo);
+  /** 집에 들어간다: 방을 그 집 것으로 채운다. half: 방 한 변의 절반 (기본 4, 넓힌 집 5.5) */
+  open(houseNo: number, items: readonly PlacedItem[], wallpaper?: string, floor?: string, half = ROOM_HALF) {
+    if (half !== this.half) this.build(half);
+    setRoomWalk(half);
+    this.space = roomSpace(houseNo, half);
     this.wallpaper = wallpaper || 'cream';
     this.floor = floor || 'wood';
     this.applyStyle();
@@ -217,7 +239,8 @@ export class Interior {
     const tanV = Math.tan(THREE.MathUtils.degToRad(ROOM_FOV) / 2);
     const tanH = tanV * camera.aspect;
     // 세로 화면은 가로 폭에, 가로 화면은 높이에 맞춘다
-    const dist = THREE.MathUtils.clamp(Math.max(5.3 / tanH, 4.5 / tanV), 12, 40) * this.zoom;
+    const k2 = this.half / ROOM_HALF;
+    const dist = THREE.MathUtils.clamp(Math.max((5.3 * k2) / tanH, (4.5 * k2) / tanV), 12, 52) * this.zoom;
     camera.position.copy(this.focus).addScaledVector(this.dir, dist);
     camera.lookAt(this.focus);
     if (camera.fov !== ROOM_FOV || camera.near !== 1) {
@@ -268,7 +291,8 @@ export class Interior {
         mat.needsUpdate = true;
       }
     };
-    apply(this.floorMat, this.floor, 'wood', FLOOR_STYLES, ROOM_SIZE, ROOM_SIZE, 2);
-    apply(this.wallMat, this.wallpaper, 'cream', WALL_STYLES, ROOM_SIZE, WALL_HEIGHT, 1);
+    const size = this.half * 2;
+    apply(this.floorMat, this.floor, 'wood', FLOOR_STYLES, size, size, 2);
+    apply(this.wallMat, this.wallpaper, 'cream', WALL_STYLES, size, WALL_HEIGHT, 1);
   }
 }

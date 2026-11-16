@@ -46,6 +46,8 @@ export class Placer {
   private held: PlacedItem | null = null;
   /** 손에 든 아이템이 목록에 놓여 있는가 (새로 꺼냈는데 놓을 자리가 없으면 false) */
   private placed = false;
+  /** 2026-11-16: 새로 꺼낸 아이템이 아직 자리를 못 받았다 (놓을 곳을 눌러야 그때 놓인다. 그동안은 안 보인다) */
+  private pending = false;
   private valid = true;
   private dragId = -1;
   private twistId = -1;
@@ -121,7 +123,11 @@ export class Placer {
   }
   /** 확인용 */
   get state() {
-    return { active: this.active, held: this.held ? { ...this.held } : null, valid: this.valid, placed: this.placed };
+    return { active: this.active, held: this.held ? { ...this.held } : null, valid: this.valid, placed: this.placed, pending: this.pending };
+  }
+  /** 새로 고른 아이템이 놓을 곳을 기다리는 중 */
+  get waiting() {
+    return this.active && this.pending && !!this.held;
   }
 
   /**
@@ -135,6 +141,7 @@ export class Placer {
     this.active = true;
     this.held = null;
     this.placed = false;
+    this.pending = false;
     if (typeOrId) {
       const existing = list.find((it) => it.id === typeOrId);
       if (existing) this.hold(existing);
@@ -180,7 +187,7 @@ export class Placer {
   refresh() {
     const h = this.held;
     const s = this.space;
-    if (!h || !s || !this.active) {
+    if (!h || !s || !this.active || this.pending) {
       this.group.visible = false;
       return;
     }
@@ -224,10 +231,14 @@ export class Placer {
   private hold(item: PlacedItem) {
     this.held = { ...item };
     this.placed = true;
+    this.pending = false;
     this.valid = true;
   }
 
-  /** 새 아이템을 꺼내서 빈 자리를 찾아 놓는다 */
+  /**
+   * 새 아이템을 손에 든다. 2026-11-16 사용자: 아래 줄에서 누르기만 해도 바로 놓이던 것을,
+   * 놓을 곳(바닥이나 벽)을 눌러야 그때 놓이게 바꿨다. 그 전까지는 보이지 않고 목록에도 없다.
+   */
   private add(type: string) {
     const s = this.space!;
     const def = itemDef(type);
@@ -235,43 +246,10 @@ export class Placer {
       console.warn(`[scene] startPlacing: '${type}' 은 벽에 거는 아이템이라 집 안에서만 놓을 수 있어요`);
       return;
     }
-    const item: PlacedItem = { id: newId(), type, x: 0, z: 0, rotY: 0 };
-    this.held = item;
+    this.held = { id: newId(), type, x: 0, z: def.mount === 'wall' ? -s.wall : 0, rotY: 0 };
     this.placed = false;
+    this.pending = true;
     this.valid = false;
-    if (def.mount === 'wall') {
-      // 뒤쪽 벽 가운데부터, 그다음 왼쪽 벽
-      for (let w = 0; w < 2 && !this.valid; w++) {
-        for (let i = 0; i < 14 && !this.valid; i++) {
-          const along = Math.ceil(i / 2) * 0.6 * (i % 2 ? 1 : -1);
-          if (w === 0) Object.assign(item, { x: round2(along), z: -s.wall, rotY: 0 });
-          else Object.assign(item, { x: -s.wall, z: round2(along), rotY: wrap(Math.PI / 2) });
-          this.valid = canPlace(s, item, this.list);
-        }
-      }
-      if (!this.valid) Object.assign(item, { x: 0, z: -s.wall, rotY: 0 });
-    } else {
-      // 공간 앞쪽 가운데에서 시작해 바깥으로 돌아가며 찾는다
-      const cx = (s.minX + s.maxX) / 2;
-      const cz = s.kind === 'yard' ? 1.6 : 0.6;
-      search: for (let ring = 0; ring < 12; ring++) {
-        const n = ring === 0 ? 1 : ring * 8;
-        for (let k = 0; k < n; k++) {
-          const a = (k / n) * Math.PI * 2;
-          item.x = round2(cx + Math.sin(a) * ring * 0.4);
-          item.z = round2(cz + Math.cos(a) * ring * 0.4);
-          if (canPlace(s, item, this.list)) {
-            this.valid = true;
-            break search;
-          }
-        }
-      }
-      if (!this.valid) {
-        item.x = round2(cx);
-        item.z = round2(cz);
-      }
-    }
-    if (this.valid) this.commit(true);
   }
 
   /** 지금 자리가 괜찮으면 목록에 넣고 알린다. 아니면 마지막으로 놓였던 자리로 되돌린다 */
@@ -355,7 +333,7 @@ export class Placer {
     const ray = this.ray(e);
     // 손에 든 아이템은 지금 보이는 자리로 찾는다
     const h = this.held;
-    const shown = h ? [...this.list.filter((it) => it.id !== h.id), h] : this.list;
+    const shown = h && !this.pending ? [...this.list.filter((it) => it.id !== h.id), h] : this.list;
     const hit = pickItem(this.space, shown, ray);
     if (!hit) {
       this.pointers.delete(e.pointerId);
@@ -480,14 +458,22 @@ export class Placer {
       h.x = round2(Math.max(s.minX + pad, Math.min(s.maxX - pad, f.x)));
       h.z = round2(Math.max(s.minZ + pad, Math.min(s.maxZ - pad, f.z)));
     }
+    const wasPending = this.pending;
+    this.pending = false;
     this.valid = canPlace(s, h, this.list);
     if (this.valid) this.commit(false);
     else {
-      // 놓을 수 없는 곳: 잠깐 빨갛게 보여 준 뒤 마지막으로 놓였던 자리로 돌아간다
+      // 놓을 수 없는 곳: 잠깐 빨갛게 보여 준 뒤 마지막으로 놓였던 자리로 돌아간다 (처음 놓는 것이면 다시 기다린다)
       const id = h.id;
       clearTimeout(this.revertTimer);
       this.revertTimer = setTimeout(() => {
         if (this.held?.id !== id || this.dragging || this.valid) return;
+        if (wasPending || !this.placed) {
+          this.pending = true;
+          this.refresh();
+          this.onChange?.();
+          return;
+        }
         this.commit(true);
         this.valid = true;
         this.refresh();

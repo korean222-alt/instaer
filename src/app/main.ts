@@ -271,6 +271,10 @@ const realtime = createRealtime(rtScene, {
     rtSolo = solo;
     drawStatus();
   },
+  onReplaced() {
+    toast('다른 창에서 같은 고양이로 접속했어요. 이 창에서는 혼자 걸어요', 3200);
+  },
+  myHouseNo: () => state.me?.houseNo ?? null,
   onLocalMove(s) {
     if (s.anim === 'jump' && lastAnim !== 'jump') play('jump');
     lastAnim = s.anim;

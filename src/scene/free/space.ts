@@ -32,8 +32,11 @@ export const ROOM_SIZE = 8;
 export const ROOM_HALF = ROOM_SIZE / 2;
 export const WALL_HEIGHT = 3.2;
 
-export function roomSpace(houseNo: number): Space {
-  const e = ROOM_HALF - 0.04;
+/** 2026-11-16: 넓힌 집 안 (집 넓히기) 의 한 변 절반 */
+export const ROOM_HALF_BIG = 5.5;
+
+export function roomSpace(houseNo: number, half = ROOM_HALF): Space {
+  const e = half - 0.04;
   return {
     kind: 'room',
     houseNo,
@@ -47,8 +50,8 @@ export function roomSpace(houseNo: number): Space {
     maxX: e,
     minZ: -e,
     maxZ: e,
-    wall: ROOM_HALF,
-    keepOut: [{ x: 0, z: ROOM_HALF - 0.45, hx: 0.85, hz: 0.5 }],
+    wall: half,
+    keepOut: [{ x: 0, z: half - 0.45, hx: 0.85, hz: 0.5 }],
   };
 }
 
@@ -62,10 +65,10 @@ export function yardSpace(houseNo: number, x: number, z: number, rot: number, y:
     cos: Math.cos(rot),
     sin: Math.sin(rot),
     y,
-    minX: -2.82,
-    maxX: 2.82,
-    minZ: -2.82,
-    maxZ: 2.95,
+    minX: -3.42,
+    maxX: 3.42,
+    minZ: -3.42,
+    maxZ: 3.55,
     wall: 0,
     // 집 몸체와 그 뒤 (마당 칸으로 x 1~4, y 0~2 자리)
     keepOut: [{ x: 0, z: -1.5, hx: 1.6, hz: 1.48 }],

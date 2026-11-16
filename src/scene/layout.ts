@@ -39,8 +39,10 @@ export const ZONE = {
 export const ZONE_PITCH_X = ZONE.halfX * 2 + ZONE.gap;
 export const ZONE_PITCH_Z = ZONE.halfZ * 2 + ZONE.gap;
 
-/** 마당 한 변 (YARD_SIZE 6칸 x 1) 의 절반 */
-const YARD_HALF = 3;
+/** 마당 한 변의 절반 (2026-11-16: 6m → 7.2m 로 넓혔다. world/constants 의 YARD_WORLD 와 같다) */
+export const YARD_HALF = 3.6;
+/** 우편함 자리 (마당 가운데 기준, 앞 오른쪽 대문 옆) */
+export const MAILBOX_LOCAL = { x: 1.75, z: YARD_HALF - 0.3 };
 /** 마당 가운데에서 집 가운데까지 (집은 마당 뒤쪽에 선다). world/constants.ts 의 HOUSE_OFFSET_Z 와 같은 값 */
 const HOUSE_BACK = -1.3;
 const DEG = Math.PI / 180;
@@ -159,8 +161,8 @@ function buildNeighborhoods(): Neighborhood[] {
       list.push({
         x: x + (hash01(k, 3) - 0.5) * 4,
         z: ROW_Z[row] + (hash01(k, 4) - 0.5) * 4,
-        rx: 14.8 + hash01(k, 5) * 1.0,
-        rz: 19.2 + hash01(k, 6) * 1.0,
+        rx: 16.3 + hash01(k, 5) * 1.0,
+        rz: 20.7 + hash01(k, 6) * 1.0,
         row,
       });
     });
@@ -585,7 +587,7 @@ function buildScenery(): Scenery[] {
     if (Math.hypot(x - CAVE_MOUTH.x, z - CAVE_MOUTH.z) < 2.6 + margin) return false;
     for (const hl of HILLS) if (Math.hypot(x - hl.x, z - hl.z) < hl.r + 0.6 + margin) return false;
     if (Math.hypot(x - TOWN_SQUARE.x, z - TOWN_SQUARE.z) < TOWN_SQUARE.r + 1.6 + margin) return false;
-    for (const l of LOCAL_SLOTS) if (Math.hypot(x - l.x, z - l.z) < 4.7 + margin) return false;
+    for (const l of LOCAL_SLOTS) if (Math.hypot(x - l.x, z - l.z) < 5.4 + margin) return false;
     for (const s of ZONE_PATHS) if (segDist(x, z, s) < 0.55 + margin) return false;
     return true;
   };
@@ -630,6 +632,8 @@ function buildColliders(): Collider[] {
     at(0, -e, e, 0.1, 0.5);
     const sideEnd = e * 0.38;
     for (const sx of [-e, e]) at(sx, (-e + sideEnd) / 2, 0.1, (e + sideEnd) / 2, 0.5);
+    // 우편함
+    at(MAILBOX_LOCAL.x, MAILBOX_LOCAL.z, 0.2, 0.2, 1.1);
   });
   for (const s of ZONE_SCENERY) {
     if (s.kind === 'plazaTree') circle(s.x, s.z, 1.25 * s.scale, 5.2, 2.3 * s.scale);

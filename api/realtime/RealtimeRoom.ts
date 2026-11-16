@@ -335,7 +335,7 @@ export class RealtimeRoom extends DurableObject<Env> {
     for (const me of all) {
       let near: Array<{ e: (typeof all)[number]; d: number }> = [];
       if (isGame) {
-        near = all.filter((o) => o !== me).map((e) => ({ e, d: 0 }));
+        near = all.filter((o) => o !== me && o.a.uid !== me.a.uid).map((e) => ({ e, d: 0 }));
       } else {
         if (!me.a.t) continue;
         const cx = cell(me.a.x);
@@ -343,7 +343,7 @@ export class RealtimeRoom extends DurableObject<Env> {
         for (let dx = -1; dx <= 1; dx++)
           for (let dz = -1; dz <= 1; dz++)
             for (const o of grid.get(`${cx + dx},${cz + dz}`) ?? []) {
-              if (o === me) continue;
+              if (o === me || o.a.uid === me.a.uid) continue;
               const d = (o.a.x - me.a.x) ** 2 + (o.a.z - me.a.z) ** 2;
               if (d <= R * R) near.push({ e: o, d });
             }
