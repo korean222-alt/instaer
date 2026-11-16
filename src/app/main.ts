@@ -19,7 +19,7 @@ import { boardScreen, friendsScreen, newsUnseen } from './screens/social';
 import { mailScreen } from './screens/mail';
 import { createWalkQuests } from './play/walkQuests';
 import { showArt } from './ui/artView';
-import { debugPlaceWalker, houseSlot } from '../scene';
+import { debugPlaceWalker, houseSlot, mailboxPos } from '../scene';
 import { CURRENCY, type FishWhere } from '../shared/economy';
 import { loadMyDrawings, setArtCenter, syncArt } from './art';
 import { startArcade } from './play/arcade';
@@ -399,7 +399,7 @@ ctl.arcade = () => {
 };
 ctl.fishing = () => fishHere(explore.fishSpot() ?? 'pond');
 // 확인용 (콘솔에서 __catIsland.realtime.debug())
-(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state, ctl, place: (x: number, z: number) => debugPlaceWalker(scene, x, z), moveTo: (x: number, z: number) => scene.setLocalPosition(x, z), local: () => scene.getLocalState(), npcs: () => townNpcs(state.unlockedZones), ponds: () => pondsOf(state.unlockedZones) };
+(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state, ctl, place: (x: number, z: number) => debugPlaceWalker(scene, x, z), moveTo: (x: number, z: number) => scene.setLocalPosition(x, z), local: () => scene.getLocalState(), npcs: () => townNpcs(state.unlockedZones), ponds: () => pondsOf(state.unlockedZones), mailbox: (no: number) => mailboxPos(no) };
 
 $('btn-walk').addEventListener('click', () => explore.setWalking(true));
 $('btn-walk-end').addEventListener('click', () => explore.setWalking(false));

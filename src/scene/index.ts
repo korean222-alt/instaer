@@ -347,6 +347,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   let riding: 'drive' | 'passenger' | null = null;
   let rideDriver: string | null = null;
   const myCar = new CarLayer(atmosphere.shared, 1);
+  remotes.localCar = () => (riding === 'drive' && walking && inside === null && !inCave ? { x: walker.x, z: walker.z, yaw: walker.yaw, y: walker.groundY } : null);
   let remoteTapCb: ((id: string) => void) | null = null;
   let dance: string | null = null;
   let danceT = 0;

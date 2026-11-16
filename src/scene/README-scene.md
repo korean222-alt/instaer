@@ -19,6 +19,8 @@
 
 | 2026-11-15 (Opus) 소통: 춤(`setDance`, `RemotePlayer.dance`, `cat/dance.ts` 로 높이/방향/크기/제자리 걸음만 움직임), 앉기(`setSitting`), 말풍선 자리(`catScreenPos`), 다른 유저 누르기(`onRemoteTap`), 마을 광장(`TOWN_SQUARE`, `props.townBoard`, `props.stall`, 광장 바닥은 mapField plaza 로 칠함), 이장 옷(`ROLE_PARTS.mayor`), 길 찾기 비용(`walkCost`) | 완료 (앱도 붙임). 춤은 걷거나 점프하면 멈춰 보인다. 말풍선은 앱이 DOM 으로 그린다 |
 
+| 2026-11-16 (Opus): 마당 7.2m(`YARD_HALF` 3.6, 동네 타원 +1.5m), 우편함(`buildYardGeometry`, `mailboxPos`, 충돌), 점프로 낮은 것 넘기(`Walker` `LOW_OBSTACLE`), 고양이 자동차(`car/CatCar.ts`, `setRiding`, `RemotePlayer.car/rideWith`, 내 차/남의 차 뒷자리), 눌러야 놓이는 배치(`Placer.pending`), 꾸미는 동안 조이스틱 멈춤, 집 안 크기 둘(`enterHouse(..., big)`, `ROOM_HALF_BIG` 5.5), 지붕 뒷면 그림(`setRoofArt` 의 `backId`), 그림 캔버스(`easel`), 그림 누르기(`onArtTap`), 지도 회전용 `getViewYaw`, 화가/우체부 옷과 집 간판 | 완료 (앱도 붙임) |
+
 **2026-11-15 추가 메모**
 
 - 동굴은 집 안처럼 섬과 따로 떨어진 장면이에요(좌표: 가운데 (0,0), 폭 ±7.2, 깊이 -9.5~7, 앞쪽이 나가는 길). 걷기는 `Walker.room` 으로 막고 바위/광석은 원으로 막아요. 횃불 점광원 3개, 그림자 없음.

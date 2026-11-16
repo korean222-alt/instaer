@@ -192,6 +192,8 @@ export class RemotePlayers {
   private readonly fishCand: Rec[] = [];
   /** 다른 유저 자동차 (fishing support 의 shared 로 만든다) */
   readonly cars: CarLayer | null;
+  /** 내가 운전 중이면 내 차 자리 (내 차 뒷자리에 탄 유저를 붙인다) */
+  localCar: (() => { x: number; z: number; yaw: number; y: number } | null) | null = null;
 
   constructor(model: CatModel, fishing?: RemoteFishingSupport) {
     this.fishSupport = fishing ?? null;
@@ -330,8 +332,11 @@ export class RemotePlayers {
       // 남의 차 뒷자리: 운전자 차의 뒷자리에 붙인다 (운전자가 안 보이면 받은 자리 그대로)
       let seatY = 0;
       if (r.car) {
-        const drv = r.car === 2 && r.rideWith ? this.byId.get(r.rideWith) : null;
-        if (drv && drv.used) {
+        const drv0 = r.car === 2 && r.rideWith ? this.byId.get(r.rideWith) : null;
+        // 운전자가 내 주변 목록에 없으면 내 차 뒷자리다 (나는 내 목록에 없다)
+        const mine = r.car === 2 && !drv0 && this.localCar ? this.localCar() : null;
+        const drv = drv0 && drv0.used ? drv0 : mine ? { x: mine.x, z: mine.z, yaw: mine.yaw, groundY: mine.y, used: true } : null;
+        if (drv) {
           const off = seatOffset(drv.yaw, true);
           r.x = drv.x + off.dx;
           r.z = drv.z + off.dz;
