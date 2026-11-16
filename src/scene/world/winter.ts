@@ -32,36 +32,6 @@ const BAUBLE_COLORS = ['#e8413f', '#f4c95d', '#4aa8ff', '#e9e9f2', '#c45bd8'];
 const rotX = (x: number, z: number, rot: number) => x * Math.cos(rot) + z * Math.sin(rot);
 const rotZ = (x: number, z: number, rot: number) => -x * Math.sin(rot) + z * Math.cos(rot);
 
-/** 잎 덩어리들(타원구)을 가운데 축에서 바깥으로 본 겉면까지의 거리. 안 닿으면 -1 */
-function blobExit(blobs: ReadonlyArray<[number, number, number, number]>, squash: number, y: number, dx: number, dz: number): number {
-  let best = -1;
-  for (const [r, cx, cy, cz] of blobs) {
-    const dy = (y - cy) / (r * squash);
-    if (Math.abs(dy) >= 1) continue;
-    const rr = r * Math.sqrt(1 - dy * dy);
-    // 축 위의 점 (0, y, 0) 에서 (dx, dz) 쪽으로: |(-cx, -cz) + t (dx, dz)| = rr
-    const ox = -cx;
-    const oz = -cz;
-    const b = ox * dx + oz * dz;
-    const c = ox * ox + oz * oz - rr * rr;
-    const disc = b * b - c;
-    if (disc < 0) continue;
-    const t = -b + Math.sqrt(disc);
-    if (t > best) best = t;
-  }
-  return best;
-}
-
-/** 층층이 쌓인 원뿔 나무의 높이 y 에서의 반지름 (가장 넓은 층). 없으면 -1 */
-function coneExit(tiers: ReadonlyArray<[number, number, number]>, y: number): number {
-  let best = -1;
-  for (const [r, h, base] of tiers) {
-    if (y < base || y > base + h) continue;
-    best = Math.max(best, r * (1 - (y - base) / h));
-  }
-  return best;
-}
-
 interface LedOut {
   pos: number[];
   col: number[];
@@ -74,35 +44,6 @@ function led(out: LedOut, x: number, y: number, z: number, color: string, phase:
   out.pos.push(x, y, z);
   out.col.push(c.r, c.g, c.b);
   out.phase.push(phase);
-}
-
-/** 나무 둘레를 나선으로 감는 전구 줄. exit(y, dx, dz) 는 그 높이와 방향에서 잎 겉면까지의 거리 */
-function garland(
-  out: LedOut,
-  x: number,
-  z: number,
-  scale: number,
-  yBot: number,
-  yTop: number,
-  turns: number,
-  n: number,
-  exit: (y: number, dx: number, dz: number) => number,
-  palette: readonly string[],
-  seed: number,
-) {
-  const rnd = mulberry32(seed);
-  const a0 = rnd() * Math.PI * 2;
-  for (let k = 0; k < n; k++) {
-    const t = k / (n - 1);
-    const y = yTop - t * (yTop - yBot);
-    const a = a0 + t * turns * Math.PI * 2;
-    const dx = Math.cos(a);
-    const dz = Math.sin(a);
-    const d = exit(y, dx, dz);
-    if (d <= 0) continue;
-    const rr = (d + 0.06) * scale;
-    led(out, x + dx * rr, GROUND_Y + y * scale, z + dz * rr, palette[k % palette.length], rnd());
-  }
 }
 
 /** 구역 하나의 겨울 장식과 LED (모든 구역이 같은 배치를 쓴다) */
@@ -143,43 +84,75 @@ export function buildWinterTemplate(): WinterTemplate {
     }
   });
 
-  // ── 나무 ──
-  const baubleRnd = mulberry32(2025);
-  const addBaubles = (x: number, z: number, scale: number, blobs: ReadonlyArray<[number, number, number, number]> | null, tiers: ReadonlyArray<[number, number, number]> | null, squash: number, yBot: number, yTop: number, n: number) => {
-    for (let k = 0; k < n; k++) {
-      const y = yBot + baubleRnd() * (yTop - yBot);
-      const a = baubleRnd() * Math.PI * 2;
-      const dx = Math.cos(a);
-      const dz = Math.sin(a);
-      const d = blobs ? blobExit(blobs, squash, y, dx, dz) : coneExit(tiers!, y);
-      if (d <= 0) continue;
-      const rr = (d - 0.02) * scale;
-      parts.push(...props.bauble(x + dx * rr, GROUND_Y + y * scale - 0.12 * scale, z + dz * rr, 0.17 * scale, BAUBLE_COLORS[k % BAUBLE_COLORS.length]));
+  // ── 나무 (2026-11-16 다시: 겨울에는 모두 눈 덮인 전나무. 전구와 장식은 그 층 모양에 맞춰 가지런히) ──
+  /** 나선을 따라 같은 간격(spacing)으로 전구를 둔다 */
+  const garlandEven = (tiers: readonly props.FirTier[], x: number, z: number, sc: number, yBot: number, yTop: number, turns: number, spacing: number, palette: readonly string[], seed: number) => {
+    const rnd = mulberry32(seed);
+    const a0 = rnd() * Math.PI * 2;
+    let acc = spacing;
+    let px = 0;
+    let py = 0;
+    let pz = 0;
+    let k = 0;
+    const N = 600;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const y = yTop - t * (yTop - yBot);
+      const rr = props.firRadius(tiers, y);
+      if (rr <= 0) continue;
+      const a = a0 + t * turns * Math.PI * 2;
+      const qx = Math.cos(a) * (rr + 0.1);
+      const qz = Math.sin(a) * (rr + 0.1);
+      if (i > 0) acc += Math.hypot(qx - px, y - py, qz - pz);
+      px = qx;
+      py = y;
+      pz = qz;
+      if (acc < spacing) continue;
+      acc = 0;
+      led(out, x + qx * sc, GROUND_Y + y * sc, z + qz * sc, palette[k % palette.length], rnd());
+      k++;
     }
+  };
+  /** 층마다 아랫단(눈 모자 밑 초록 치마)에 장식 공을 같은 간격으로 단다 */
+  const tierBaubles = (tiers: readonly props.FirTier[], x: number, z: number, sc: number, gap: number, size: number, seed: number) => {
+    const rnd = mulberry32(seed);
+    tiers.forEach((t, ti) => {
+      if (ti === tiers.length - 1) return;
+      const y = t[2] + t[1] * 0.16;
+      const rr = props.firTierRadius(t, y);
+      const n = Math.max(3, Math.round((Math.PI * 2 * rr) / gap));
+      const a0 = rnd() * Math.PI * 2;
+      for (let k = 0; k < n; k++) {
+        const a = a0 + (k / n) * Math.PI * 2;
+        parts.push(...props.bauble(x + Math.cos(a) * rr * sc, GROUND_Y + (y - 0.12) * sc, z + Math.sin(a) * rr * sc, size * sc, BAUBLE_COLORS[(k + ti) % BAUBLE_COLORS.length]));
+      }
+    });
   };
   const addStar = (x: number, y: number, z: number, size: number) => {
     const g = props.star(size);
     g.translate(x, GROUND_Y + y, z);
     parts.push(g);
   };
+  const XMAS = [WARM, '#ff4b4b', WARM, '#ffd23f', WARM, '#3ee07a', WARM, '#4aa8ff'];
 
   for (const s of ZONE_SCENERY) {
     const sc = s.scale;
     if (s.kind === 'bigTree') {
-      const ex = (y: number, dx: number, dz: number) => blobExit(props.BIG_TREE_LEAVES, props.BIG_TREE_SQUASH, y, dx, dz);
-      garland(out, s.x, s.z, sc, 3.0, 6.4, 3.2, 64, ex, LED_COLORS, s.seed + 11);
-      addBaubles(s.x, s.z, sc, props.BIG_TREE_LEAVES, null, props.BIG_TREE_SQUASH, 3.2, 6.2, 22);
-      addStar(s.x, 6.95 * sc, s.z, 0.55 * sc);
+      const top = props.firTop(props.BIG_FIR);
+      garlandEven(props.BIG_FIR, s.x, s.z, sc, 1.5, top - 0.5, 4, 0.42, XMAS, s.seed + 11);
+      tierBaubles(props.BIG_FIR, s.x, s.z, sc, 1.15, 0.17, s.seed + 12);
+      addStar(s.x, (top + 0.35) * sc, s.z, 0.5 * sc);
     } else if (s.kind === 'plazaTree') {
-      const ex = (y: number, dx: number, dz: number) => blobExit(props.PLAZA_TREE_LEAVES, props.PLAZA_TREE_SQUASH, y, dx, dz);
-      garland(out, s.x, s.z, sc, 2.3, 4.9, 2.6, 40, ex, [WARM, '#ff4b4b'], s.seed + 12);
-      addStar(s.x, 5.4 * sc, s.z, 0.42 * sc);
+      const top = props.firTop(props.PLAZA_FIR);
+      garlandEven(props.PLAZA_FIR, s.x, s.z, sc, 1.15, top - 0.35, 3, 0.4, XMAS, s.seed + 13);
+      tierBaubles(props.PLAZA_FIR, s.x, s.z, sc, 1.0, 0.13, s.seed + 14);
+      addStar(s.x, (top + 0.28) * sc, s.z, 0.38 * sc);
     } else if (s.kind === 'townTree') {
       const tiers = props.TOWN_TREE_TIERS;
-      garland(out, s.x, s.z, sc, 1.0, props.TOWN_TREE_TOP - 0.3, 6, 120, (y) => coneExit(tiers, y), LED_COLORS, 77);
-      garland(out, s.x, s.z, sc, 1.2, props.TOWN_TREE_TOP - 0.5, -4, 70, (y) => coneExit(tiers, y), [WARM], 78);
-      addBaubles(s.x, s.z, sc, null, tiers, 1, 1.2, 6.2, 34);
-      addStar(s.x, props.TOWN_TREE_TOP + 0.45, s.z, 0.7);
+      const top = props.firTop(tiers);
+      garlandEven(tiers, s.x, s.z, sc, 1.1, top - 0.45, 5, 0.38, XMAS, 77);
+      tierBaubles(tiers, s.x, s.z, sc, 1.0, 0.18, 78);
+      addStar(s.x, top + 0.45, s.z, 0.65);
       // 트리 밑 선물 상자
       const gr = mulberry32(99);
       for (let k = 0; k < 7; k++) {
@@ -193,20 +166,13 @@ export function buildWinterTemplate(): WinterTemplate {
         }
         parts.push(...g);
       }
-    } else if (s.kind === 'coneTree') {
-      const tiers = props.coneTreeTiers(s.seed);
-      const top = tiers[2][2] + tiers[2][1];
-      garland(out, s.x, s.z, sc, tiers[0][2] + 0.1, top - 0.25, 2.4, 14, (y) => coneExit(tiers, y), hash01(s.seed, 3) < 0.5 ? LED_COLORS : [WARM], s.seed);
-    } else if (s.kind === 'roundTree') {
-      // 동글 나무는 반만 (전부 두르면 너무 번쩍인다)
-      if (hash01(s.seed, 4) < 0.5) continue;
-      const { h, r } = props.roundTreeShape(s.seed);
-      const blobs: Array<[number, number, number, number]> = [
-        [r, 0, h + r * 0.62, 0],
-        [r * 0.66, r * 0.55, h + r * 0.35, r * 0.2],
-        [r * 0.6, -r * 0.5, h + r * 0.45, -r * 0.25],
-      ];
-      garland(out, s.x, s.z, sc, h + 0.15, h + r * 1.3, 1.6, 10, (y, dx, dz) => blobExit(blobs, 0.9, y, dx, dz), LED_COLORS, s.seed);
+    } else if (s.kind === 'coneTree' || s.kind === 'roundTree') {
+      // 작은 나무는 몇 그루만, 따뜻한 흰색 한 줄 (전부 두르면 번쩍여서 지저분하다)
+      if (hash01(s.seed, 4) > (s.kind === 'coneTree' ? 0.45 : 0.3)) continue;
+      const tiers = s.kind === 'coneTree' ? props.coneFirTiers(s.seed) : props.roundFirTiers(s.seed);
+      const top = props.firTop(tiers);
+      const colorful = hash01(s.seed, 3) < 0.35;
+      garlandEven(tiers, s.x, s.z, sc, tiers[0][2] + 0.12, top - 0.2, 2, 0.32, colorful ? LED_COLORS : [WARM], s.seed);
     }
   }
 

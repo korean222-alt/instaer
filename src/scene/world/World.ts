@@ -30,9 +30,9 @@ import { createSea } from './sea';
 import { buildTerrainGeometry, createTerrainMaterial } from './terrain';
 import { buildWinterTemplate, createLedMaterial, type WinterTemplate } from './winter';
 
-/** 섬 장식 꼭짓점 값: 겨울에 나무(aSnow=1)는 낮에도 눈이 쌓인다 */
+const WINTER_TREES = new Set(['plazaTree', 'bigTree', 'roundTree', 'coneTree', 'townTree']);
+/** 섬 장식 꼭짓점 값. aSnow: 0 이면 겨울 밤에 위쪽에 눈, -1 이면 눈 없음(물, 눈을 모양으로 만든 겨울 나무) */
 const DECOR_ATTRS = { ...GLOW_ATTRS, aSnow: 1 } as const;
-const TREE_KINDS = new Set(['plazaTree', 'bigTree', 'roundTree', 'coneTree', 'townTree']);
 
 /**
  * 섬 전체(군도)를 만든다: 구역별 땅, 장식, 다리, 항구, 잠긴 구역의 구름, 바다.
@@ -51,7 +51,8 @@ interface DecorTemplate {
   fireflies: Array<[number, number, number]>;
 }
 
-function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
+/** winter: 나무를 눈 덮인 전나무로 (2026-11-16) */
+function buildDecorTemplate(withHarbor: boolean, winter = false): DecorTemplate {
   const tall: THREE.BufferGeometry[] = [];
   const low: THREE.BufferGeometry[] = [];
   const lanterns: Array<[number, number]> = [];
@@ -62,16 +63,16 @@ function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
     let list = tall;
     switch (s.kind) {
       case 'plazaTree':
-        pieces = props.plazaTree();
+        pieces = winter ? props.plazaFir() : props.plazaTree();
         break;
       case 'bigTree':
-        pieces = props.bigTree();
+        pieces = winter ? props.bigFir() : props.bigTree();
         break;
       case 'roundTree':
-        pieces = props.roundTree(s.seed);
+        pieces = winter ? props.frostedFir(props.roundFirTiers(s.seed), s.seed) : props.roundTree(s.seed);
         break;
       case 'coneTree':
-        pieces = props.coneTree(s.seed);
+        pieces = winter ? props.frostedFir(props.coneFirTiers(s.seed), s.seed) : props.coneTree(s.seed);
         break;
       case 'bench':
         pieces = props.plazaBench();
@@ -107,7 +108,7 @@ function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
         pieces = props.stall(s.seed);
         break;
       case 'townTree':
-        pieces = props.townTree();
+        pieces = winter ? props.townFir() : props.townTree();
         break;
       case 'tuft':
         pieces = props.tuft(s.seed);
@@ -118,7 +119,8 @@ function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
         list = low;
         if (rnd() < 0.3) fireflies.push([s.x, GROUND_Y + 0.7 + rnd() * 1.2, s.z]);
     }
-    if (TREE_KINDS.has(s.kind)) for (const g of pieces) fillAttr(g, 'aSnow', [1]);
+    // 겨울 나무는 눈을 모양으로 만들었으므로 재질의 얼룩 눈을 끈다
+    if (winter && WINTER_TREES.has(s.kind)) for (const g of pieces) fillAttr(g, 'aSnow', [-1]);
     if (s.kind === 'hill') {
       // 언덕은 옆으로 넓고 키는 덜 크게
       for (const g of pieces) g.scale(s.scale, s.scale * 0.85, s.scale);
@@ -162,7 +164,7 @@ export class World {
   private readonly cloudMaterial: THREE.MeshLambertMaterial;
   private readonly sea: THREE.Mesh;
   private readonly zonesGroup = new THREE.Group();
-  private readonly templates = new Map<boolean, DecorTemplate>();
+  private readonly templates = new Map<string, DecorTemplate>();
   private readonly pools = new GlowPools(1200);
   private readonly fireflyLayers: Fireflies[] = [];
   private bridgeGeometry: THREE.BufferGeometry | null = null;
@@ -283,6 +285,7 @@ export class World {
       }
       const tpl = this.template(zone === 0);
       const decor = new THREE.Mesh(tpl.geometry, this.decorMaterial);
+      decor.userData.harbor = zone === 0;
       decor.position.set(c.x, 0, c.z);
       decor.castShadow = true;
       decor.receiveShadow = true;
@@ -353,6 +356,8 @@ export class World {
     }
     for (const m of this.winterDecor) m.visible = on;
     for (const p of this.winterLeds) p.visible = on;
+    // 나무를 겨울 전나무 / 원래 나무로 바꾼다 (장식 덩어리 모양만 갈아 끼운다)
+    for (const d of this.tallDecor) d.geometry = this.template(!!d.userData.harbor, on).geometry;
   }
 
   private addWinter(zg: THREE.Group, c: { x: number; z: number }) {
@@ -426,11 +431,12 @@ export class World {
     this.cloudGeometry?.dispose();
   }
 
-  private template(withHarbor: boolean): DecorTemplate {
-    let t = this.templates.get(withHarbor);
+  private template(withHarbor: boolean, winter = this.winter): DecorTemplate {
+    const key = `${withHarbor}-${winter}`;
+    let t = this.templates.get(key);
     if (!t) {
-      t = buildDecorTemplate(withHarbor);
-      this.templates.set(withHarbor, t);
+      t = buildDecorTemplate(withHarbor, winter);
+      this.templates.set(key, t);
     }
     return t;
   }

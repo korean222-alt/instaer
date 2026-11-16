@@ -742,8 +742,6 @@ export const TOWN_TREE_TOP = 5.5 + 1.4;
 /** 마을 광장 가운데 큰 전나무 (겨울에는 장식과 전구가 붙는다) */
 export function townTree(): Pieces {
   const out: Pieces = [];
-  const trunk = new THREE.CylinderGeometry(0.32, 0.48, 1.4, 10).translate(0, 0.7, 0);
-  out.push(pg(trunk, '#7c5235', '#a57a4f'));
   // 화단 테두리
   const ring = new THREE.TorusGeometry(1.55, 0.2, 8, 26).rotateX(Math.PI / 2);
   ring.scale(1, 0.85, 1);
@@ -754,6 +752,18 @@ export function townTree(): Pieces {
     c.translate(0, y + h / 2, 0);
     out.push(pg(c, '#3f8f5c', '#7cc77e'));
   }
+  return out;
+}
+
+/** 광장 큰 전나무 (겨울): 눈 모자를 쓴 같은 크기의 나무 */
+export function townFir(): Pieces {
+  const out: Pieces = [];
+  const ring = new THREE.TorusGeometry(1.55, 0.2, 8, 26).rotateX(Math.PI / 2);
+  ring.scale(1, 0.85, 1);
+  ring.translate(0, 0.12, 0);
+  out.push(p(ring, '#e4d9c6'));
+  out.push(p(new THREE.CylinderGeometry(1.55, 1.55, 0.14, 24).translate(0, 0.07, 0), '#f2f6fc'));
+  out.push(...frostedFir(TOWN_TREE_TIERS, 21, 1.2, 18));
   return out;
 }
 
@@ -788,5 +798,141 @@ export function gift(w: number, h: number, d: number, box: string, ribbon: strin
   const bow = new THREE.TorusGeometry(w * 0.14, w * 0.05, 5, 10);
   out.push(p(bow.clone().rotateY(Math.PI / 4).translate(0, h + w * 0.1, 0), ribbon));
   out.push(p(bow.rotateY(-Math.PI / 4).translate(0, h + w * 0.1, 0), ribbon));
+  return out;
+}
+
+// ───────────── 겨울 나무 (2026-11-16 다시: 눈이 얼룩진 동글 나무 대신 눈 덮인 전나무) ─────────────
+
+/** 전나무 한 층 [반지름, 높이, 바닥 y] */
+export type FirTier = readonly [number, number, number];
+
+/** 전나무 층의 옆 모양: 바닥 높이에서의 비율 t(0~1) → 반지름 비율. 가운데가 오목해서 가지가 처진 것처럼 보인다 */
+const FIR_PROFILE: ReadonlyArray<readonly [number, number]> = [
+  [0, 1],
+  [0.3, 0.78],
+  [0.62, 0.45],
+  [1, 0],
+];
+/** 높이 y 에서 그 층 겉면까지의 반지름 (층 밖이면 -1) */
+export function firTierRadius(t: FirTier, y: number): number {
+  const [r, h, base] = t;
+  const u = (y - base) / h;
+  if (u < 0 || u > 1) return -1;
+  for (let i = 1; i < FIR_PROFILE.length; i++) {
+    const [u1, k1] = FIR_PROFILE[i];
+    if (u <= u1) {
+      const [u0, k0] = FIR_PROFILE[i - 1];
+      return r * (k0 + ((u - u0) / (u1 - u0)) * (k1 - k0));
+    }
+  }
+  return 0;
+}
+/** 여러 층 중 가장 넓은 겉면 */
+export const firRadius = (tiers: readonly FirTier[], y: number) => tiers.reduce((m, t) => Math.max(m, firTierRadius(t, y)), -1);
+
+/** 동네 큰 나무(겨울): 다섯 층 크리스마스 전나무 */
+export const BIG_FIR: readonly FirTier[] = [
+  [2.5, 2.0, 1.3],
+  [2.1, 1.9, 2.4],
+  [1.7, 1.7, 3.5],
+  [1.25, 1.5, 4.5],
+  [0.8, 1.3, 5.4],
+];
+/** 광장 귤나무 자리(겨울): 네 층 전나무 */
+export const PLAZA_FIR: readonly FirTier[] = [
+  [1.7, 1.6, 1.0],
+  [1.35, 1.4, 1.9],
+  [1.0, 1.2, 2.7],
+  [0.6, 1.0, 3.4],
+];
+export const firTop = (tiers: readonly FirTier[]) => tiers.reduce((m, [, h, b]) => Math.max(m, b + h), 0);
+
+/** 동글 나무 자리(겨울): 낮고 통통한 전나무 */
+export function roundFirTiers(seed: number): FirTier[] {
+  const { h, r } = roundTreeShape(seed);
+  const b = h * 0.5;
+  return [
+    [r * 1.12, r * 1.05, b],
+    [r * 0.86, r * 0.95, b + r * 0.62],
+    [r * 0.56, r * 0.8, b + r * 1.18],
+  ];
+}
+/** 뾰족 나무 자리(겨울): 조금 더 날씬하게 네 층 */
+export function coneFirTiers(seed: number): FirTier[] {
+  const [a, b, c] = coneTreeTiers(seed);
+  return [
+    [a[0] * 1.05, a[1] * 1.05, a[2]],
+    [b[0] * 1.02, b[1], b[2]],
+    [c[0], c[1], c[2]],
+    [c[0] * 0.55, c[1] * 0.7, c[2] + c[1] * 0.62],
+  ];
+}
+
+/**
+ * 눈 덮인 전나무. 층마다 초록 치마(위는 밝게) 위에 눈 모자를 씌우고, 모자 끝은 물결치게 흘러내린다.
+ * 눈은 모양으로 만들어서 낮에도 밤에도 같다 (재질의 얼룩 눈은 쓰지 않는다: aSnow = -1 은 World 가 붙인다).
+ */
+export function frostedFir(tiers: readonly FirTier[], seed: number, trunkH?: number, seg = 10): Pieces {
+  const rnd = mulberry32(seed * 7 + 3);
+  const out: Pieces = [];
+  const base0 = tiers[0][2];
+  const th = trunkH ?? base0 + tiers[0][1] * 0.25;
+  const tr = Math.max(0.09, tiers[0][0] * 0.11);
+  const trunk = new THREE.CylinderGeometry(tr * 0.75, tr, th, 7).translate(0, th / 2, 0);
+  out.push(pg(trunk, '#7c5235', '#a57a4f'));
+  tiers.forEach((t, i) => {
+    const [r, h, base] = t;
+    const prof = [new THREE.Vector2(r * 0.42, base + h * 0.1), ...FIR_PROFILE.map(([u, k]) => new THREE.Vector2(Math.max(0.001, r * k), base + u * h))];
+    const skirt = new THREE.LatheGeometry(prof, seg, rnd() * Math.PI);
+    skirt.computeVertexNormals();
+    out.push(pg(skirt, i === 0 ? '#2f7a52' : '#357f55', '#6cbf78'));
+    // 눈 모자: 층 위쪽 60% 를 덮고 아래 끝이 둥글게 말린다
+    const lip = 0.05 + r * 0.04;
+    const cap = [
+      new THREE.Vector2(r * 0.6, base + h * 0.33),
+      new THREE.Vector2(r * 0.7 + lip, base + h * 0.35),
+      new THREE.Vector2(r * 0.69 + lip, base + h * 0.42),
+      new THREE.Vector2(r * 0.47 + lip * 0.8, base + h * 0.62 + 0.02),
+      new THREE.Vector2(r * 0.18 + 0.03, base + h * 0.88 + 0.03),
+      new THREE.Vector2(0.001, base + h + 0.05),
+    ];
+    const snow = new THREE.LatheGeometry(cap, seg + 4, rnd() * Math.PI);
+    // 아래 끝을 물결치게 (눈이 흘러내린 자국)
+    const pos = snow.attributes.position;
+    const phase = rnd() * 6.28;
+    const waves = 4 + Math.floor(rnd() * 3);
+    for (let k = 0; k < pos.count; k++) {
+      const y = pos.getY(k);
+      if (y > base + h * 0.46) continue;
+      const a = Math.atan2(pos.getZ(k), pos.getX(k));
+      pos.setY(k, y - h * 0.09 * (0.5 + 0.5 * Math.sin(a * waves + phase)));
+    }
+    snow.computeVertexNormals();
+    out.push(pg(snow, '#dfe8f6', '#ffffff'));
+  });
+  // 꼭대기 눈 한 덩이
+  const [r, h, base] = tiers[tiers.length - 1];
+  void r;
+  out.push(p(new THREE.SphereGeometry(0.06 + h * 0.06, 8, 6).translate(0, base + h + 0.02, 0), '#ffffff'));
+  return out;
+}
+
+/** 광장 귤나무 자리의 겨울 전나무 (화단 테두리 포함) */
+export function plazaFir(): Pieces {
+  const out: Pieces = [];
+  const ring = new THREE.TorusGeometry(1.05, 0.2, 8, 22).rotateX(Math.PI / 2);
+  ring.scale(1, 0.9, 1);
+  ring.translate(0, 0.12, 0);
+  out.push(p(ring, '#e4d9c6'));
+  out.push(p(new THREE.CylinderGeometry(1.05, 1.05, 0.14, 20).translate(0, 0.07, 0), '#f2f6fc'));
+  out.push(...frostedFir(PLAZA_FIR, 5, 1.2, 14));
+  return out;
+}
+/** 동네 큰 나무 자리의 겨울 전나무 (뿌리 쪽 눈 둔덕) */
+export function bigFir(): Pieces {
+  const out: Pieces = [];
+  const mound = new THREE.SphereGeometry(1.4, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.22, 1);
+  out.push(p(mound, '#f2f6fc'));
+  out.push(...frostedFir(BIG_FIR, 9, 1.6, 16));
   return out;
 }
