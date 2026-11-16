@@ -506,7 +506,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       if (inside !== d.houseNo) return;
       decor = d;
       pinFor(d);
-      scene.enterHouse(d.houseNo, d.room, d.wallpaper, d.floor);
+      scene.enterHouse(d.houseNo, d.room, d.wallpaper, d.floor, !!d.big);
     },
     setWalking(on) {
       if (walking === on) return;
@@ -552,14 +552,14 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       let d: HouseDecor;
       try {
         const res = await fetchDecor(houseNo);
-        d = { houseNo, yard: res.yard, room: res.room, wallpaper: res.wallpaper, floor: res.floor, roofArt: res.roofArt };
+        d = { houseNo, yard: res.yard, room: res.room, wallpaper: res.wallpaper, floor: res.floor, roofArt: res.roofArt, roofArtBack: res.roofArtBack ?? null, big: !!res.big };
       } catch {
         d = { houseNo, yard: state.yards.get(houseNo) ?? [], room: [], wallpaper: 'cream', floor: 'wood', roofArt: null };
       }
       inside = houseNo;
       decor = d;
       pinFor(d);
-      scene.enterHouse(houseNo, d.room, d.wallpaper, d.floor);
+      scene.enterHouse(houseNo, d.room, d.wallpaper, d.floor, !!d.big);
       play('open');
       realtime.joinRoom(`house-${houseNo}`);
       hooks.onInside(houseNo);

@@ -19,6 +19,8 @@ export interface AppState {
   yards: Map<number, PlacedItem[]>;
   /** 번지 → 지붕 그림 id */
   roofArt: Map<number, string>;
+  /** 번지 → 지붕 뒷면 그림 id (2026-11-16) */
+  roofArtBack: Map<number, string>;
   /** 내 지갑 (입주 전이나 서버가 안 되면 null) */
   wallet: WalletView | null;
   /** 지금 꾸미는 중인 마당 번지 (마을을 새로 받아도 이 집 마당은 덮어쓰지 않는다) */
@@ -51,6 +53,7 @@ export function initState(scene: IslandScene): AppState {
     houses: new Map(),
     yards: new Map(),
     roofArt: new Map(),
+    roofArtBack: new Map(),
     wallet: null,
     editingYard: null,
     todayTop: null,
@@ -90,11 +93,12 @@ export function pushHousesToScene(immediate = false) {
 
 /** 내 지붕 그림을 이 화면에서 바꾼 적이 있으면 (서버 캐시보다 새롭다) */
 let myRoofKnown = false;
-export function setMyRoofArt(id: string | null) {
+export function setMyRoofArt(id: string | null, back = false) {
   if (!state.me) return;
   myRoofKnown = true;
-  if (id) state.roofArt.set(state.me.houseNo, id);
-  else state.roofArt.delete(state.me.houseNo);
+  const map = back ? state.roofArtBack : state.roofArt;
+  if (id) map.set(state.me.houseNo, id);
+  else map.delete(state.me.houseNo);
   emit();
 }
 
@@ -104,8 +108,10 @@ export function applyVillage(v: Village) {
   if (state.me) state.houses.set(state.me.houseNo, state.me);
   const prevYards = state.yards;
   const prevRoof = state.roofArt;
+  const prevBack = state.roofArtBack;
   state.yards = new Map(Object.entries(v.yards ?? {}).map(([k, items]) => [Number(k), items]));
   state.roofArt = new Map(Object.entries(v.roofArt ?? {}).map(([k, id]) => [Number(k), id]));
+  state.roofArtBack = new Map(Object.entries(v.roofArtBack ?? {}).map(([k, id]) => [Number(k), id]));
   if (state.me) {
     const no = state.me.houseNo;
     // 내 집은 서버 캐시(최대 1분)보다 내가 아는 값이 더 새롭다
@@ -113,6 +119,8 @@ export function applyVillage(v: Village) {
     if (myRoofKnown) {
       if (prevRoof.has(no)) state.roofArt.set(no, prevRoof.get(no)!);
       else state.roofArt.delete(no);
+      if (prevBack.has(no)) state.roofArtBack.set(no, prevBack.get(no)!);
+      else state.roofArtBack.delete(no);
     }
   }
   // 마당이 비워진 집도 씬에서 지운다

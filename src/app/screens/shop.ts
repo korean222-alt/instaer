@@ -1,9 +1,10 @@
 // 상점: 츄르로 꾸미기 아이템을 산다. 꾸미기 탭과 잡화점 주민이 같이 쓴다.
 import { DECOR_ITEMS } from '../../shared/config';
-import { CURRENCY, STORY_QUESTS, NPC_INFO } from '../../shared/economy';
+import { CURRENCY, STORY_QUESTS, NPC_INFO, UPGRADES } from '../../shared/economy';
 import { play } from '../audio/sound';
 import { ApiError, buyItem } from '../net/api';
 import { state } from '../state';
+import { ctl } from '../play/ctl';
 import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
 import { applyWallet, coins, hasItem, refreshWallet } from '../wallet';
@@ -31,6 +32,18 @@ export function renderShop(root: HTMLElement) {
     root.innerHTML = `
       <div class="coin-card">${coinIcon()}<b>${coins().toLocaleString()}</b><span>${CURRENCY}</span>
         <a class="link" href="#/quests">츄르 모으기</a></div>
+      <h3 class="sub">한 번 사면 계속</h3>
+      <ul class="shop-list">
+        ${UPGRADES.map((u) => {
+          const own = hasItem(u.key);
+          return `<li class="shop-row${own ? ' own' : ''}">
+            <div class="shop-pic">${upgradePic(u.key)}</div>
+            <div><b>${esc(u.label)}</b><small>${esc(u.desc)}</small></div>
+            ${own ? '<span class="badge ok">가짐</span>' : `<button class="btn small primary" data-buy="${u.key}" ${state.me && coins() >= u.price ? '' : 'disabled'}>${u.price} ${CURRENCY}</button>`}
+          </li>`;
+        }).join('')}
+      </ul>
+      <h3 class="sub">꾸미기 아이템</h3>
       <ul class="shop-list">
         ${DECOR_ITEMS.map((d) => {
           const own = hasItem(d.type);
@@ -55,6 +68,9 @@ export function renderShop(root: HTMLElement) {
     try {
       const res = await buyItem(b.dataset.buy!);
       applyWallet(res.wallet, { item: res.bought });
+      // 집 넓히기: 내 집 안에 있으면 바로 넓어진다
+      const inside = ctl.explore?.insideDecor();
+      if (res.bought === 'room_big' && inside && state.me && inside.houseNo === state.me.houseNo) ctl.explore!.setInsideDecor({ ...inside, big: true });
     } catch (err) {
       play('error');
       toast(err instanceof ApiError ? err.message : '사지 못했어요');
@@ -63,6 +79,18 @@ export function renderShop(root: HTMLElement) {
   });
   draw();
   if (state.me && !state.wallet) void refreshWallet().then(draw);
+}
+
+/** 업그레이드 그림 (간단한 그림) */
+function upgradePic(key: string): string {
+  const svg = (body: string) => `<svg viewBox="0 0 48 48" width="46" height="46" aria-hidden="true">${body}</svg>`;
+  if (key === 'cat_car')
+    return svg(
+      '<path d="M6 30v-7l5-9h22l7 9h2v7z" fill="#ff9f6b"/><path d="M12 14l-1-6 5 4M30 14l1-6-5 4" fill="#ff9f6b"/><circle cx="14" cy="32" r="5" fill="#4a4448"/><circle cx="34" cy="32" r="5" fill="#4a4448"/><circle cx="14" cy="32" r="2" fill="#fff4e2"/><circle cx="34" cy="32" r="2" fill="#fff4e2"/><circle cx="38" cy="22" r="2.5" fill="#fffbe6"/>',
+    );
+  if (key === 'room_big')
+    return svg('<path d="M8 22 24 9l16 13v18H8z" fill="#ffd6a5"/><path d="M4 22 24 5l20 17" stroke="#e9794f" stroke-width="3" fill="none"/><path d="M14 30h20M14 30l4-3M14 30l4 3M34 30l-4-3M34 30l-4 3" stroke="#5b4636" stroke-width="2" fill="none"/>');
+  return svg('<path d="M4 26 24 10l20 16z" fill="#ff8f7a"/><rect x="10" y="26" width="28" height="14" fill="#fff4e2"/><path d="M17 20l3-3 3 3 3-4 4 4" stroke="#fff" stroke-width="2" fill="none"/><circle cx="34" cy="10" r="4" fill="#ffd166"/>');
 }
 
 export const coinIcon = () =>

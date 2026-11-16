@@ -120,4 +120,6 @@ export interface HouseDecor {
   roofArt: string | null;
   /** 지붕 뒷면 그림 id (2026-11-16. 없으면 null) */
   roofArtBack?: string | null;
+  /** 넓힌 집인지 (집 넓히기, 2026-11-16) */
+  big?: boolean;
 }

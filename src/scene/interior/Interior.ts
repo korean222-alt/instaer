@@ -204,6 +204,11 @@ export class Interior {
     this.zoom = 0.86;
   }
 
+  /** 지금 방 한 변의 절반 */
+  get roomHalf() {
+    return this.half;
+  }
+
   /** 이미 들어와 있는 집의 벽지/바닥만 바꾼다 */
   restyle(wallpaper?: string, floor?: string) {
     this.wallpaper = wallpaper || 'cream';

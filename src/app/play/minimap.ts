@@ -197,7 +197,8 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
   }
 
   /** cx, cz 가운데, 짧은 변 절반 = radius(세계 단위) 로 w x h 픽셀에 그린다 */
-  function render(canvas: HTMLCanvasElement, w: number, h: number, cx: number, cz: number, radius: number, detail: boolean) {
+  /** rot: 지도를 돌리는 각도 (2026-11-16: 작은 지도는 카메라가 보는 쪽이 위로 오게 돈다) */
+  function render(canvas: HTMLCanvasElement, w: number, h: number, cx: number, cz: number, radius: number, detail: boolean, rot = 0) {
     const k = dpr();
     if (canvas.width !== Math.round(w * k) || canvas.height !== Math.round(h * k)) {
       canvas.width = Math.round(w * k);
@@ -211,24 +212,34 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
     g.fillRect(0, 0, w, h);
     if (!land || land.zones !== state.unlockedZones) land = buildLand(state.unlockedZones);
     const px = Math.min(w, h) / (radius * 2);
-    const toX = (x: number) => (x - cx) * px + w / 2;
-    const toY = (z: number) => (z - cz) * px + h / 2;
+    const cr = Math.cos(rot);
+    const sr = Math.sin(rot);
+    /** 세계 (x, z) → 지도 화면 [x, y] (돌린 만큼 같이 돈다. 글자와 표시는 똑바로 선 채로) */
+    const P = (x: number, z: number): [number, number] => {
+      const ox = (x - cx) * px;
+      const oz = (z - cz) * px;
+      return [ox * cr - oz * sr + w / 2, ox * sr + oz * cr + h / 2];
+    };
     g.imageSmoothingEnabled = true;
-    g.drawImage(land.canvas, toX(land.minX), toY(land.minZ), land.canvas.width * land.scale * px, land.canvas.height * land.scale * px);
+    g.save();
+    g.translate(w / 2, h / 2);
+    g.rotate(rot);
+    g.drawImage(land.canvas, (land.minX - cx) * px, (land.minZ - cz) * px, land.canvas.width * land.scale * px, land.canvas.height * land.scale * px);
+    g.restore();
 
     const zones = state.unlockedZones;
     const { hills, ponds } = mapHills(zones);
     g.fillStyle = '#b8ab9c';
     for (const hl of hills) {
       g.beginPath();
-      g.arc(toX(hl.x), toY(hl.z), Math.max(1.5, hl.r * px), 0, Math.PI * 2);
+      g.arc(...P(hl.x, hl.z), Math.max(1.5, hl.r * px), 0, Math.PI * 2);
       g.fill();
     }
     const caves = caveMouths(zones);
     for (const m of caves) {
       g.fillStyle = '#9d8f82';
       g.beginPath();
-      g.arc(toX(m.hillX), toY(m.hillZ), Math.max(3, m.r * px), 0, Math.PI * 2);
+      g.arc(...P(m.hillX, m.hillZ), Math.max(3, m.r * px), 0, Math.PI * 2);
       g.fill();
     }
     // 마을 광장 바닥
@@ -236,7 +247,7 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
     g.fillStyle = '#efe0c4';
     for (const sq of squares) {
       g.beginPath();
-      g.arc(toX(sq.x), toY(sq.z), Math.max(3, sq.r * px), 0, Math.PI * 2);
+      g.arc(...P(sq.x, sq.z), Math.max(3, sq.r * px), 0, Math.PI * 2);
       g.fill();
     }
     // 집 (입주한 집은 지붕 색, 빈 집은 흐리게)
@@ -244,8 +255,7 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
     const dot = Math.max(1.5, 2.6 * px);
     for (let no = 1; no <= maxNo; no++) {
       const s = houseSlot(no);
-      const x = toX(s.x);
-      const y = toY(s.z);
+      const [x, y] = P(s.x, s.z);
       if (x < -4 || y < -4 || x > w + 4 || y > h + 4) continue;
       const hs = state.houses.get(no);
       g.fillStyle = hs ? hs.roofColor : 'rgba(255,255,255,0.55)';
@@ -277,25 +287,30 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
     };
     const r = detail ? 9 : 7;
     const showLabels = detail && radius < 75;
-    for (const p of ponds) icon(toX(p.x), toY(p.z), '#4a90c8', '물', r);
+    for (const p of ponds) icon(...P(p.x, p.z), '#4a90c8', '물', r);
     const dock = dockArea();
-    icon(toX(dock.x), toY(dock.z1), '#4a90c8', '물', r);
-    for (const m of caves) icon(toX(m.x), toY(m.z), '#3b2f2a', '굴', r);
+    icon(...P(dock.x, dock.z1), '#4a90c8', '물', r);
+    for (const m of caves) icon(...P(m.x, m.z), '#3b2f2a', '굴', r);
     for (const sq of squares) {
-      icon(toX(sq.board.x), toY(sq.board.z), '#e2574c', '광', r + 1);
-      if (detail) label(toX(sq.board.x), toY(sq.board.z) - r - 8, '마을 광장');
+      icon(...P(sq.board.x, sq.board.z), '#e2574c', '광', r + 1);
+      if (detail) {
+        const [lx, ly] = P(sq.board.x, sq.board.z);
+        label(lx, ly - r - 8, '마을 광장');
+      }
     }
     for (const n of townNpcs(zones)) {
       const mk = ROLE_MARK[n.role];
-      icon(toX(n.x), toY(n.z), mk.c, mk.t, r);
-      if (showLabels && n.role !== 'resident') label(toX(n.x), toY(n.z) + r + 8, n.role === 'mayor' ? '이장' : NPC_INFO[n.role].name);
+      icon(...P(n.x, n.z), mk.c, mk.t, r);
+      if (showLabels && n.role !== 'resident') {
+        const [lx, ly] = P(n.x, n.z);
+        label(lx, ly + r + 8, n.role === 'mayor' ? '이장' : NPC_INFO[n.role].name);
+      }
     }
     // 집 이름 (많이 확대했을 때만)
     if (detail && radius < 38) {
       for (const [no, hs] of state.houses) {
         const s = houseSlot(no);
-        const x = toX(s.x);
-        const y = toY(s.z);
+        const [x, y] = P(s.x, s.z);
         if (x < 0 || y < 0 || x > w || y > h || no === state.me?.houseNo) continue;
         label(x, y - dot - 6, hs.igHandle ?? '');
       }
@@ -303,8 +318,7 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
     // 우리 집
     if (state.me) {
       const s = houseSlot(state.me.houseNo);
-      const x = toX(s.x);
-      const y = toY(s.z);
+      const [x, y] = P(s.x, s.z);
       g.fillStyle = '#ff7a59';
       g.strokeStyle = '#fff';
       g.lineWidth = 2;
@@ -333,14 +347,13 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
       g.lineJoin = 'round';
       g.setLineDash([1, detail ? 8 : 6]);
       g.beginPath();
-      g.moveTo(toX(route[0].x), toY(route[0].z));
-      for (const p of route.slice(1)) g.lineTo(toX(p.x), toY(p.z));
+      g.moveTo(...P(route[0].x, route[0].z));
+      for (const p of route.slice(1)) g.lineTo(...P(p.x, p.z));
       g.stroke();
       g.setLineDash([]);
     }
     if (dest) {
-      const x = toX(dest.x);
-      const y = toY(dest.z);
+      const [x, y] = P(dest.x, dest.z);
       g.strokeStyle = '#5b4636';
       g.lineWidth = 2;
       g.beginPath();
@@ -361,7 +374,7 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
       g.strokeStyle = '#5b4636';
       g.lineWidth = 1;
       g.beginPath();
-      g.arc(toX(p.x), toY(p.z), detail ? 3.4 : 2.6, 0, Math.PI * 2);
+      g.arc(...P(p.x, p.z), detail ? 3.4 : 2.6, 0, Math.PI * 2);
       g.fill();
       if (detail) g.stroke();
     }
@@ -370,16 +383,29 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
       g.strokeStyle = '#ff7a59';
       g.lineWidth = 2.5;
       g.beginPath();
-      g.arc(toX(selected.x), toY(selected.z), selected.hit + 3, 0, Math.PI * 2);
+      g.arc(...P(selected.x, selected.z), selected.hit + 3, 0, Math.PI * 2);
       g.stroke();
+    }
+    // 북쪽 표시 (돌아가는 작은 지도)
+    if (!detail && rot) {
+      const nx = w / 2 + sr * (w / 2 - 9);
+      const ny = h / 2 - cr * (h / 2 - 9);
+      g.fillStyle = 'rgba(255,250,242,0.92)';
+      g.beginPath();
+      g.arc(nx, ny, 7, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#e2574c';
+      g.font = '800 9px system-ui, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('N', nx, ny + 0.5);
     }
     // 나: 바라보는 쪽 화살표 (걷는 중만)
     if (hooks.walking()) {
       const me = scene.getLocalState();
-      const mx = toX(me.x);
-      const my = toY(me.z);
-      const dx = Math.sin(me.rotY);
-      const dz = Math.cos(me.rotY);
+      const [mx, my] = P(me.x, me.z);
+      const dx = Math.sin(me.rotY) * cr - Math.cos(me.rotY) * sr;
+      const dz = Math.sin(me.rotY) * sr + Math.cos(me.rotY) * cr;
       g.fillStyle = '#ff7a59';
       g.strokeStyle = '#fff';
       g.lineWidth = 2;
@@ -406,11 +432,21 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
     render(bigCanvas, w, h, view.cx, view.cz, view.radius, true);
   }
 
+  /** 작은 지도: 매 프레임 내 고양이를 가운데에, 카메라가 보는 쪽을 위로 (2026-11-16: 0.25초마다 그려서 끊겨 보이던 것) */
+  let smallRaf = 0;
+  let lastSmall = 0;
+  function drawSmall(now: number) {
+    if (!visible) return;
+    smallRaf = requestAnimationFrame(drawSmall);
+    // 30fps 면 충분하다 (배터리)
+    if (now - lastSmall < 30) return;
+    lastSmall = now;
+    if (box.offsetParent === null) return;
+    const me = scene.getLocalState();
+    render(small, 112, 112, me.x, me.z, 46, false, scene.getViewYaw());
+  }
+
   function tick() {
-    if (visible) {
-      const me = scene.getLocalState();
-      render(small, 112, 112, me.x, me.z, 46, false);
-    }
     updateRoute();
     if (!big.hidden) {
       marks = collectMarks();
@@ -634,9 +670,11 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
       box.hidden = !on;
       if (!on) routePill.hidden = true;
       clearInterval(timer);
+      cancelAnimationFrame(smallRaf);
       if (on) {
         tick();
         timer = window.setInterval(tick, 250);
+        smallRaf = requestAnimationFrame(drawSmall);
       }
     },
     open: openBig,

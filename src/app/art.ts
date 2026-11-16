@@ -9,7 +9,7 @@ import { state } from './state';
 
 /** 씬이 앞으로 가질 함수 (Fable 작업 5). 아직 없으면 지붕 그림은 화면(2D)에서만 보인다 */
 export interface RoofArtScene {
-  setRoofArt(items: Array<{ houseNo: number; drawingId: string }>): void;
+  setRoofArt(items: Array<{ houseNo: number; drawingId: string; backId?: string }>): void;
 }
 export const sceneHasRoofArt = () => typeof (state.scene as unknown as Partial<RoofArtScene>).setRoofArt === 'function';
 
@@ -74,7 +74,7 @@ export function syncArt() {
 
 function nearHouses(): number[] {
   const out: number[] = [];
-  const consider = new Set<number>([...state.yards.keys(), ...state.roofArt.keys()]);
+  const consider = new Set<number>([...state.yards.keys(), ...state.roofArt.keys(), ...state.roofArtBack.keys()]);
   if (state.me) consider.add(state.me.houseNo);
   for (const no of consider) {
     if (!center) {
@@ -93,14 +93,14 @@ async function run() {
   try {
     const houses = nearHouses();
     const want = new Set<string>(pinned);
-    const roofs: Array<{ houseNo: number; drawingId: string }> = [];
+    const roofs: Array<{ houseNo: number; drawingId: string; backId?: string }> = [];
     for (const no of houses) {
       for (const it of state.yards.get(no) ?? []) if (it.drawingId) want.add(it.drawingId);
       const roof = state.roofArt.get(no);
-      if (roof) {
-        want.add(roof);
-        roofs.push({ houseNo: no, drawingId: roof });
-      }
+      const back = state.roofArtBack.get(no);
+      if (roof) want.add(roof);
+      if (back) want.add(back);
+      if (roof || back) roofs.push({ houseNo: no, drawingId: roof ?? '', ...(back ? { backId: back } : {}) });
     }
     const missing = [...want].filter((id) => !cache.has(id) && !gone.has(id));
     for (let i = 0; i < missing.length; i += 60) {
@@ -114,7 +114,11 @@ async function run() {
       }
     }
     state.scene.setDrawings([...want].map((id) => cache.get(id)).filter((d): d is Drawing => !!d));
-    if (sceneHasRoofArt()) (state.scene as unknown as RoofArtScene).setRoofArt(roofs.filter((r) => cache.has(r.drawingId)));
+    if (sceneHasRoofArt()) (state.scene as unknown as RoofArtScene).setRoofArt(
+        roofs
+          .map((r) => ({ houseNo: r.houseNo, drawingId: cache.has(r.drawingId) ? r.drawingId : '', ...(r.backId && cache.has(r.backId) ? { backId: r.backId } : {}) }))
+          .filter((r) => r.drawingId || r.backId),
+      );
   } finally {
     running = false;
   }

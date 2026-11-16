@@ -1,15 +1,15 @@
 // 꾸미기 탭: 마당/집 안 꾸미기 시작, 지붕(색 + 직접 그린 그림), 내 그림, 상점으로 가기.
 import { DRAWING_MAX, ROOF_COLORS } from '../../shared/config';
-import { CURRENCY } from '../../shared/economy';
+import { CURRENCY, upgradeDef } from '../../shared/economy';
 import { forgetMyDrawing, loadMyDrawings, myDrawingList, syncArt } from '../art';
 import { play } from '../audio/sound';
-import { ApiError, deleteDrawing, saveDecor } from '../net/api';
+import { ApiError, buyItem, deleteDrawing, saveDecor } from '../net/api';
 import { ctl } from '../play/ctl';
 import { pushHousesToScene, setMe, setMyRoofArt, state } from '../state';
 import { drawingThumb, drawingUrl } from '../ui/drawingThumb';
 import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
-import { applyWallet, coins, refreshWallet } from '../wallet';
+import { applyWallet, coins, hasItem, refreshWallet } from '../wallet';
 import { openDrawEditor } from './draw';
 import { coinIcon } from './shop';
 import type { Screen } from './types';
@@ -34,8 +34,13 @@ export const decorateScreen: Screen = {
     if (!ctl.explore?.walking()) state.scene.focusHouse(houseNo);
     let selected: string | null = null;
     let busy = false;
+    /** 지붕 앞면 / 뒷면 (2026-11-16) */
+    let back = false;
 
-    const roofArt = () => state.roofArt.get(houseNo) ?? null;
+    const roofArt = () => (back ? state.roofArtBack : state.roofArt).get(houseNo) ?? null;
+    /** 지붕 그림을 붙일 수 있는지 (100츄르 한 번. 전에 붙여 둔 집은 그대로) */
+    const canRoof = () => hasItem('roof_art') || state.roofArt.has(houseNo) || state.roofArtBack.has(houseNo);
+    const ROOF = upgradeDef('roof_art')!;
     const draw = () => {
       // 2026-11-15: 처음 연 순간의 me 가 아니라 지금 값을 쓴다 (지붕 색이 판을 다시 열어야 바뀌던 문제)
       const me = state.me!;
@@ -60,13 +65,19 @@ export const decorateScreen: Screen = {
         <div class="swatches">
           ${ROOF_COLORS.map((c) => `<button class="swatch${c === me.roofColor ? ' on' : ''}" data-roof="${c}" style="background:${c}" aria-label="지붕 색 ${c}" aria-pressed="${c === me.roofColor}"></button>`).join('')}
         </div>
-        <div class="field"><span>지붕 그림 <small>내 그림 중 하나를 지붕에 붙여요</small></span></div>
+        <div class="field"><span>지붕 그림 <small>내 그림 중 하나를 지붕 앞이나 뒤에 붙여요</small></span></div>
+        ${
+          canRoof()
+            ? `<div class="seg"><button class="seg-btn${!back ? ' on' : ''}" data-side="front">지붕 앞</button><button class="seg-btn${back ? ' on' : ''}" data-side="back">지붕 뒤</button></div>
         <div class="art-row wrap">
           <button class="art-pick${!art ? ' on' : ''}" data-roofart="">없음</button>
           ${list.map((d) => `<button class="art-pick${art === d.id ? ' on' : ''}" data-roofart="${esc(d.id)}">${drawingThumb(d, 40)}</button>`).join('')}
           <button class="art-pick new" data-act="roof-new">+ 지붕에 그리기</button>
           ${art ? '<button class="art-pick new" data-act="roof-edit">지금 그림 고치기</button>' : ''}
-        </div>
+        </div>`
+            : `<div class="row"><button class="btn primary" data-act="buy-roof" ${coins() >= ROOF.price ? '' : 'disabled'}>지붕 그림 열기 · ${ROOF.price} ${CURRENCY}</button></div>
+        <p class="note">${ROOF.price} ${CURRENCY}를 한 번 내면 지붕 앞뒤에 그림을 계속 바꿔 그릴 수 있어요.</p>`
+        }
 
         <h3 class="sec">내 그림 <small>${list.length}/${DRAWING_MAX}</small></h3>
         <div class="art-row wrap">
@@ -80,17 +91,21 @@ export const decorateScreen: Screen = {
         }`;
     };
 
-    async function patchRoof(patch: { roofColor?: string; roofArt?: string | null }) {
+    async function patchRoof(patch0: { roofColor?: string; roofArt?: string | null }) {
       if (busy) return;
       busy = true;
+      // 뒷면을 고르고 있으면 뒷면에 붙인다
+      const side = back;
+      const patch: { roofColor?: string; roofArt?: string | null; roofArtBack?: string | null } =
+        side && patch0.roofArt !== undefined ? { roofColor: patch0.roofColor, roofArtBack: patch0.roofArt } : patch0;
       // 누르자마자 화면과 섬에 먼저 보여 준다 (저장이 실패하면 되돌린다)
       const before = { roofColor: state.me!.roofColor, roofArt: roofArt() };
       if (patch.roofColor) {
         setMe({ ...state.me!, roofColor: patch.roofColor });
         pushHousesToScene(true);
       }
-      if (patch.roofArt !== undefined) {
-        setMyRoofArt(patch.roofArt);
+      if (patch0.roofArt !== undefined) {
+        setMyRoofArt(patch0.roofArt, side);
         syncArt();
       }
       play('tap');
@@ -100,6 +115,7 @@ export const decorateScreen: Screen = {
         applyWallet(res.wallet, { silent: true });
         setMe({ ...state.me!, roofColor: res.roofColor });
         setMyRoofArt(res.decor.roofArt);
+        setMyRoofArt(res.decor.roofArtBack ?? null, true);
         const h = state.houses.get(houseNo);
         if (h) h.roofColor = res.roofColor;
         pushHousesToScene();
@@ -109,7 +125,7 @@ export const decorateScreen: Screen = {
         play('error');
         toast(err instanceof ApiError ? err.message : '저장하지 못했어요');
         setMe({ ...state.me!, roofColor: before.roofColor });
-        setMyRoofArt(before.roofArt);
+        setMyRoofArt(before.roofArt, side);
         pushHousesToScene(true);
         syncArt();
       }
@@ -122,12 +138,28 @@ export const decorateScreen: Screen = {
       if (!t) return;
       if (t.dataset.roof) return patchRoof({ roofColor: t.dataset.roof });
       if (t.dataset.roofart !== undefined) return patchRoof({ roofArt: t.dataset.roofart || null });
+      if (t.dataset.side) {
+        back = t.dataset.side === 'back';
+        play('tap');
+        return draw();
+      }
       if (t.dataset.pick) {
         selected = selected === t.dataset.pick ? null : t.dataset.pick;
         play('tap');
         return draw();
       }
       const act = t.dataset.act;
+      if (act === 'buy-roof') {
+        t.setAttribute('disabled', '');
+        try {
+          const res = await buyItem('roof_art');
+          applyWallet(res.wallet, { item: res.bought });
+        } catch (err) {
+          play('error');
+          toast(err instanceof ApiError ? err.message : '사지 못했어요');
+        }
+        return draw();
+      }
       if (act === 'yard' || act === 'room') {
         play('tap');
         ctx.close();
@@ -143,7 +175,8 @@ export const decorateScreen: Screen = {
         try {
           await deleteDrawing(selected);
           forgetMyDrawing(selected);
-          if (roofArt() === selected) setMyRoofArt(null);
+          if (state.roofArt.get(houseNo) === selected) setMyRoofArt(null);
+          if (state.roofArtBack.get(houseNo) === selected) setMyRoofArt(null, true);
           selected = null;
           play('remove');
         } catch (err) {

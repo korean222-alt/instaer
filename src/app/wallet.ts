@@ -1,6 +1,6 @@
 // 내 지갑(츄르, 가진 아이템, 퀘스트)을 들고 있고, 서버 응답이 올 때마다 바꾼다.
 import { decorItem, STARTER_ITEMS } from '../shared/config';
-import { CURRENCY, DAILY_ALL_ID, DAILY_COUNT, dailyQuest, kstDay, normalizeWallet, owns, questValue, storyQuest } from '../shared/economy';
+import { CURRENCY, DAILY_ALL_ID, DAILY_COUNT, dailyQuest, kstDay, normalizeWallet, owns, questValue, storyQuest, upgradeDef } from '../shared/economy';
 import { play } from './audio/sound';
 import { fetchWallet, type WalletView } from './net/api';
 import { setWallet, state } from './state';
@@ -23,7 +23,7 @@ export function applyWallet(w: WalletView | undefined, gained?: { coins?: number
   setWallet(w);
   if (!gained || gained.silent) return;
   const parts: string[] = [];
-  if (gained.item) parts.push(`${decorItem(gained.item)?.label ?? gained.item} 획득`);
+  if (gained.item) parts.push(`${decorItem(gained.item)?.label ?? upgradeDef(gained.item)?.label ?? gained.item} 획득`);
   if (gained.coins) parts.push(`${CURRENCY} +${gained.coins}`);
   if (parts.length) {
     play('fanfare');

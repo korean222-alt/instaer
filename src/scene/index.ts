@@ -982,6 +982,15 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   const openRoom = (houseNo: number, items: InteriorItem[], wallpaper?: string, floor?: string, big = false) => {
       if (inCave) leaveCave(false);
       interior ??= new Interior(atmosphere.shared, geometries, drawings);
+      if (inside === houseNo && interior.roomHalf !== (big ? ROOM_HALF_BIG : ROOM_HALF)) {
+        // 집을 넓혔으면 방을 새 크기로 다시 연다 (같은 집이라도)
+        const keep = { x: walker.x, z: walker.z };
+        interior.open(houseNo, items, wallpaper, floor, big ? ROOM_HALF_BIG : ROOM_HALF);
+        walker.room = ROOM_WALK;
+        walker.place(keep.x, keep.z, walker.yaw);
+        if (placer.active) placer.relist(interior.list);
+        return;
+      }
       if (inside === houseNo) {
         interior.restyle(wallpaper, floor);
         interior.setItems(items);

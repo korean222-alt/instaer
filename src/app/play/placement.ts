@@ -2,7 +2,7 @@
 // 씬과는 startPlacing / stopPlacing / rotatePlacing / onPlace / onPick / setYardItemsFree / setInteriorItems 로만 주고받는다.
 import type { IslandScene } from '../../scene';
 import { DECOR_ITEMS, decorItem, FLOORS, FREE_ROOM_MAX, FREE_YARD_MAX, ROOM_COLORS, WALLPAPERS } from '../../shared/config';
-import { CURRENCY } from '../../shared/economy';
+import { CURRENCY, FREE_ROOM_MAX_BIG } from '../../shared/economy';
 import type { Drawing, HouseDecor, PlacedItem } from '../../shared/types';
 import { loadMyDrawings, myDrawingList, pinDrawings, surfaceDrawing } from '../art';
 import { play } from '../audio/sound';
@@ -59,7 +59,9 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
     }
   };
 
-  const max = () => (where === 'room' ? FREE_ROOM_MAX : FREE_YARD_MAX);
+  const max = () => (where === 'room' ? (explore.insideDecor()?.big ? FREE_ROOM_MAX_BIG : FREE_ROOM_MAX) : FREE_YARD_MAX);
+  /** 아래 줄에서 골랐지만 아직 놓을 곳을 누르지 않은 아이템 종류 (2026-11-16) */
+  let pendingType: string | null = null;
   const dirty = () => !same(items, saved) || (where === 'room' && (wallpaper !== savedSurf.wallpaper || floor !== savedSurf.floor));
 
   function pushScene() {
@@ -79,12 +81,14 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
     if (i >= 0) items[i] = { ...item, drawingId: items[i].drawingId };
     else items.push(item);
     picked = item.id;
+    pendingType = null;
     play('place');
     draw();
   });
   scene.onPick((id) => {
     if (!where) return;
     picked = id;
+    pendingType = null;
     panel = null;
     play('tap');
     scene.startPlacing(id, where === 'yard' ? houseNo : undefined);
@@ -137,7 +141,10 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
               ${def.art ? `<button class="pill btn-pill${panel === 'art' ? ' on' : ''}" data-act="art">그림</button>` : ''}
               <button class="pill btn-pill" data-act="remove">치우기</button>
               <button class="pill btn-pill primary" data-act="done">다 놓았어요</button></div>`
-          : `<div class="decor-sel hint-line">아래에서 아이템을 고르고, 섬에서 놓을 곳을 눌러요. 놓인 아이템을 누르면 다시 골라요</div>`
+          : pendingType
+            ? `<div class="decor-sel picked"><b>${esc(decorItem(pendingType)?.label ?? '')} 고름</b><span class="hint-line">${decorItem(pendingType)?.mount === 'wall' ? '걸 벽을 눌러요' : '놓을 곳을 눌러요'}</span></div>
+               <div class="decor-sel"><button class="pill btn-pill" data-act="unpick">안 놓을래요</button></div>`
+            : `<div class="decor-sel hint-line">아래에서 아이템을 고르고, 놓을 곳을 눌러요. 놓인 아이템을 누르면 다시 골라요</div>`
       }
       ${
         where === 'room'
@@ -149,7 +156,7 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
         ${shown
           .map((d) => {
             const own = hasItem(d.type);
-            const on = it?.type === d.type;
+            const on = it?.type === d.type || pendingType === d.type;
             return `<button class="strip-item${own ? '' : ' locked'}${on ? ' on' : ''}" data-type="${d.type}">${pic(d.type)}<span>${esc(d.label)}</span>${own ? '' : `<small>${d.price} ${CURRENCY}</small>`}</button>`;
           })
           .join('')}
@@ -184,6 +191,7 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
     if (where === 'yard') pinDrawings([]);
     where = null;
     picked = null;
+    pendingType = null;
     panel = null;
     draw();
     explore.refresh();
@@ -207,6 +215,8 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
         return;
       }
       panel = null;
+      picked = null;
+      pendingType = type;
       play('tap');
       scene.startPlacing(type, where === 'yard' ? houseNo : undefined);
     } else if (t.dataset.art !== undefined && it) {
@@ -226,6 +236,10 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
       else if (act === 'rotate') {
         scene.rotatePlacing();
         play('rotate');
+      } else if (act === 'unpick') {
+        pendingType = null;
+        play('tap');
+        scene.startPlacing(null, where === 'yard' ? houseNo : undefined);
       } else if (act === 'done') {
         picked = null;
         panel = null;
@@ -284,6 +298,7 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
       savedSurf = { wallpaper, floor };
       where = w;
       picked = null;
+      pendingType = null;
       panel = null;
       document.body.classList.add('decorating');
       scene.startPlacing(null, w === 'yard' ? houseNo : undefined);

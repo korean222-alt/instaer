@@ -16,7 +16,12 @@ import { VILLAGE_KEY } from './village';
 export async function getDecor(houseNo: number, env: Env): Promise<Response> {
   const house = await houseByNo(env.DB, houseNo);
   if (!house) return error(404, 'no_house', '빈 집이에요');
-  return json({ ...toDecor(houseNo, await readDecor(env.DB, house.id)), roofColor: house.roof_color });
+  const [row, wal] = await Promise.all([
+    readDecor(env.DB, house.id),
+    env.DB.prepare('SELECT data FROM wallets WHERE house_id = ?').bind(house.id).first<{ data: string }>(),
+  ]);
+  const big = !!wal?.data && wal.data.includes('"room_big"');
+  return json({ ...toDecor(houseNo, row), big, roofColor: house.roof_color });
 }
 
 /** 그 그림들이 모두 내 것인지 */
@@ -104,7 +109,7 @@ export async function putDecor(houseNo: number, request: Request, env: Env): Pro
   if (roof !== mine.house.roof_color) stmts.push(db.prepare('UPDATE houses SET roof_color = ? WHERE id = ?').bind(roof, id));
   await db.batch(stmts);
   if (publicChanged) invalidate(VILLAGE_KEY);
-  return json({ ok: true, decor: cur, roofColor: roof, wallet: walletView(wallet, houseNo) });
+  return json({ ok: true, decor: { ...cur, big: wallet.data.owned.includes('room_big') }, roofColor: roof, wallet: walletView(wallet, houseNo) });
 }
 
 // ── 그림 ──
