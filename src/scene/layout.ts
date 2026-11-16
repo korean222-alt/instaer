@@ -39,10 +39,30 @@ export const ZONE = {
 export const ZONE_PITCH_X = ZONE.halfX * 2 + ZONE.gap;
 export const ZONE_PITCH_Z = ZONE.halfZ * 2 + ZONE.gap;
 
-/** 마당 한 변의 절반 (2026-11-16: 6m → 7.2m 로 넓혔다. world/constants 의 YARD_WORLD 와 같다) */
-export const YARD_HALF = 3.6;
-/** 우편함 자리 (마당 가운데 기준, 앞 오른쪽 대문 옆) */
-export const MAILBOX_LOCAL = { x: 1.75, z: YARD_HALF - 0.3 };
+/**
+ * 마당 한 변의 절반. 2026-11-16 사용자: 마당 넓히기는 300츄르로 산다.
+ * 기본 마당은 6m(YARD_HALF 3.0), 넓힌 마당은 7.2m(YARD_HALF_BIG 3.6).
+ * 동네 둘레와 길, 우편함은 넓힌 마당 기준으로 잡혀 있어서 어느 집이 넓혀도 이웃과 겹치지 않는다.
+ */
+export const YARD_HALF = 3.0;
+export const YARD_HALF_BIG = 3.6;
+/** 우편함 자리 (마당 가운데 기준, 앞 오른쪽 대문 옆. 기본 마당에서는 마당 바로 앞) */
+export const MAILBOX_LOCAL = { x: 1.75, z: YARD_HALF_BIG - 0.3 };
+
+/** 마당을 넓힌 집 (씬 setBigYards 가 채운다) */
+const bigYardSet = new Set<number>();
+/** 넓힌 마당 목록을 바꾼다. 바뀌었으면 true */
+export function setBigYardSet(houseNos: Iterable<number>): boolean {
+  const next = new Set<number>();
+  for (const n of houseNos) if (Number.isInteger(n)) next.add(n);
+  if (next.size === bigYardSet.size && [...next].every((n) => bigYardSet.has(n))) return false;
+  bigYardSet.clear();
+  for (const n of next) bigYardSet.add(n);
+  return true;
+}
+export const isBigYard = (houseNo: number) => bigYardSet.has(houseNo);
+/** 그 집 마당 한 변의 절반 */
+export const yardHalfOf = (houseNo: number) => (bigYardSet.has(houseNo) ? YARD_HALF_BIG : YARD_HALF);
 /** 마당 가운데에서 집 가운데까지 (집은 마당 뒤쪽에 선다). world/constants.ts 의 HOUSE_OFFSET_Z 와 같은 값 */
 const HOUSE_BACK = -1.3;
 const DEG = Math.PI / 180;
@@ -100,7 +120,8 @@ export type SceneryKind =
   | 'caveHill'
   | 'hill'
   | 'townBoard'
-  | 'stall';
+  | 'stall'
+  | 'townTree';
 export interface Scenery {
   kind: SceneryKind;
   x: number;
@@ -128,6 +149,16 @@ export interface Collider {
   occ: number;
   /** 집에 딸린 것이면 구역 안 집 순번(0~99), 아니면 -1. 집이 없는 자리는 막지 않는다 */
   lot: number;
+  /** 울타리: 1 이면 기본 마당 울타리, 2 면 넓힌 마당 울타리 (그 집 마당 크기에 맞는 것만 막는다). 0 이면 울타리 아님 */
+  yard: number;
+}
+
+/** 이 막힌 곳을 건너뛰는지 (집이 없는 자리, 그 집 마당 크기와 다른 울타리) */
+export function skipCollider(col: Collider, zone: number, hasHouse: (houseNo: number) => boolean): boolean {
+  if (col.lot < 0) return false;
+  const no = zone * ZONE_CAPACITY + col.lot + 1;
+  if (!hasHouse(no)) return true;
+  return col.yard !== 0 && (col.yard === 2) !== bigYardSet.has(no);
 }
 
 const rotX = (x: number, z: number, rot: number) => x * Math.cos(rot) + z * Math.sin(rot);
@@ -206,7 +237,8 @@ export const LOCAL_SLOTS: readonly LocalLot[] = buildLots();
 
 /** 마당 입구(대문 자리): 마당 앞 가장자리 가운데에서 dist 만큼 더 나간 곳 */
 export function lotGate(lot: LocalLot, dist = 0): { x: number; z: number } {
-  return { x: lot.x + rotX(0, YARD_HALF + dist, lot.rot), z: lot.z + rotZ(0, YARD_HALF + dist, lot.rot) };
+  // 길과 동네 배치는 넓힌 마당 기준 (기본 마당은 디딤돌 하나가 길까지 이어 준다)
+  return { x: lot.x + rotX(0, YARD_HALF_BIG + dist, lot.rot), z: lot.z + rotZ(0, YARD_HALF_BIG + dist, lot.rot) };
 }
 
 // ───────────── 길 ─────────────
@@ -564,6 +596,8 @@ function buildScenery(): Scenery[] {
     const T = TOWN_SQUARE;
     out.push({ kind: 'townBoard', x: T.board.x, z: T.board.z, rot: T.board.rot, scale: 1, seed: 1 });
     T.stalls.forEach((st, i) => out.push({ kind: 'stall', x: st.x, z: st.z, rot: st.rot, scale: 1, seed: i }));
+    // 2026-11-16: 광장 가운데 큰 전나무 (겨울에는 크리스마스 트리). seed() 를 부르지 않아 다른 배치는 그대로다
+    out.push({ kind: 'townTree', x: T.x, z: T.z + 1.2, rot: 0, scale: 1, seed: 0 });
     for (const b of T.benches) add('bench', b.x, b.z, b.rot);
     for (const [lx, lz] of T.lanterns) add('lantern', lx, lz);
   }
@@ -618,20 +652,25 @@ export const ZONE_SCENERY: readonly Scenery[] = buildScenery();
 
 function buildColliders(): Collider[] {
   const out: Collider[] = [];
-  const circle = (x: number, z: number, r: number, h: number, occ = 0) => out.push({ x, z, r, hx: 0, hz: 0, cos: 1, sin: 0, h, occ, lot: -1 });
-  const box = (x: number, z: number, hx: number, hz: number, rot: number, h: number, lot = -1, occ = 0) =>
-    out.push({ x, z, r: 0, hx, hz, cos: Math.cos(rot), sin: Math.sin(rot), h, occ, lot });
+  const circle = (x: number, z: number, r: number, h: number, occ = 0) => out.push({ x, z, r, hx: 0, hz: 0, cos: 1, sin: 0, h, occ, lot: -1, yard: 0 });
+  const box = (x: number, z: number, hx: number, hz: number, rot: number, h: number, lot = -1, occ = 0, yard = 0) =>
+    out.push({ x, z, r: 0, hx, hz, cos: Math.cos(rot), sin: Math.sin(rot), h, occ, lot, yard });
 
   LOCAL_SLOTS.forEach((lot, i) => {
-    const at = (lx: number, lz: number, hx: number, hz: number, h: number, occ = 0) =>
-      box(lot.x + rotX(lx, lz, lot.rot), lot.z + rotZ(lx, lz, lot.rot), hx, hz, lot.rot, h, i, occ);
+    const at = (lx: number, lz: number, hx: number, hz: number, h: number, occ = 0, yard = 0) =>
+      box(lot.x + rotX(lx, lz, lot.rot), lot.z + rotZ(lx, lz, lot.rot), hx, hz, lot.rot, h, i, occ, yard);
     // 집 몸체
     at(0, HOUSE_BACK, 1.5, 1.2, 3.4, 0.3);
-    // 울타리: 뒤와 양옆 (앞쪽은 열려 있다)
-    const e = YARD_HALF - 0.12;
-    at(0, -e, e, 0.1, 0.5);
-    const sideEnd = e * 0.38;
-    for (const sx of [-e, e]) at(sx, (-e + sideEnd) / 2, 0.1, (e + sideEnd) / 2, 0.5);
+    // 울타리: 뒤와 양옆 (앞쪽은 열려 있다). 기본 마당(1)과 넓힌 마당(2) 둘 다 두고 그 집 크기에 맞는 것만 막는다
+    for (const [half, kind] of [
+      [YARD_HALF, 1],
+      [YARD_HALF_BIG, 2],
+    ] as const) {
+      const e = half - 0.12;
+      at(0, -e, e, 0.1, 0.5, 0, kind);
+      const sideEnd = e * 0.38;
+      for (const sx of [-e, e]) at(sx, (-e + sideEnd) / 2, 0.1, (e + sideEnd) / 2, 0.5, 0, kind);
+    }
     // 우편함
     at(MAILBOX_LOCAL.x, MAILBOX_LOCAL.z, 0.2, 0.2, 1.1);
   });
@@ -655,6 +694,7 @@ function buildColliders(): Collider[] {
     } else if (s.kind === 'hill') circle(s.x, s.z, s.scale * 0.95, 3, s.scale * 0.6);
     else if (s.kind === 'townBoard') box(s.x, s.z, 1.95, 0.32, s.rot, 2.6, -1, 0.2);
     else if (s.kind === 'stall') box(s.x, s.z, 1.35, 0.75, s.rot, 2.4, -1, 0.2);
+    else if (s.kind === 'townTree') circle(s.x, s.z, 2.1, 7, 2.4);
   }
   return out;
 }
@@ -836,7 +876,8 @@ export function houseNoAt(x: number, z: number, margin = 0.3): number | null {
     // 마당 기준 좌표로 돌려서 본다
     const ux = dx * Math.cos(lot.rot) - dz * Math.sin(lot.rot);
     const uz = dx * Math.sin(lot.rot) + dz * Math.cos(lot.rot);
-    if (Math.abs(ux) <= YARD_HALF + margin && Math.abs(uz) <= YARD_HALF + margin) return zone * ZONE_CAPACITY + i + 1;
+    const half = yardHalfOf(zone * ZONE_CAPACITY + i + 1);
+    if (Math.abs(ux) <= half + margin && Math.abs(uz) <= half + margin) return zone * ZONE_CAPACITY + i + 1;
   }
   return null;
 }
@@ -1042,7 +1083,7 @@ export function walkCost(x: number, z: number, zoneCount: number, hasHouse: (hou
   const lz = z - c.z;
   if (zoneLandLocal(zone, lx, lz) < 0.7) return Infinity;
   for (const col of collidersNear(lx, lz, pad + 0.3, costNear)) {
-    if (col.lot >= 0 && !hasHouse(zone * ZONE_CAPACITY + col.lot + 1)) continue;
+    if (skipCollider(col, zone, hasHouse)) continue;
     const dx = lx - col.x;
     const dz = lz - col.z;
     if (col.r > 0) {

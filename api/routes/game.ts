@@ -41,6 +41,9 @@ import { clientIp, error, json, readJson } from '../http';
 import { allow } from '../lib/rateLimit';
 import { sessionHouse } from '../lib/session';
 import { loadWallet, payGame, saveWallet, walletView } from '../lib/wallet';
+import { invalidate } from '../lib/cache';
+import { markZoneDirty } from '../lib/houses';
+import { VILLAGE_KEY } from './village';
 
 type Handler = (w: Wallet, body: Record<string, unknown>, ctx: { houseNo: number; db: D1Database }) => Promise<Response | Record<string, unknown>> | Response | Record<string, unknown>;
 
@@ -59,7 +62,7 @@ async function withWallet(request: Request, env: Env, fn: Handler): Promise<Resp
 
 /** POST /api/shop/buy {type} */
 export const buy = (request: Request, env: Env) =>
-  withWallet(request, env, (w, body) => {
+  withWallet(request, env, async (w, body, { houseNo, db }) => {
     // 춤 (2026-11-15): 'dance:hop' 처럼 사고, 지갑 owned 에 같은 이름으로 넣는다
     if (typeof body.type === 'string' && body.type.startsWith('dance:')) {
       const dd = danceDef(body.type.slice(6));
@@ -78,6 +81,11 @@ export const buy = (request: Request, env: Env) =>
       if (w.coins < up.price) return error(400, 'no_coins', `츄르가 ${up.price - w.coins}개 모자라요`);
       w.coins -= up.price;
       w.data.owned.push(up.key);
+      // 마당 넓히기는 다른 사람 화면(마을 목록)에도 보인다
+      if (up.key === 'yard_big') {
+        await markZoneDirty(db, houseNo, 2).run();
+        invalidate(VILLAGE_KEY);
+      }
       return { bought: up.key };
     }
     const def = typeof body.type === 'string' ? decorItem(body.type) : undefined;
@@ -301,5 +309,14 @@ export const openMail = (request: Request, env: Env) =>
     w.coins += coins;
     m.coins = 0;
     m.read = true;
-    return { coins };
+    // 같이 든 선물 (겨울 눈사람)
+    let item: string | null = null;
+    if (m.item) {
+      if (!w.data.owned.includes(m.item)) {
+        w.data.owned.push(m.item);
+        item = m.item;
+      }
+      delete m.item;
+    }
+    return { coins, item };
   });

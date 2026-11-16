@@ -6,11 +6,11 @@ import {
   dockArea,
   landAt,
   onDock,
+  skipCollider,
   zoneAt,
   zoneCenter,
   type Collider,
 } from '../layout';
-import { ZONE_CAPACITY } from '../../shared/config';
 import { GROUND_Y } from '../world/constants';
 import { heightFromLand } from '../world/mapField';
 
@@ -223,7 +223,7 @@ export class Walker {
         let px = lx;
         let pz = lz;
         for (const col of collidersNear(lx, lz, RADIUS + 0.2, this.near)) {
-          if (col.lot >= 0 && !this.hasHouse(zone * ZONE_CAPACITY + col.lot + 1)) continue;
+          if (skipCollider(col, zone, this.hasHouse)) continue;
           // 2026-11-16: 점프로 높이 뜨면 낮은 것(울타리, 벤치, 바위)은 넘어간다
           if (col.h > 0 && col.h <= LOW_OBSTACLE && this.air > col.h * 0.55) continue;
           const dx = px - col.x;

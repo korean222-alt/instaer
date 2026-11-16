@@ -47,6 +47,28 @@ function lowBlob(r: number, x: number, y: number, z: number, squash: number, bot
   return pg(g, bottom, top);
 }
 
+/** 동네 큰 나무의 잎 덩어리 [반지름, x, y, z] (겨울 장식을 잎 겉에 붙이려고 밖에서도 쓴다) */
+export const BIG_TREE_LEAVES: ReadonlyArray<[number, number, number, number]> = [
+  [2.2, 0, 4.9, 0],
+  [1.7, 1.75, 4.1, 0.5],
+  [1.75, -1.7, 4.2, 0.35],
+  [1.55, 0.2, 4.15, -1.65],
+  [1.5, 0.15, 3.9, 1.7],
+  [1.35, -1.0, 5.6, -0.5],
+  [1.25, 1.1, 5.5, 0.4],
+];
+export const BIG_TREE_SQUASH = 0.84;
+/** 광장 귤나무의 잎 덩어리 [반지름, x, y, z] */
+export const PLAZA_TREE_LEAVES: ReadonlyArray<[number, number, number, number]> = [
+  [1.55, 0, 3.55, 0],
+  [1.15, 1.15, 3.0, 0.35],
+  [1.2, -1.15, 3.1, 0.25],
+  [1.05, 0.15, 3.05, -1.05],
+  [1.0, 0.1, 2.85, 1.1],
+  [0.85, -0.75, 3.95, -0.35],
+];
+export const PLAZA_TREE_SQUASH = 0.86;
+
 /** 광장의 큰 귤나무 */
 export function plazaTree(): Pieces {
   const out: Pieces = [];
@@ -61,12 +83,7 @@ export function plazaTree(): Pieces {
   const soil = new THREE.CylinderGeometry(1.05, 1.05, 0.14, 20).translate(0, 0.07, 0);
   out.push(p(soil, '#8fcf70'));
   // 잎
-  out.push(blob(1.55, 0, 3.55, 0));
-  out.push(blob(1.15, 1.15, 3.0, 0.35));
-  out.push(blob(1.2, -1.15, 3.1, 0.25));
-  out.push(blob(1.05, 0.15, 3.05, -1.05));
-  out.push(blob(1.0, 0.1, 2.85, 1.1));
-  out.push(blob(0.85, -0.75, 3.95, -0.35));
+  for (const [r, x, y, z] of PLAZA_TREE_LEAVES) out.push(blob(r, x, y, z, PLAZA_TREE_SQUASH));
   // 귤
   const rnd = mulberry32(7);
   for (let i = 0; i < 16; i++) {
@@ -80,36 +97,46 @@ export function plazaTree(): Pieces {
   return out;
 }
 
+/** 작은 동글 나무의 모양 (겨울 LED 를 잎에 맞춰 두르려고 따로 뺐다) */
+export function roundTreeShape(seed: number) {
+  const rnd = mulberry32(seed);
+  const h = 0.9 + rnd() * 0.35;
+  const r = 0.72 + rnd() * 0.22;
+  return { h, r };
+}
+
 /** 작은 동글 나무 */
 export function roundTree(seed: number): Pieces {
-  const rnd = mulberry32(seed);
   const out: Pieces = [];
-  const h = 0.9 + rnd() * 0.35;
+  const { h, r } = roundTreeShape(seed);
   const trunk = new THREE.CylinderGeometry(0.11, 0.17, h, 8);
   trunk.translate(0, h / 2, 0);
   out.push(pg(trunk, '#93643f', '#b98858'));
-  const r = 0.72 + rnd() * 0.22;
   out.push(blob(r, 0, h + r * 0.62, 0, 0.9));
   out.push(blob(r * 0.66, r * 0.55, h + r * 0.35, r * 0.2, 0.9));
   out.push(blob(r * 0.6, -r * 0.5, h + r * 0.45, -r * 0.25, 0.9));
   return out;
 }
 
+/** 층층이 쌓인 뾰족 나무의 층 [반지름, 높이, 바닥 y] (크기 s 를 곱한 값) */
+export function coneTreeTiers(seed: number): Array<[number, number, number]> {
+  const rnd = mulberry32(seed);
+  const s = 0.9 + rnd() * 0.3;
+  return [
+    [0.78 * s, 0.95 * s, 0.45 * s],
+    [0.6 * s, 0.85 * s, 1.0 * s],
+    [0.42 * s, 0.75 * s, 1.5 * s],
+  ];
+}
+
 /** 층층이 쌓인 뾰족 나무 */
 export function coneTree(seed: number): Pieces {
-  const rnd = mulberry32(seed);
   const out: Pieces = [];
   const trunk = new THREE.CylinderGeometry(0.1, 0.15, 0.6, 8).translate(0, 0.3, 0);
   out.push(pg(trunk, '#8a5d3b', '#a97a50'));
-  const s = 0.9 + rnd() * 0.3;
-  const tiers = [
-    [0.78, 0.95, 0.45],
-    [0.6, 0.85, 1.0],
-    [0.42, 0.75, 1.5],
-  ];
-  for (const [r, h, y] of tiers) {
-    const c = new THREE.ConeGeometry(r * s, h * s, 10, 2);
-    c.translate(0, (y + h / 2) * s, 0);
+  for (const [r, h, y] of coneTreeTiers(seed)) {
+    const c = new THREE.ConeGeometry(r, h, 10, 2);
+    c.translate(0, y + h / 2, 0);
     out.push(pg(c, '#4fa46a', '#8fd58a'));
   }
   return out;
@@ -320,16 +347,7 @@ export function bigTree(): Pieces {
     root.translate(Math.cos(a) * 0.75, 0.12, Math.sin(a) * 0.75);
     out.push(pg(root, '#7c5235', '#a57a4f'));
   }
-  const leaves: Array<[number, number, number, number]> = [
-    [2.2, 0, 4.9, 0],
-    [1.7, 1.75, 4.1, 0.5],
-    [1.75, -1.7, 4.2, 0.35],
-    [1.55, 0.2, 4.15, -1.65],
-    [1.5, 0.15, 3.9, 1.7],
-    [1.35, -1.0, 5.6, -0.5],
-    [1.25, 1.1, 5.5, 0.4],
-  ];
-  for (const [r, x, y, z] of leaves) out.push(blob(r, x, y, z, 0.84, '#4fa860', '#a3dc78'));
+  for (const [r, x, y, z] of BIG_TREE_LEAVES) out.push(blob(r, x, y, z, BIG_TREE_SQUASH, '#4fa860', '#a3dc78'));
   return out;
 }
 
@@ -357,6 +375,8 @@ export function pond(radius: number, seed: number): Pieces {
     water.setAttribute('color', new THREE.BufferAttribute(arr, 3));
     fillAttr(water, 'aMask', [0, 0]);
   }
+  // 겨울에도 물 위에는 눈이 쌓이지 않는다
+  fillAttr(water, 'aSnow', [-1]);
   out.push(water);
   for (let i = 0; i < 6; i++) {
     const a = rnd() * Math.PI * 2;
@@ -704,5 +724,69 @@ export function stall(kind: number): Pieces {
     out.push(p(new THREE.ShapeGeometry(s).translate(-0.3, 2.55, D / 2 + 0.25), '#ffcf3f'));
   }
   for (let i = 0; i < 3; i++) out.push(p(new THREE.BoxGeometry(0.12, 0.05, 0.03).translate(0.05 + i * 0.2, 2.55, D / 2 + 0.25), '#7a5a44'));
+  return out;
+}
+
+// ───────────── 겨울 (2026-11-16, 크리스마스) ─────────────
+
+/** 마을 광장 가운데 큰 전나무의 층 [반지름, 높이, 바닥 y] */
+export const TOWN_TREE_TIERS: ReadonlyArray<[number, number, number]> = [
+  [2.5, 2.2, 0.9],
+  [2.1, 2.0, 2.2],
+  [1.7, 1.8, 3.4],
+  [1.25, 1.6, 4.5],
+  [0.8, 1.4, 5.5],
+];
+export const TOWN_TREE_TOP = 5.5 + 1.4;
+
+/** 마을 광장 가운데 큰 전나무 (겨울에는 장식과 전구가 붙는다) */
+export function townTree(): Pieces {
+  const out: Pieces = [];
+  const trunk = new THREE.CylinderGeometry(0.32, 0.48, 1.4, 10).translate(0, 0.7, 0);
+  out.push(pg(trunk, '#7c5235', '#a57a4f'));
+  // 화단 테두리
+  const ring = new THREE.TorusGeometry(1.55, 0.2, 8, 26).rotateX(Math.PI / 2);
+  ring.scale(1, 0.85, 1);
+  ring.translate(0, 0.12, 0);
+  out.push(p(ring, '#e4d9c6'));
+  for (const [r, h, y] of TOWN_TREE_TIERS) {
+    const c = new THREE.ConeGeometry(r, h, 14, 2);
+    c.translate(0, y + h / 2, 0);
+    out.push(pg(c, '#3f8f5c', '#7cc77e'));
+  }
+  return out;
+}
+
+/** 별 (꼭대기 장식). 밤에 빛난다 */
+export function star(size: number): THREE.BufferGeometry {
+  const s = new THREE.Shape();
+  for (let i = 0; i < 10; i++) {
+    const a = Math.PI / 2 + (i * Math.PI) / 5;
+    const r = i % 2 === 0 ? size : size * 0.45;
+    if (i === 0) s.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    else s.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, { depth: size * 0.3, bevelEnabled: true, bevelThickness: size * 0.08, bevelSize: size * 0.06, bevelSegments: 1 });
+  g.translate(0, 0, -size * 0.15);
+  return p(g, '#ffd65a', 1);
+}
+
+/** 반짝이 공 (장식 공). 색은 받은 것, 위에 작은 금색 고리 */
+export function bauble(x: number, y: number, z: number, r: number, color: string): Pieces {
+  const ball = new THREE.SphereGeometry(r, 8, 6).translate(x, y, z);
+  const cap = new THREE.CylinderGeometry(r * 0.3, r * 0.3, r * 0.35, 6).translate(x, y + r * 0.95, z);
+  return [p(ball, color), p(cap, '#f4c95d')];
+}
+
+/** 선물 상자 (리본 십자) */
+export function gift(w: number, h: number, d: number, box: string, ribbon: string): Pieces {
+  const out: Pieces = [];
+  out.push(p(new RoundedBoxGeometry(w, h, d, 1, 0.04).translate(0, h / 2, 0), box));
+  out.push(p(new THREE.BoxGeometry(w * 0.18, h + 0.02, d + 0.02).translate(0, h / 2, 0), ribbon));
+  out.push(p(new THREE.BoxGeometry(w + 0.02, h + 0.02, d * 0.18).translate(0, h / 2, 0), ribbon));
+  const bow = new THREE.TorusGeometry(w * 0.14, w * 0.05, 5, 10);
+  out.push(p(bow.clone().rotateY(Math.PI / 4).translate(0, h + w * 0.1, 0), ribbon));
+  out.push(p(bow.rotateY(-Math.PI / 4).translate(0, h + w * 0.1, 0), ribbon));
   return out;
 }

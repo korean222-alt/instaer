@@ -3,7 +3,7 @@ import type { House, PlacedItem } from '../../src/shared/types';
 import type { Env } from '../env';
 import { utcDay } from '../http';
 import { cachedJson } from '../lib/cache';
-import { parseItems, splitRoof } from '../lib/decor';
+import { parseItems, splitRoof, yardOutsideBase } from '../lib/decor';
 import { HOUSE_COLS, toHouse, type HouseRow } from '../lib/houses';
 import { openZoneCount } from '../../src/shared/zones';
 
@@ -15,6 +15,8 @@ export interface VillageResponse {
   roofArt: Record<number, string>;
   /** 번지 → 지붕 뒷면 그림 id (2026-11-16) */
   roofArtBack: Record<number, string>;
+  /** 마당을 넓힌 집 번지 (마당 넓히기, 2026-11-16) */
+  bigYards: number[];
   total: number;
   /** 열린 구역 수 (집이 있는 구역 + 0채면 1) */
   unlockedZones: number;
@@ -28,9 +30,10 @@ interface ZoneData {
   yards: Record<number, PlacedItem[]>;
   roofArt?: Record<number, string>;
   roofArtBack?: Record<number, string>;
+  bigYards?: number[];
 }
 
-export const VILLAGE_KEY = 'village-v4';
+export const VILLAGE_KEY = 'village-v5';
 /** 집/마당이 바뀐 구역은 이 시간이 지나면 다시 만든다 (여러 요청이 한꺼번에 다시 만들지 않게) */
 const REBUILD_STRUCT_SEC = 20;
 /** 예뻐요 수만 바뀐 구역은 15분에 한 번 */
@@ -40,7 +43,7 @@ const REBUILD_LIKES_SEC = 900;
 async function buildZone(db: D1Database, zone: number): Promise<ZoneData> {
   const lo = zone * ZONE_CAPACITY + 1;
   const hi = lo + ZONE_CAPACITY - 1;
-  const [houses, decor] = await db.batch([
+  const [houses, decor, bigs] = await db.batch([
     db.prepare(`SELECT ${HOUSE_COLS} FROM houses WHERE house_no BETWEEN ? AND ? ORDER BY house_no`).bind(lo, hi),
     db
       .prepare(
@@ -48,18 +51,24 @@ async function buildZone(db: D1Database, zone: number): Promise<ZoneData> {
          FROM houses h JOIN house_decor d ON d.house_id = h.id WHERE h.house_no BETWEEN ? AND ?`,
       )
       .bind(lo, hi),
+    db
+      .prepare(`SELECT h.house_no AS house_no FROM houses h JOIN wallets w ON w.house_id = h.id WHERE h.house_no BETWEEN ? AND ? AND w.data LIKE '%"yard_big"%'`)
+      .bind(lo, hi),
   ]);
+  const bigYards = new Set((bigs.results as Array<{ house_no: number }>).map((r) => r.house_no));
   const yards: Record<number, PlacedItem[]> = {};
   const roofArt: Record<number, string> = {};
   const roofArtBack: Record<number, string> = {};
   for (const r of decor.results as Array<{ house_no: number; yard: string; roof_art: string | null }>) {
     const items = parseItems(r.yard);
     if (items.length) yards[r.house_no] = items;
+    // 2026-11-16 전에 7.2m 마당에 놓아 둔 집은 넓힌 마당으로 친다
+    if (yardOutsideBase(items)) bigYards.add(r.house_no);
     const roof = splitRoof(r.roof_art);
     if (roof.roofArt) roofArt[r.house_no] = roof.roofArt;
     if (roof.roofArtBack) roofArtBack[r.house_no] = roof.roofArtBack;
   }
-  return { houses: (houses.results as unknown as HouseRow[]).map((h) => toHouse(h)), yards, roofArt, roofArtBack };
+  return { houses: (houses.results as unknown as HouseRow[]).map((h) => toHouse(h)), yards, roofArt, roofArtBack, bigYards: [...bigYards].sort((a, b) => a - b) };
 }
 
 /**
@@ -108,6 +117,7 @@ export function village(env: Env, ctx: ExecutionContext): Promise<Response> {
     const yards = Object.assign({}, ...zones.map((d) => d.yards)) as Record<number, PlacedItem[]>;
     const roofArt = Object.assign({}, ...zones.map((d) => d.roofArt ?? {})) as Record<number, string>;
     const roofArtBack = Object.assign({}, ...zones.map((d) => d.roofArtBack ?? {})) as Record<number, string>;
+    const bigYards = zones.flatMap((d) => d.bigYards ?? []);
     const topRow = topRes.results[0] as { house_no: number; likes_today: number } | undefined;
     let todayTop: VillageResponse['todayTop'] = topRow ? { houseNo: topRow.house_no, likesToday: topRow.likes_today } : null;
     if (!todayTop && houses.length) {
@@ -119,6 +129,7 @@ export function village(env: Env, ctx: ExecutionContext): Promise<Response> {
       yards,
       roofArt,
       roofArtBack,
+      bigYards,
       total: houses.length,
       unlockedZones: openZoneCount(houses.length, maxNo),
       todayTop,

@@ -75,6 +75,12 @@ export function startFishing(opts: FishingOptions = {}) {
   let practice = false;
   /** 진짜 낚시에서도 처음 몇 번은 화면에 지금 할 일을 보여 준다 */
   let coach = guided() ? 0 : COACH_CASTS;
+  /**
+   * 자동 낚시 (2026-11-16 사용자: "자동사냥 같은 거"). 판을 열어 두면 혼자 던지고, 물면 당기고, 줄다리기도 한다.
+   * 손으로 하는 것보다 느리고(한 마리 10~20초), 희귀/전설 물고기는 자주 놓친다. 잡은 것은 손으로 잡은 것과 똑같이 가방에 들어간다.
+   */
+  let auto = false;
+  let autoCount = 0;
   let raf = 0;
   let last = performance.now();
 
@@ -100,6 +106,18 @@ export function startFishing(opts: FishingOptions = {}) {
         play('tap');
         reset();
       } else if (act === 'guide') showGuide();
+      else if (act === 'auto') {
+        auto = true;
+        practice = false;
+        coach = 0;
+        markGuided();
+        play('tap');
+        reset();
+      } else if (act === 'auto-off') {
+        auto = false;
+        play('tap');
+        reset();
+      }
     },
   });
   const { g, w, h, canvas } = shell;
@@ -113,13 +131,26 @@ export function startFishing(opts: FishingOptions = {}) {
     shell.setButtons('<button class="btn" data-act="real">바로 낚시</button><button class="btn primary" data-act="practice">연습해 보기</button>');
   }
 
+  function autoButtons() {
+    shell.setButtons(`<button class="btn" data-act="auto-off">자동 끄기</button><button class="btn" data-act="stop">그만하기${catches.length ? ` (${catches.length}마리)` : ''}</button>`);
+  }
+
   function reset() {
     phase = 'ready';
     fish = null;
+    t = 0;
+    if (auto) {
+      shell.setMessage(`<b>자동 낚시 중</b> · 지금까지 ${autoCount}마리 <small>판을 열어 두면 계속 낚아요. 큰 물고기는 잘 놓쳐요</small>`);
+      autoButtons();
+      return;
+    }
     shell.setMessage(practice ? '<b>연습</b> · 물을 누르면 낚싯줄을 던져요 <small>(연습에서 잡은 건 가방에 안 들어가요)</small>' : '물을 누르면 낚싯줄을 던져요');
     const help = '<button class="btn" data-act="guide">방법 보기</button>';
     if (practice) shell.setButtons(`${help}<button class="btn" data-act="real">연습 그만, 진짜 낚시</button>`);
-    else shell.setButtons(catches.length ? `<button class="btn" data-act="stop">그만하기 (${catches.length}마리)</button>` : help);
+    else
+      shell.setButtons(
+        `${catches.length ? `<button class="btn" data-act="stop">그만하기 (${catches.length}마리)</button>` : help}<button class="btn" data-act="auto">자동 낚시</button>`,
+      );
   }
 
   async function flush() {
@@ -129,7 +160,14 @@ export function startFishing(opts: FishingOptions = {}) {
       const res = await reportFish(list);
       applyWallet(res.wallet, { silent: true });
       toast(`물고기 ${res.counted}마리를 가방에 넣었어요. 잡화점 보리에게 팔면 ${CURRENCY}가 돼요`, 2800);
-      if (res.full) toast('가방이 가득 찼어요. 잡화점에 팔아 주세요', 3000);
+      if (res.full) {
+        toast('가방이 가득 찼어요. 잡화점에 팔아 주세요', 3000);
+        // 가방이 차면 자동 낚시도 멈춘다
+        if (auto) {
+          auto = false;
+          reset();
+        }
+      }
     } catch (e) {
       toast(e instanceof ApiError ? e.message : '물고기를 알리지 못했어요');
     }
@@ -145,8 +183,13 @@ export function startFishing(opts: FishingOptions = {}) {
       if (pose !== null) setPose(null);
       setPose('cast');
       play('jump');
-      shell.setMessage(practice || coach > 0 ? '찌를 지켜보세요... <small>살짝 흔들리는 건 아직! 쑥 들어가면 바로 눌러요</small>' : '찌를 지켜보세요...');
-      shell.setButtons('');
+      if (auto) {
+        shell.setMessage(`<b>자동 낚시 중</b> · 찌를 던졌어요 <small>지금까지 ${autoCount}마리</small>`);
+        autoButtons();
+      } else {
+        shell.setMessage(practice || coach > 0 ? '찌를 지켜보세요... <small>살짝 흔들리는 건 아직! 쑥 들어가면 바로 눌러요</small>' : '찌를 지켜보세요...');
+        shell.setButtons('');
+      }
     } else if (phase === 'wait') {
       phase = 'ready';
       play('error');
@@ -161,13 +204,18 @@ export function startFishing(opts: FishingOptions = {}) {
       pos = 0.5;
       target = 0.5;
       progress = 0.3;
-      shell.setMessage('누르고 있으면 초록 칸이 오른쪽으로! 물고기를 칸 안에 두세요');
+      if (auto) {
+        shell.setMessage(`<b>자동 낚시 중</b> · 물었다! 끌어오는 중 <small>지금까지 ${autoCount}마리</small>`);
+        autoButtons();
+      } else shell.setMessage('누르고 있으면 초록 칸이 오른쪽으로! 물고기를 칸 안에 두세요');
     }
     if (phase === 'reel') holding = true;
   }
 
   canvas.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    // 자동 낚시 중에는 물을 눌러도 아무 일 없다 (자동 끄기 버튼으로 끈다)
+    if (auto) return;
     try {
       canvas.setPointerCapture(e.pointerId);
     } catch {
@@ -181,6 +229,7 @@ export function startFishing(opts: FishingOptions = {}) {
 
   function caught() {
     phase = 'done';
+    t = 0;
     setPose('caught');
     const f = fish!;
     if (practice) {
@@ -191,30 +240,45 @@ export function startFishing(opts: FishingOptions = {}) {
       return;
     }
     catches.push({ id: f.def.id, cm: f.cm });
+    if (auto) autoCount++;
     play(isRareFish(f.def.id) ? 'fanfare' : 'save');
     shell.setMessage(`
       <div class="catch">${fishSvg(f.def.color, 64)}<div><b>${esc(f.def.label)}</b> ${f.cm}cm
       <small>${f.def.rarity === 'legend' ? '전설!' : f.def.rarity === 'rare' ? '희귀한 물고기!' : f.def.rarity === 'junk' ? '...물고기가 아니네' : ''} ${state.me ? `팔면 ${f.def.price} ${CURRENCY}` : '(입주하면 가방에 모여요)'}</small></div></div>`);
-    shell.setButtons(`<button class="btn" data-act="stop">그만하기 (${catches.length}마리)</button><button class="btn primary" data-act="again">한 번 더</button>`);
+    if (auto) autoButtons();
+    else shell.setButtons(`<button class="btn" data-act="stop">그만하기 (${catches.length}마리)</button><button class="btn primary" data-act="again">한 번 더</button>`);
     if (catches.length >= FISH_PER_REPORT) void flush();
   }
   function escaped(why: string) {
     phase = 'done';
+    t = 0;
     setPose('wait');
     play('remove');
-    shell.setMessage(why);
-    shell.setButtons(`<button class="btn" data-act="stop">그만하기${catches.length ? ` (${catches.length}마리)` : ''}</button><button class="btn primary" data-act="again">다시 던지기</button>`);
+    shell.setMessage(auto ? `<b>자동 낚시 중</b> · ${why}` : why);
+    if (auto) autoButtons();
+    else shell.setButtons(`<button class="btn" data-act="stop">그만하기${catches.length ? ` (${catches.length}마리)` : ''}</button><button class="btn primary" data-act="again">다시 던지기</button>`);
   }
 
   function step(dt: number) {
     t += dt;
+    // 자동 낚시: 쉬었다가 다시 던지고, 물면 바로 당긴다
+    if (auto) {
+      if (phase === 'ready' && t > 1.2) press();
+      else if (phase === 'done' && t > 2.4) {
+        reset();
+      } else if (phase === 'bite' && t > 0.3 && fish) {
+        // 희귀/전설은 자동으로는 잘 안 걸린다
+        if ((fish.def.rarity === 'rare' || fish.def.rarity === 'legend') && Math.random() < 0.6) escaped('큰 물고기가 미끼만 먹고 갔어요');
+        else press();
+      }
+    }
     if (phase === 'cast' && t > 0.6) {
       phase = 'wait';
       setPose('wait');
       t = 0;
-      waitFor = practice ? 2.4 + Math.random() * 1.2 : 1.6 + Math.random() * 3.6;
+      waitFor = auto ? 6 + Math.random() * 8 : practice ? 2.4 + Math.random() * 1.2 : 1.6 + Math.random() * 3.6;
       // 연습에서는 한 번은 꼭 "살짝 흔들림(아직 누르면 안 됨)" 을 보여 준다
-      nibbleAt = practice ? waitFor * 0.45 : Math.random() < 0.6 ? waitFor * (0.3 + Math.random() * 0.4) : -1;
+      nibbleAt = practice ? waitFor * 0.45 : !auto && Math.random() < 0.6 ? waitFor * (0.3 + Math.random() * 0.4) : -1;
     } else if (phase === 'wait' && t >= waitFor) {
       const r = practice ? { id: where === 'sea' ? 'mackerel' : 'crucian', cm: 18 } : rollFish(Math.random, where);
       fish = { def: fishDef(r.id)!, cm: r.cm };
@@ -223,7 +287,7 @@ export function startFishing(opts: FishingOptions = {}) {
       setPose('bite');
       t = 0;
       play('like');
-      shell.setMessage('<b class="big">지금!</b>');
+      if (!auto) shell.setMessage('<b class="big">지금!</b>');
     } else if (phase === 'bite' && t > biteWindow) {
       escaped('앗, 놓쳤어요. 찌가 쑥 들어가고 "!" 가 뜨면 바로 눌러요');
     } else if (phase === 'reel' && fish) {
@@ -231,6 +295,8 @@ export function startFishing(opts: FishingOptions = {}) {
       // 물고기는 가끔 새 목표로 확 움직인다 (힘센 물고기일수록 자주, 멀리)
       if (Math.random() < dt * (0.8 + pull * 2.2)) target = Math.max(0.04, Math.min(0.96, pos + (Math.random() - 0.5) * (0.5 + pull)));
       pos += (target - pos) * Math.min(1, dt * (1.5 + pull * 3));
+      // 자동: 물고기 쪽으로 칸을 옮긴다 (조금 굼뜨게)
+      if (auto) holding = pos > zone + 0.02 - zoneV * 0.25;
       zoneV += (holding ? 1.9 : -1.6) * dt;
       zoneV *= 0.92;
       zone += zoneV * dt * 1.6;
@@ -244,7 +310,7 @@ export function startFishing(opts: FishingOptions = {}) {
         zoneV = Math.min(0, zoneV);
       }
       const inside = Math.abs(pos - zone) < zw / 2;
-      progress += (inside ? (practice ? 0.38 : 0.32) : practice ? -0.07 : -(0.16 + pull * 0.2)) * dt;
+      progress += (inside ? (practice ? 0.38 : auto ? 0.2 : 0.32) : practice ? -0.07 : -(0.16 + pull * 0.2)) * dt;
       // 연습에서는 물고기가 도망가지 않는다
       if (practice && progress < 0.05) progress = 0.05;
       if (progress >= 1) caught();
@@ -359,6 +425,7 @@ export function startFishing(opts: FishingOptions = {}) {
 
   /** 처음 몇 번과 연습에서: 지금 할 일을 물 위에 크게 보여 준다 */
   function drawCoach(now: number) {
+    if (auto) return;
     if (!(practice || coach > 0) && !(phase === 'reel' && coach > 0)) return;
     let text = '';
     let sub = '';

@@ -226,7 +226,7 @@ export function buildHouseGeometry(): THREE.BufferGeometry {
  * 마당 테두리: 낮은 흰 울타리(뒤와 양옆) + 문에서 길까지 이어지는 디딤돌.
  * 원점은 마당 한가운데. size 는 마당 한 변 길이.
  */
-export function buildYardGeometry(size: number, houseFrontZ: number): THREE.BufferGeometry {
+export function buildYardGeometry(size: number, houseFrontZ: number, mailboxZ = size / 2 - 0.3, pathZ = size / 2): THREE.BufferGeometry {
   const parts: Piece[] = [];
   const h = size / 2 - 0.12;
   const fenceColor = '#fffaf0';
@@ -287,7 +287,7 @@ export function buildYardGeometry(size: number, houseFrontZ: number): THREE.Buff
   // 우편함 (2026-11-16): 앞 오른쪽 대문 옆. 나무 기둥 위에 둥근 지붕 통, 옆에 빨간 깃발
   {
     const mx = 1.75;
-    const mz = size / 2 - 0.3;
+    const mz = mailboxZ;
     parts.push(piece(new RoundedBoxGeometry(0.12, 0.78, 0.12, 1, 0.03).translate(mx, 0.39, mz), '#b98557'));
     parts.push(piece(new RoundedBoxGeometry(0.34, 0.26, 0.48, 2, 0.06).translate(mx, 0.9, mz), '#7cc4f2'));
     // 반원 지붕: 축이 앞뒤(z)로 눕고 둥근 쪽이 위
@@ -307,6 +307,13 @@ export function buildYardGeometry(size: number, houseFrontZ: number): THREE.Buff
     g.scale(1.15, 1, 0.85);
     g.rotateY(i * 0.7);
     g.translate((i % 2 ? 0.08 : -0.08), 0.03, z);
+    parts.push(piece(g, '#e9dfcf'));
+  }
+  // 기본 마당(6m)은 길이 조금 앞에서 시작하므로 마당 밖에 디딤돌 하나를 더 놓아 길까지 잇는다
+  if (pathZ > size / 2 + 0.35) {
+    const g = new THREE.CylinderGeometry(0.3, 0.33, 0.07, 16);
+    g.scale(1.15, 1, 0.85);
+    g.translate(0.05, 0.03, (size / 2 + pathZ) / 2 + 0.05);
     parts.push(piece(g, '#e9dfcf'));
   }
 

@@ -99,14 +99,29 @@ export const DECOR_ITEMS = [
   { type: 'sofa', label: '소파', mount: 'floor', art: false, price: 160 },
   // 2026-11-16: 그림을 걸어 두는 캔버스 (누르면 크게 본다)
   { type: 'easel', label: '그림 캔버스', mount: 'floor', art: true, price: 80 },
+  // 2026-11-16: 겨울 한정 눈사람. 팔지 않고 우편함 선물로만 받는다 (GIFT_ITEMS), 마당에만 놓는다 (YARD_ONLY_ITEMS)
+  { type: 'snowman', label: '눈사람', mount: 'floor', art: false, price: null },
 ] as const;
 export type DecorType = (typeof DECOR_ITEMS)[number]['type'];
+/** 상점에서 팔지 않고 선물(우편함, 행사)로만 받는 아이템 */
+export const GIFT_ITEMS: readonly string[] = ['snowman'];
+/** 마당에만 놓을 수 있는 아이템 (집 안 불가) */
+export const YARD_ONLY_ITEMS: readonly string[] = ['snowman'];
 /** 처음부터 가진 아이템 */
-export const STARTER_ITEMS: readonly string[] = DECOR_ITEMS.filter((i) => i.price === null).map((i) => i.type);
+export const STARTER_ITEMS: readonly string[] = DECOR_ITEMS.filter((i) => i.price === null && !GIFT_ITEMS.includes(i.type)).map((i) => i.type);
+
+/**
+ * 겨울 꾸미기 기간 (한국 시간 날짜 'YYYY-MM-DD', 끝 날 포함). 2026-11-16 사용자: 눈 쌓인 크리스마스 맵.
+ * 이 기간에는 섬에 눈이 오고(밤에는 땅과 빈 집 지붕에도 눈), 우편함에 눈사람 선물 편지가 온다.
+ */
+export const WINTER_START = '2026-11-16';
+export const WINTER_END = '2027-02-28';
+export const isWinter = (day: string) => day >= WINTER_START && day <= WINTER_END;
 export const decorItem = (type: string) => DECOR_ITEMS.find((i) => i.type === type);
 
-/** 마당 한 변의 절반 (자유 배치 좌표 -3 ~ 3) */
-export const YARD_HALF = 3.6;
+/** 마당 한 변의 절반 (자유 배치 좌표 -3 ~ 3). 2026-11-16: 기본 6m, 마당 넓히기(300츄르, 지갑 owned 'yard_big')를 사면 7.2m */
+export const YARD_HALF = 3.0;
+export const YARD_HALF_BIG = 3.6;
 /** 집 안 한 변의 절반 (자유 배치 좌표 -4 ~ 4) */
 export const ROOM_HALF = 4;
 /** 마당 / 집 안에 놓을 수 있는 아이템 수 */

@@ -155,6 +155,32 @@ function easel(): Pieces {
   return o;
 }
 
+/** 눈사람 (2026-11-16 겨울 한정, 마당에만): 눈덩이 둘, 목도리, 털모자, 당근 코, 나뭇가지 팔 */
+function snowman(): Pieces {
+  const o: Pieces = [];
+  const SNOW = '#f7fbff';
+  o.push(p(new THREE.SphereGeometry(0.42, 16, 12).scale(1, 0.92, 1).translate(0, 0.38, 0), SNOW));
+  o.push(p(new THREE.SphereGeometry(0.3, 16, 12).translate(0, 0.98, 0), SNOW));
+  // 목도리 (빨강) + 늘어진 끝
+  o.push(p(new THREE.TorusGeometry(0.24, 0.07, 8, 18).rotateX(Math.PI / 2).translate(0, 0.76, 0), '#e8413f'));
+  o.push(box(0.11, 0.3, 0.05, 0.14, 0.6, 0.2, '#e8413f', 0.02));
+  // 털모자 + 방울
+  o.push(p(new THREE.CylinderGeometry(0.2, 0.25, 0.16, 14).translate(0, 1.22, 0), '#3e8f5c'));
+  o.push(p(new THREE.ConeGeometry(0.2, 0.28, 14).translate(0, 1.43, 0), '#3e8f5c'));
+  o.push(p(new THREE.TorusGeometry(0.235, 0.045, 6, 18).rotateX(Math.PI / 2).translate(0, 1.15, 0), WHITE));
+  o.push(p(new THREE.SphereGeometry(0.065, 8, 6).translate(0, 1.59, 0), WHITE));
+  // 눈, 당근 코, 단추
+  for (const sx of [-1, 1]) o.push(p(new THREE.SphereGeometry(0.035, 6, 5).translate(sx * 0.1, 1.04, 0.26), '#2f2a2e'));
+  o.push(p(new THREE.ConeGeometry(0.045, 0.22, 8).rotateX(Math.PI / 2).translate(0, 0.97, 0.38), '#ff9b3d'));
+  for (const y of [0.32, 0.48]) o.push(p(new THREE.SphereGeometry(0.04, 6, 5).translate(0, y, 0.39), '#2f2a2e'));
+  // 나뭇가지 팔
+  for (const sx of [-1, 1]) {
+    const arm = new THREE.CylinderGeometry(0.022, 0.03, 0.5, 5).rotateZ(sx * 1.05).translate(sx * 0.48, 0.92, 0);
+    o.push(p(arm, '#7c5235'));
+  }
+  return o;
+}
+
 export const FREE_ITEMS: Record<string, ItemDef> = {
   // ── 기존 마당 아이템 8종 (마당과 집 안 어디든) ──
   cat_tower: { label: '캣타워', mount: 'floor', hx: 0.45, hz: 0.45, height: 1.7, block: [[0, 0, 0.42]], build: yard('cat_tower') },
@@ -176,6 +202,8 @@ export const FREE_ITEMS: Record<string, ItemDef> = {
   frame: { label: '액자', mount: 'wall', hx: 0.43, hz: 0.05, y0: 1.32, height: 0.86, art: { size: 0.7, x: 0, y: 1.75, z: 0.068 }, build: () => merge(frame()) },
   window: { label: '창문', mount: 'wall', hx: 0.65, hz: 0.08, y0: 1.24, height: 1.1, build: () => merge(windowItem()) },
   easel: { label: '그림 캔버스', mount: 'floor', hx: 0.5, hz: 0.32, height: 1.8, block: [[0, 0, 0.36]], art: { size: 0.84, x: 0, y: 1.1, z: 0.09 }, build: () => merge(easel()) },
+  // 2026-11-16: 겨울 한정 (마당에만)
+  snowman: { label: '눈사람', mount: 'floor', hx: 0.45, hz: 0.45, height: 1.65, block: [[0, 0, 0.42]], build: () => merge(snowman()) },
 };
 
 /** 모르는 종류 이름이 왔을 때 대신 그리는 선물 상자 */

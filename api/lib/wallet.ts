@@ -1,5 +1,5 @@
 // 츄르 지갑 읽기/쓰기. 지갑은 집 한 채당 한 줄(coins + data JSON)이라 무엇을 하든 쓰기 1행이다.
-import { DAILY_GAME_CAP, dailyQuests, normalizeWallet, welcomeMail, type Wallet, type WalletData } from '../../src/shared/economy';
+import { addSeasonMail, DAILY_GAME_CAP, dailyQuests, normalizeWallet, welcomeMail, type Wallet, type WalletData } from '../../src/shared/economy';
 
 export interface WalletRow {
   coins: number;
@@ -20,7 +20,10 @@ export async function loadWallet(db: D1Database, houseId: number): Promise<Walle
   } catch {
     /* 깨진 값은 빈 지갑 데이터로 */
   }
-  return { coins: row.coins, data: normalizeWallet(parsed) };
+  const data = normalizeWallet(parsed);
+  // 겨울 선물 편지 (눈사람). 다음에 지갑을 저장할 때 같이 저장된다 (읽기만 하면 매번 다시 넣어 보여 준다)
+  addSeasonMail(data);
+  return { coins: row.coins, data };
 }
 
 /** 지갑 저장 문 (다른 쓰기와 같이 batch 로 보낼 수 있게 문만 만든다) */

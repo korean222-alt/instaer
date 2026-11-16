@@ -122,4 +122,6 @@ export interface HouseDecor {
   roofArtBack?: string | null;
   /** 넓힌 집인지 (집 넓히기, 2026-11-16) */
   big?: boolean;
+  /** 넓힌 마당인지 (마당 넓히기, 2026-11-16) */
+  bigYard?: boolean;
 }

@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import { collidersNear, zoneAt, zoneCenter, type Collider } from '../layout';
-import { ZONE_CAPACITY } from '../../shared/config';
+import { collidersNear, skipCollider, zoneAt, zoneCenter, type Collider } from '../layout';
 import { GROUND_Y } from '../world/constants';
 
 /**
@@ -109,7 +108,7 @@ export class WalkCamera {
       const h = f.y + this.dir.y * t - GROUND_Y;
       for (const col of collidersNear(px, pz, 0.5, this.near)) {
         if (col.occ <= 0 || h > col.h) continue;
-        if (col.lot >= 0 && !this.hasHouse(zone * ZONE_CAPACITY + col.lot + 1)) continue;
+        if (skipCollider(col, zone, this.hasHouse)) continue;
         const dx = px - col.x;
         const dz = pz - col.z;
         if (col.r > 0) {

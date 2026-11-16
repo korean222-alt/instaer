@@ -38,7 +38,9 @@ import {
   neighborhoodAt,
   zoneAt,
   zoneCenter,
-  YARD_HALF,
+  yardHalfOf,
+  setBigYardSet,
+  skipCollider,
   MAILBOX_LOCAL,
   type Collider,
 } from './layout';
@@ -49,6 +51,8 @@ import { Walker } from './walk/Walker';
 import { hash01 } from './util/rand';
 import { GROUND_Y } from './world/constants';
 import { World } from './world/World';
+import { Snowfall } from './world/winter';
+import { SNOW } from './core/glowLambert';
 
 export { houseSlot, neighborhoodArea, neighborhoodAt, NEIGHBORHOOD_SIZE } from './layout';
 export type { LocalState, PlayerAnim, RemotePlayer } from './remote/types';
@@ -232,6 +236,16 @@ export interface IslandScene {
    */
   setRiding(mode: 'drive' | 'passenger' | null, driverId?: string): void;
 
+  // ── 2026-11-16: 마당 넓히기, 겨울 ──
+
+  /** 마당을 넓힌 집 번호 전체 (마당 넓히기, 300츄르). 나머지 집은 기본 마당(6m), 넓힌 집은 7.2m */
+  setBigYards(houseNos: number[]): void;
+  /**
+   * 겨울 꾸미기 (크리스마스). 켜면: 나무에 늘 눈, 밤에는 땅/빈 집 지붕/소품 위에 눈이 쌓이고,
+   * 집 처마/나무/광장에 LED 전구, 동네 큰 나무와 마을 광장 트리에 크리스마스 장식, 화면에 눈이 조금 내린다.
+   */
+  setWinter(on: boolean): void;
+
   /** 캔버스 크기가 바뀌면 부른다 */
   resize(): void;
   dispose(): void;
@@ -315,6 +329,17 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   scene.background = atmosphere.horizon;
 
   const world = new World(atmosphere);
+  // 겨울 (2026-11-16): 내리는 눈. 쌓인 눈은 재질이 그린다 (SNOW.uWinter)
+  const snowfall = new Snowfall(900);
+  snowfall.points.visible = false;
+  scene.add(snowfall.points);
+  let winterOn = false;
+  const setWinterOn = (on: boolean) => {
+    winterOn = on;
+    SNOW.uWinter.value = on ? 1 : 0;
+    world.setWinter(on);
+    if (!on) snowfall.points.visible = false;
+  };
   const catModel = createProceduralCatModel(atmosphere.shared);
   const geometries = new ItemGeometries();
   const drawings = new DrawingStore();
@@ -432,7 +457,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       const lx = x - c.x;
       const lz = z - c.z;
       for (const col of collidersNear(lx, lz, pad + 0.2, npcNear)) {
-        if (col.lot >= 0 && !houses.has(zone * ZONE_CAPACITY + col.lot + 1)) continue;
+        if (skipCollider(col, zone, (no) => houses.has(no))) continue;
         const dx = lx - col.x;
         const dz = lz - col.z;
         if (col.r > 0) {
@@ -512,6 +537,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     world.resize(h * renderer.getPixelRatio(), camera.fov);
+    snowfall.resize(h * renderer.getPixelRatio(), camera.fov);
     controls.layout();
   };
 
@@ -522,6 +548,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     atmosphere.sun.castShadow = level < 3;
     houses.setNearLimit(level >= 4 ? 16 : level >= 2 ? 24 : 64);
     interior?.setShadows(level < 3);
+    snowfall.setDensity(level >= 3 ? 0.4 : level >= 1 ? 0.7 : 1);
     resize();
   };
 
@@ -605,7 +632,8 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
         const houseNo = zone * ZONE_CAPACITY + i + 1;
         if (!houses.has(houseNo)) continue;
         // 마당 입구(대문 자리)까지의 거리. 지금 가까운 집은 조금 더 멀어져야 놓는다
-        const d = Math.hypot(lot.x + YARD_HALF * Math.sin(lot.rot) - lx, lot.z + YARD_HALF * Math.cos(lot.rot) - lz);
+        const yh = yardHalfOf(houseNo);
+        const d = Math.hypot(lot.x + yh * Math.sin(lot.rot) - lx, lot.z + yh * Math.cos(lot.rot) - lz);
         const limit = houseNo === nearHouse ? NEAR_OUT : NEAR_IN;
         if (d < limit && d - (houseNo === nearHouse ? NEAR_OUT - NEAR_IN : 0) < bestD) {
           bestD = d - (houseNo === nearHouse ? NEAR_OUT - NEAR_IN : 0);
@@ -938,6 +966,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
 
     frustum.setFromProjectionMatrix(viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     world.update(target.x, target.z, target.dist, frustum);
+    if (winterOn) snowfall.update(dt, camera, target, atmosphere.shared.uNight.value);
     houses.update(dt, camera, target, { w: viewportW, h: viewportH }, frustum);
     mark.update(atmosphere.shared.uTime.value, target.dist);
     remoteView.focusX = walking ? walker.x : target.x;
@@ -1266,6 +1295,12 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     setRoofArt(items) {
       houses.setRoofArt(Array.isArray(items) ? items : []);
     },
+    setBigYards(list) {
+      if (setBigYardSet(Array.isArray(list) ? list : [])) houses.bigYardsChanged();
+    },
+    setWinter(on) {
+      setWinterOn(!!on);
+    },
     setNpcs(list) {
       npcs.set(Array.isArray(list) ? list : []);
     },
@@ -1345,6 +1380,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       rig.dispose();
       world.dispose();
       houses.dispose();
+      snowfall.dispose();
       mark.dispose();
       renderer.dispose();
     },

@@ -5,7 +5,7 @@ import type { Drawing } from '../../src/shared/types';
 import type { Env } from '../env';
 import { clientIp, error, json, readJson } from '../http';
 import { invalidate } from '../lib/cache';
-import { cleanFree, cleanSurface, ID_RE, joinRoof, readDecor, toDecor } from '../lib/decor';
+import { cleanFree, cleanSurface, ID_RE, joinRoof, readDecor, toDecor, yardOutsideBase } from '../lib/decor';
 import { houseByNo, markZoneDirty } from '../lib/houses';
 import { allow } from '../lib/rateLimit';
 import { sessionHouse } from '../lib/session';
@@ -21,7 +21,9 @@ export async function getDecor(houseNo: number, env: Env): Promise<Response> {
     env.DB.prepare('SELECT data FROM wallets WHERE house_id = ?').bind(house.id).first<{ data: string }>(),
   ]);
   const big = !!wal?.data && wal.data.includes('"room_big"');
-  return json({ ...toDecor(houseNo, row), big, roofColor: house.roof_color });
+  const decor = toDecor(houseNo, row);
+  const bigYard = (!!wal?.data && wal.data.includes('"yard_big"')) || yardOutsideBase(decor.yard);
+  return json({ ...decor, big, bigYard, roofColor: house.roof_color });
 }
 
 /** 그 그림들이 모두 내 것인지 */
@@ -54,8 +56,10 @@ export async function putDecor(houseNo: number, request: Request, env: Env): Pro
   const usedTypes = new Set<string>();
   const usedDrawings = new Set<string>();
 
+  // 마당 넓히기 (2026-11-16, 300츄르). 이미 넓은 마당에 놓아 둔 집은 무료로 열어 준다
+  if (!wallet.data.owned.includes('yard_big') && yardOutsideBase(cur.yard)) wallet.data.owned.push('yard_big');
   if (body.yard !== undefined) {
-    const c = cleanFree(body.yard, 'yard');
+    const c = cleanFree(body.yard, 'yard', wallet.data.owned.includes('yard_big'));
     if ('problem' in c) return error(400, 'bad_items', c.problem);
     cur.yard = c.items;
     c.types.forEach((t) => usedTypes.add(t));
@@ -109,7 +113,12 @@ export async function putDecor(houseNo: number, request: Request, env: Env): Pro
   if (roof !== mine.house.roof_color) stmts.push(db.prepare('UPDATE houses SET roof_color = ? WHERE id = ?').bind(roof, id));
   await db.batch(stmts);
   if (publicChanged) invalidate(VILLAGE_KEY);
-  return json({ ok: true, decor: { ...cur, big: wallet.data.owned.includes('room_big') }, roofColor: roof, wallet: walletView(wallet, houseNo) });
+  return json({
+    ok: true,
+    decor: { ...cur, big: wallet.data.owned.includes('room_big'), bigYard: wallet.data.owned.includes('yard_big') },
+    roofColor: roof,
+    wallet: walletView(wallet, houseNo),
+  });
 }
 
 // ── 그림 ──

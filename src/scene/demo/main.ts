@@ -484,6 +484,9 @@ requestAnimationFrame(tick);
 
 // 주소에 값을 붙여서 처음 화면을 정할 수 있다 (확인용)
 //   ?n=3000  ?time=night  ?region=seoul  ?house=12  ?dist=200
+// 2026-11-16: 겨울 (?winter=0 이면 끔), 넓힌 마당 (?bigyard=1,2,3)
+island.setWinter(params.get('winter') !== '0');
+if (params.get('bigyard')) island.setBigYards(params.get('bigyard')!.split(',').map(Number));
 if (params.get('time') === 'night') $('btn-time')?.click();
 if (params.get('region')) setRegion(params.get('region') as RegionId);
 if (params.get('house')) island.focusHouse(Number(params.get('house')));
@@ -492,6 +495,10 @@ if (params.get('dist') || params.get('at')) {
   debugSetCamera(island, params.get('at') ? s.x : 0, params.get('at') ? s.z + 0.6 : 0, Number(params.get('dist') ?? 60));
 }
 //   ?walk=12 (12번지 고양이로 걷기 시작)  ?q=0 (자동 품질 끄고 단계 고정)
+if (params.get('cam')) {
+  const [cx, cz] = params.get('cam')!.split(',').map(Number);
+  debugSetCamera(island, cx, cz, Number(params.get('dist') ?? 30));
+}
 if (params.get('q')) debugSetQuality(island, Number(params.get('q')));
 if (params.get('walk')) setWalking(true, Number(params.get('walk')));
 //   ?bots=28 (가짜 유저 수를 정해서 바로 시작)  ?warp=1 (가끔 순간이동하는 유저 넣기)

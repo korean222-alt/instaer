@@ -5,7 +5,7 @@ import { forgetMyDrawing, loadMyDrawings, myDrawingList, syncArt } from '../art'
 import { play } from '../audio/sound';
 import { ApiError, buyItem, deleteDrawing, saveDecor } from '../net/api';
 import { ctl } from '../play/ctl';
-import { pushHousesToScene, setMe, setMyRoofArt, state } from '../state';
+import { pushBigYards, pushHousesToScene, setMe, setMyRoofArt, state } from '../state';
 import { drawingThumb, drawingUrl } from '../ui/drawingThumb';
 import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
@@ -41,6 +41,7 @@ export const decorateScreen: Screen = {
     /** 지붕 그림을 붙일 수 있는지 (100츄르 한 번. 전에 붙여 둔 집은 그대로) */
     const canRoof = () => hasItem('roof_art') || state.roofArt.has(houseNo) || state.roofArtBack.has(houseNo);
     const ROOF = upgradeDef('roof_art')!;
+    const YARD = upgradeDef('yard_big')!;
     const draw = () => {
       // 2026-11-15: 처음 연 순간의 me 가 아니라 지금 값을 쓴다 (지붕 색이 판을 다시 열어야 바뀌던 문제)
       const me = state.me!;
@@ -56,6 +57,11 @@ export const decorateScreen: Screen = {
           <button class="btn primary" data-act="room">집 안 꾸미기</button>
         </div>
         <p class="note">아래 줄에서 아이템을 고르고, 섬에서 놓을 곳을 누르면 그 자리에 놓여요. 집 안은 걷기 모드로 들어가요.</p>
+        ${
+          state.bigYards.has(houseNo) || hasItem('yard_big')
+            ? '<p class="note">마당 넓히기: 가짐 (7.2m 마당)</p>'
+            : `<div class="row"><button class="btn" data-act="buy-yard" ${coins() >= YARD.price ? '' : 'disabled'}>마당 넓히기 6m → 7.2m · ${YARD.price} ${CURRENCY}</button></div>`
+        }
 
         <h3 class="sec">지붕</h3>
         <div class="roof-preview" style="--roof:${me.roofColor}">
@@ -149,6 +155,20 @@ export const decorateScreen: Screen = {
         return draw();
       }
       const act = t.dataset.act;
+      if (act === 'buy-yard') {
+        t.setAttribute('disabled', '');
+        try {
+          const res = await buyItem('yard_big');
+          applyWallet(res.wallet, { item: res.bought });
+          state.bigYards.add(houseNo);
+          pushBigYards();
+          toast('마당이 7.2m 로 넓어졌어요!');
+        } catch (err) {
+          play('error');
+          toast(err instanceof ApiError ? err.message : '사지 못했어요');
+        }
+        return draw();
+      }
       if (act === 'buy-roof') {
         t.setAttribute('disabled', '');
         try {

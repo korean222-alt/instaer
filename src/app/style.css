@@ -658,3 +658,6 @@ body.decorating .quest-peek, body.playing .quest-peek, body:has(.sheet.open) .qu
 .mail-row small { display: block; color: var(--ink-soft); font-size: 12px; margin-bottom: 4px; }
 .mail-row p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; }
 .mail-row .btn { margin-top: 8px; }
+/* 2026-11-16 겨울 선물 편지 */
+.mail-gift { display: flex; justify-content: center; margin: 6px 0 2px; }
+.mail-gift .item-pic { filter: drop-shadow(0 3px 4px rgba(90, 60, 30, 0.18)); }

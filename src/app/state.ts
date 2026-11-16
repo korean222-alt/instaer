@@ -21,6 +21,8 @@ export interface AppState {
   roofArt: Map<number, string>;
   /** 번지 → 지붕 뒷면 그림 id (2026-11-16) */
   roofArtBack: Map<number, string>;
+  /** 마당을 넓힌 집 번지 (마당 넓히기) */
+  bigYards: Set<number>;
   /** 내 지갑 (입주 전이나 서버가 안 되면 null) */
   wallet: WalletView | null;
   /** 지금 꾸미는 중인 마당 번지 (마을을 새로 받아도 이 집 마당은 덮어쓰지 않는다) */
@@ -54,6 +56,7 @@ export function initState(scene: IslandScene): AppState {
     yards: new Map(),
     roofArt: new Map(),
     roofArtBack: new Map(),
+    bigYards: new Set(),
     wallet: null,
     editingYard: null,
     todayTop: null,
@@ -91,6 +94,11 @@ export function pushHousesToScene(immediate = false) {
   else houseTimer = window.setTimeout(run, 180);
 }
 
+/** 넓힌 마당 목록을 씬에 넘긴다 */
+export function pushBigYards() {
+  state.scene.setBigYards([...state.bigYards]);
+}
+
 /** 내 지붕 그림을 이 화면에서 바꾼 적이 있으면 (서버 캐시보다 새롭다) */
 let myRoofKnown = false;
 export function setMyRoofArt(id: string | null, back = false) {
@@ -112,6 +120,10 @@ export function applyVillage(v: Village) {
   state.yards = new Map(Object.entries(v.yards ?? {}).map(([k, items]) => [Number(k), items]));
   state.roofArt = new Map(Object.entries(v.roofArt ?? {}).map(([k, id]) => [Number(k), id]));
   state.roofArtBack = new Map(Object.entries(v.roofArtBack ?? {}).map(([k, id]) => [Number(k), id]));
+  const hadMyBigYard = !!state.me && state.bigYards.has(state.me.houseNo);
+  state.bigYards = new Set(Array.isArray(v.bigYards) ? v.bigYards : []);
+  // 방금 산 내 마당 넓히기는 서버 캐시보다 새롭다
+  if (state.me && (hadMyBigYard || state.wallet?.data.owned.includes('yard_big'))) state.bigYards.add(state.me.houseNo);
   if (state.me) {
     const no = state.me.houseNo;
     // 내 집은 서버 캐시(최대 1분)보다 내가 아는 값이 더 새롭다
@@ -128,6 +140,7 @@ export function applyVillage(v: Village) {
   state.todayTop = v.todayTop;
   state.unlockedZones = Math.max(v.unlockedZones, openZoneCount(state.houses.size, maxHouseNo()));
   pushHousesToScene(true);
+  pushBigYards();
   for (const no of cleared) if (no !== state.editingYard) state.scene.setYardItemsFree(no, []);
   for (const [no, items] of state.yards) if (no !== state.editingYard) state.scene.setYardItemsFree(no, items);
   state.scene.highlightHouse(state.todayTop?.houseNo ?? null);

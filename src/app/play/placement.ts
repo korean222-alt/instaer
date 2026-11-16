@@ -1,7 +1,7 @@
 // 꾸미기 모드: 섬 화면 위쪽에 도구 줄을 띄우고, 아이템은 씬에서 손가락으로 끌어서 놓는다.
 // 씬과는 startPlacing / stopPlacing / rotatePlacing / onPlace / onPick / setYardItemsFree / setInteriorItems 로만 주고받는다.
 import type { IslandScene } from '../../scene';
-import { DECOR_ITEMS, decorItem, FLOORS, FREE_ROOM_MAX, FREE_YARD_MAX, ROOM_COLORS, WALLPAPERS } from '../../shared/config';
+import { DECOR_ITEMS, decorItem, FLOORS, FREE_ROOM_MAX, FREE_YARD_MAX, GIFT_ITEMS, ROOM_COLORS, WALLPAPERS, YARD_ONLY_ITEMS } from '../../shared/config';
 import { CURRENCY, FREE_ROOM_MAX_BIG } from '../../shared/economy';
 import type { Drawing, HouseDecor, PlacedItem } from '../../shared/types';
 import { loadMyDrawings, myDrawingList, pinDrawings, surfaceDrawing } from '../art';
@@ -112,7 +112,10 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
     dock.hidden = false;
     const it = picked ? items.find((i) => i.id === picked) : null;
     const def = it ? decorItem(it.type) : null;
-    const shown = DECOR_ITEMS.filter((d) => where === 'room' || d.mount !== 'wall');
+    // 집 안에는 마당 전용(눈사람)을 빼고, 마당에는 벽걸이를 뺀다. 선물로만 받는 것은 가졌을 때만 보인다
+    const shown = DECOR_ITEMS.filter(
+      (d) => (where === 'room' ? !YARD_ONLY_ITEMS.includes(d.type) : d.mount !== 'wall') && (!GIFT_ITEMS.includes(d.type) || hasItem(d.type)),
+    );
     let panelHtml = '';
     if (panel === 'art' && it) panelHtml = `<div class="decor-panel"><b>${esc(def?.label ?? '')}에 붙일 그림</b><div class="art-row">${thumbs(myDrawingList(), it.drawingId, 'art')}</div></div>`;
     if (panel === 'wallpaper' || panel === 'floor') {

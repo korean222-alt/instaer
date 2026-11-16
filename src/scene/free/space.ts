@@ -55,7 +55,9 @@ export function roomSpace(houseNo: number, half = ROOM_HALF): Space {
   };
 }
 
-export function yardSpace(houseNo: number, x: number, z: number, rot: number, y: number): Space {
+/** half: 마당 한 변의 절반 (기본 3.0, 넓힌 마당 3.6) */
+export function yardSpace(houseNo: number, x: number, z: number, rot: number, y: number, half = 3.6): Space {
+  const e = half - 0.18;
   return {
     kind: 'yard',
     houseNo,
@@ -65,10 +67,10 @@ export function yardSpace(houseNo: number, x: number, z: number, rot: number, y:
     cos: Math.cos(rot),
     sin: Math.sin(rot),
     y,
-    minX: -3.42,
-    maxX: 3.42,
-    minZ: -3.42,
-    maxZ: 3.55,
+    minX: -e,
+    maxX: e,
+    minZ: -e,
+    maxZ: half - 0.05,
     wall: 0,
     // 집 몸체와 그 뒤 (마당 칸으로 x 1~4, y 0~2 자리)
     keepOut: [{ x: 0, z: -1.5, hx: 1.6, hz: 1.48 }],

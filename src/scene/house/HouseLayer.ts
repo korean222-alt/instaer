@@ -12,9 +12,9 @@ import { FreeItems, type FreeGroup } from '../free/FreeItems';
 import { blockersOf, pickItem, yardSpace, type Space } from '../free/space';
 import type { PlacedItem } from '../free/types';
 import { cellToLocal, ItemField } from '../items/ItemField';
-import { houseSlot, NEIGHBORHOODS, NEIGHBORHOODS_PER_ZONE, ZONE, zoneCenter } from '../layout';
+import { houseSlot, isBigYard, MAILBOX_LOCAL, NEIGHBORHOODS, NEIGHBORHOODS_PER_ZONE, YARD_HALF, YARD_HALF_BIG, yardHalfOf, ZONE, zoneCenter } from '../layout';
 import { hash01 } from '../util/rand';
-import { GROUND_Y, HOUSE_OFFSET_Z, YARD_WORLD } from '../world/constants';
+import { GROUND_Y, HOUSE_OFFSET_Z } from '../world/constants';
 import { GlowPools, type Pool } from '../world/nightFx';
 import {
   buildFarHouseGeometry,
@@ -48,7 +48,7 @@ const LABEL_PX = 14;
 const CAT_HI_PX = 42;
 const CAT_SCALE = 1.12;
 /** 깃발 위치 (마당 가운데 기준): 입구 디딤돌 바로 왼쪽, 마당 앞 테두리 위 */
-const FLAG_LOCAL = { x: -1.55, z: YARD_WORLD / 2 - 0.02 };
+const FLAG_LOCAL = { x: -1.55, z: YARD_HALF - 0.02 };
 const FLAG_SCALE = 0.8;
 /** 걷기 모드에서 자세히 그리는 범위 (내 고양이 기준) */
 const WALK_NEAR_RADIUS = 40;
@@ -104,9 +104,11 @@ export class HouseLayer {
   readonly group = new THREE.Group();
   private readonly shared: GlowShared;
   private readonly material: THREE.MeshLambertMaterial;
+  /** 마당 재질 (겨울 밤에는 잔디와 울타리 위에 눈이 쌓인다) */
+  private readonly yardMaterial: THREE.MeshLambertMaterial;
   private readonly flagMaterial: THREE.MeshLambertMaterial;
   private readonly flagUniforms = { uTime: { value: 0 }, uFlagScale: { value: 1 } };
-  private readonly farGeometry = buildFarHouseGeometry(YARD_WORLD, -HOUSE_OFFSET_Z);
+  private readonly farGeometry = buildFarHouseGeometry(YARD_HALF * 2, -HOUSE_OFFSET_Z);
   private readonly flagGeometry = buildFlagGeometry();
   private readonly tintGeometry = new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2);
   private readonly tintMaterial: THREE.ShaderMaterial;
@@ -121,6 +123,9 @@ export class HouseLayer {
   private awayCat: number | null = null;
   private readonly nearHouses: THREE.InstancedMesh;
   private readonly nearYards: THREE.InstancedMesh;
+  /** 넓힌 마당 (마당 넓히기) */
+  private readonly nearYardsBig: THREE.InstancedMesh;
+  private readonly yardStateBig: THREE.InstancedBufferAttribute;
   private readonly nearTint: THREE.InstancedBufferAttribute;
   private readonly nearState: THREE.InstancedBufferAttribute;
   private readonly yardState: THREE.InstancedBufferAttribute;
@@ -173,7 +178,8 @@ export class HouseLayer {
   ) {
     this.shared = shared;
     this.free = new FreeItems(shared, geometries, drawings);
-    this.material = createGlowLambert(shared, { instanced: true });
+    this.material = createGlowLambert(shared, { instanced: true, snow: 'house' });
+    this.yardMaterial = createGlowLambert(shared, { instanced: true, snow: 'night' });
 
     // 깃발 재질: 인스턴스 색은 천에만 입히고, 천은 바람에 펄럭인다
     this.flagUniforms.uTime = shared.uTime;
@@ -259,13 +265,19 @@ export class HouseLayer {
     houseGeo.setAttribute('iState', this.nearState);
     this.nearHouses = new THREE.InstancedMesh(houseGeo, this.material, NEAR_MAX);
 
-    const yardGeo = buildYardGeometry(YARD_WORLD, HOUSE_OFFSET_Z + HOUSE_DIM.depth / 2);
+    const front = HOUSE_OFFSET_Z + HOUSE_DIM.depth / 2;
+    const yardGeo = buildYardGeometry(YARD_HALF * 2, front, MAILBOX_LOCAL.z, YARD_HALF_BIG + 0.2);
     this.yardState = new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 4), 4);
     yardGeo.setAttribute('iTint', new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 3).fill(1), 3));
     yardGeo.setAttribute('iState', this.yardState);
-    this.nearYards = new THREE.InstancedMesh(yardGeo, this.material, NEAR_MAX);
+    this.nearYards = new THREE.InstancedMesh(yardGeo, this.yardMaterial, NEAR_MAX);
+    const bigGeo = buildYardGeometry(YARD_HALF_BIG * 2, front, MAILBOX_LOCAL.z);
+    this.yardStateBig = new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 4), 4);
+    bigGeo.setAttribute('iTint', new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 3).fill(1), 3));
+    bigGeo.setAttribute('iState', this.yardStateBig);
+    this.nearYardsBig = new THREE.InstancedMesh(bigGeo, this.yardMaterial, NEAR_MAX);
 
-    for (const mesh of [this.nearHouses, this.nearYards]) {
+    for (const mesh of [this.nearHouses, this.nearYards, this.nearYardsBig]) {
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;
       mesh.count = 0;
@@ -429,8 +441,14 @@ export class HouseLayer {
     const r = this.recs.get(houseNo);
     if (!r) return null;
     let s = this.spaces.get(houseNo);
-    if (!s) this.spaces.set(houseNo, (s = yardSpace(houseNo, r.x, r.z, r.rot, GROUND_Y)));
+    if (!s) this.spaces.set(houseNo, (s = yardSpace(houseNo, r.x, r.z, r.rot, GROUND_Y, yardHalfOf(houseNo))));
     return s;
+  }
+
+  /** 마당 넓히기 목록이 바뀌었다 (layout 의 목록은 이미 바뀌어 있다) */
+  bigYardsChanged() {
+    this.spaces.clear();
+    this.dirty = true;
   }
 
   /** 가까운 집 마당에서 광선이 처음 닿는 그림 붙은 아이템 (2026-11-16: 캔버스 누르면 크게 보기) */
@@ -697,22 +715,32 @@ export class HouseLayer {
     for (const zb of touched) zb.state.needsUpdate = true;
     this.near = want;
 
-    // 자세한 집과 마당
+    // 자세한 집과 마당 (마당은 기본 / 넓힌 마당 두 가지)
+    let ys = 0;
+    let yb = 0;
     want.forEach((r, i) => {
       this.nearHouses.setMatrixAt(i, this.place(r, 0, HOUSE_OFFSET_Z, GROUND_Y));
-      this.nearYards.setMatrixAt(i, this.place(r, 0, 0, GROUND_Y));
+      if (isBigYard(r.house.houseNo)) {
+        this.nearYardsBig.setMatrixAt(yb, this.place(r, 0, 0, GROUND_Y));
+        this.yardStateBig.setXYZW(yb++, 0, 0, r.region, 0);
+      } else {
+        this.nearYards.setMatrixAt(ys, this.place(r, 0, 0, GROUND_Y));
+        this.yardState.setXYZW(ys++, 0, 0, r.region, 0);
+      }
       this.c.set(r.house.roofColor);
       this.nearTint.setXYZ(i, this.c.r, this.c.g, this.c.b);
       this.nearState.setXYZW(i, r.occupied ? 0 : 1, r.lit, r.region, 0);
-      this.yardState.setXYZW(i, 0, 0, r.region, 0);
     });
     this.nearHouses.count = want.length;
-    this.nearYards.count = want.length;
+    this.nearYards.count = ys;
+    this.nearYardsBig.count = yb;
     this.nearHouses.instanceMatrix.needsUpdate = true;
     this.nearYards.instanceMatrix.needsUpdate = true;
+    this.nearYardsBig.instanceMatrix.needsUpdate = true;
     this.nearTint.needsUpdate = true;
     this.nearState.needsUpdate = true;
     this.yardState.needsUpdate = true;
+    this.yardStateBig.needsUpdate = true;
 
     // 고양이: 계속 보이는 집의 고양이는 하던 행동을 이어간다
     for (const houseNo of [...this.cats.keys()]) {
@@ -819,6 +847,8 @@ export class HouseLayer {
     this.tintMaterial.dispose();
     this.nearHouses.geometry.dispose();
     this.nearYards.geometry.dispose();
+    this.nearYardsBig.geometry.dispose();
+    this.yardMaterial.dispose();
     this.roofArtGeometry.dispose();
     this.roofArtBackGeometry.dispose();
     this.material.dispose();

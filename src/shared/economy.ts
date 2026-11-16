@@ -1,6 +1,6 @@
 // 츄르(돈), 퀘스트, 낚시, 미니게임 규칙. 서버(api)와 화면(src/app)이 같이 쓴다.
 // 서버가 최종 판단(지급, 한도)을 하고, 화면은 같은 규칙으로 진행도를 미리 보여 준다.
-import { DECOR_ITEMS, STARTER_ITEMS } from './config';
+import { DECOR_ITEMS, isWinter, STARTER_ITEMS } from './config';
 
 export const CURRENCY = '츄르';
 /** 입주하면 처음 받는 츄르 */
@@ -14,6 +14,7 @@ export const RENAME_COST = 500;
 export const UPGRADES = [
   { key: 'cat_car', label: '고양이 자동차', price: 500, desc: '타고 내릴 수 있어요. 더 빠르고, 뒤에 한 명 더 탈 수 있어요' },
   { key: 'room_big', label: '집 넓히기', price: 400, desc: '집 안이 8m에서 11m로 넓어지고 가구를 40개까지 놓아요' },
+  { key: 'yard_big', label: '마당 넓히기', price: 300, desc: '마당이 6m에서 7.2m로 넓어져요. 이웃 화면에도 넓은 마당으로 보여요' },
   { key: 'roof_art', label: '지붕 그림 그리기', price: 100, desc: '한 번 사면 지붕 앞뒤에 그림을 계속 바꿔 그릴 수 있어요' },
 ] as const;
 export type UpgradeKey = (typeof UPGRADES)[number]['key'];
@@ -30,6 +31,8 @@ export interface MailItem {
   text: string;
   /** 같이 든 츄르 (받으면 0 이 된다) */
   coins: number;
+  /** 같이 든 아이템 종류 (받으면 없어진다). 2026-11-16 겨울 눈사람 선물 */
+  item?: string;
   /** 읽음 (편지를 열었음) */
   read: boolean;
 }
@@ -42,6 +45,25 @@ export const welcomeMail = (): MailItem => ({
   coins: WELCOME_COINS,
   read: false,
 });
+
+/** 겨울 선물 편지 (겨울 기간에 아직 눈사람이 없으면 우편함에 온다) */
+export const WINTER_MAIL_ID = 'winter2026';
+export const winterMail = (): MailItem => ({
+  id: WINTER_MAIL_ID,
+  from: '이장 냥냥',
+  title: '섬에 눈이 왔다냥! 겨울 선물',
+  text: '메리 크리스마스다냥! 겨울 한정 눈사람을 선물로 넣어 두었다냥. 눈사람은 마당에만 놓을 수 있다냥. 꾸미기 → 마당 꾸미기에서 찾아 보자냥.',
+  coins: 0,
+  item: 'snowman',
+  read: false,
+});
+/** 겨울이면 아직 눈사람을 안 받은 사람 우편함에 선물 편지를 넣는다. 넣었으면 true */
+export function addSeasonMail(data: WalletData, day = kstDay()): boolean {
+  if (!isWinter(day) || data.owned.includes('snowman') || data.mail.some((m) => m.id === WINTER_MAIL_ID)) return false;
+  data.mail.unshift(winterMail());
+  data.mail.length = Math.min(data.mail.length, MAIL_MAX);
+  return true;
+}
 
 /** 한국 시간 날짜 'YYYY-MM-DD' (퀘스트는 한국 시간 자정에 바뀐다) */
 export const kstDay = (now = Date.now()) => new Date(now + 9 * 3600_000).toISOString().slice(0, 10);
@@ -319,12 +341,20 @@ export function normalizeWallet(raw: unknown, today = kstDay()): WalletData {
       ? (o.mail as Array<Record<string, unknown>>)
           .filter((m) => m && typeof m.id === 'string')
           .slice(0, MAIL_MAX)
-          .map((m) => ({ id: String(m.id), from: String(m.from ?? ''), title: String(m.title ?? ''), text: String(m.text ?? ''), coins: num(m.coins), read: m.read === true }))
+          .map((m) => ({
+            id: String(m.id),
+            from: String(m.from ?? ''),
+            title: String(m.title ?? ''),
+            text: String(m.text ?? ''),
+            coins: num(m.coins),
+            ...(typeof m.item === 'string' && m.item ? { item: m.item } : {}),
+            read: m.read === true,
+          }))
       : [],
   };
 }
-/** 안 읽었거나 츄르가 든 편지 수 */
-export const unreadMail = (data: WalletData) => data.mail.filter((m) => !m.read || m.coins > 0).length;
+/** 안 읽었거나 츄르/선물이 든 편지 수 */
+export const unreadMail = (data: WalletData) => data.mail.filter((m) => !m.read || m.coins > 0 || !!m.item).length;
 
 /** 그 아이템을 가졌는지 (기본 아이템은 늘 가짐) */
 export const owns = (data: WalletData, type: string) => STARTER_ITEMS.includes(type) || data.owned.includes(type);

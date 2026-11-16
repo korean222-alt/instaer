@@ -2,6 +2,8 @@
 // 씬은 src/scene 의 공개 함수(createIslandScene 등)로만 쓴다. 씬 내부 파일은 import 하지 않는다.
 import './style.css';
 import { createIslandScene } from '../scene';
+import { isWinter } from '../shared/config';
+import { kstDay } from '../shared/economy';
 import { fetchMe } from './net/api';
 import { createRealtime } from './net/realtime';
 import { currentRoute, go, onRoute, type Route, type ScreenId } from './router';
@@ -113,6 +115,8 @@ pushHousesToScene(true);
 const hour = new Date().getHours();
 const isNight = hour >= 19 || hour < 6;
 scene.setTimeOfDay(isNight ? 'night' : 'day');
+// 겨울 (2026-11-16): 기간 안이면 눈 쌓인 크리스마스 섬 (낮에는 나무에만 눈, 밤에는 땅과 빈 집 지붕에도)
+scene.setWinter(isWinter(kstDay()));
 initSound();
 setMusicMood(isNight);
 

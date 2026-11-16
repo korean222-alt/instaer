@@ -43,7 +43,7 @@
 
 - RemotePlayer = { id, houseNo: number | null, handle: string, x, z, rotY, anim: 'idle'|'walk'|'sit'|'jump', cat: House['cat'], fishing?: 'cast'|'wait'|'bite'|'reel'|'caught'|null }
 - LocalState = { x, z, rotY, anim }
-- PlacedItem = { id, type, x, z, rotY, drawingId? } (마당 -3.6~3.6, 집 안 -4~4, 넓힌 집 -5.5~5.5, 미터), InteriorItem = PlacedItem, Drawing = { id, pixels(base64 512바이트), palette: string[16] }, HouseDecor = { houseNo, yard, room, wallpaper, floor, roofArt }
+- PlacedItem = { id, type, x, z, rotY, drawingId? } (마당 -3~3, 넓힌 마당 -3.6~3.6, 집 안 -4~4, 넓힌 집 -5.5~5.5, 미터), InteriorItem = PlacedItem, Drawing = { id, pixels(base64 512바이트), palette: string[16] }, HouseDecor = { houseNo, yard, room, wallpaper, floor, roofArt }
 
 ## 씬 인터페이스 (src/scene/index.ts)
 createIslandScene(canvas) → IslandScene
@@ -56,6 +56,7 @@ createIslandScene(canvas) → IslandScene
 - (작업 5에서 추가) setRoofArt(items: {houseNo, drawingId}[]), setNpcs(npcs: {id, name, x, z, rotY, cat, role?}[]), onNpcTap(cb(id)), setFishing('cast'|'wait'|'bite'|'reel'|'caught'|null), setLocalPosition(x, z, rotY?), renderCatPreview(cat, size?, options?) → PNG data URL. 따로 내보내는 것: fishingSpotAt(x, z) → {kind: 'pond'|'pier', x, z} | null, POND_R, dockArea()
 - (2026-11-15 추가) enterNpcHome(homeId, interior, wallpaper?, floor?), enterCave(level, nodes), setCaveNodes(nodes), exitCave(), onExitCave(cb), caveNodeNear(reach?), setWalkZoom(0~1), renderItemPreview(type, size?). 따로 내보내는 것: npcHomes(zones), caveMouths(zones), mapHills(zones), landAt, CAVE_DEEPER
 - (2026-11-16) onArtTap(cb(drawingId, type)), getViewYaw(), setRiding('drive'|'passenger'|null, driverId?), enterHouse 의 다섯째 인자 big. 따로 내보내는 것: mailboxPos(houseNo)
+- (2026-11-16 겨울) setBigYards(houseNos) : 마당 넓힌 집(7.2m, 나머지는 6m), setWinter(on) : 눈(나무는 늘, 밤에는 땅/빈 집 지붕), LED, 크리스마스 트리, 눈 내림
 - (2026-11-15 소통) setDance(id|null), setSitting(on), catScreenPos(id|null) → {x,y}|null, onRemoteTap(cb(id)), RemotePlayer.dance. 따로 내보내는 것: townSquares(zones), benchNear(x,z), TOWN_SQUARE, walkCost(x,z,zones,hasHouse)
 - (작업 4에서 추가) enterHouse(houseNo, interior: InteriorItem[], wallpaper?, floor?), exitHouse(), setInteriorItems(items), onDoor(cb(houseNo|null)), onExitHouse(cb(houseNo)), setYardItemsFree(houseNo, items: PlacedItem[]), startPlacing(typeOrItemId?, houseNo?), stopPlacing(), rotatePlacing(step?), onPlace(cb(item)), onPick(cb(itemId)), setDrawings(drawings). 자세한 약속은 `src/scene/README-scene.md`
 - 위치 계산: `houseSlot(houseNo)` → { x, z, zone, neighborhood } (src/scene/layout.ts). 위치는 DB에 저장하지 않는다.
@@ -70,6 +71,7 @@ createIslandScene(canvas) → IslandScene
 - 이번 버전에서 하지 않는 것: 전체 채팅(주변 채팅만 있다), 개인 땅 구매, 인스타 DM 자동 인증, 사람 캐릭터, 현금 결제.
 - 입주는 soft (2026-11-15 사용자): 인스타 DM 인증은 사업자 인증이 필요해서 못 쓴다. 입주 화면이 운영 계정 팔로우를 부탁만 하고(`FOLLOW_HANDLE`, 비면 건너뜀) 확인은 하지 않는다. 입주할 때 열린 구역 안의 빈 집을 직접 고른다(안 고르면 빈 번지 중 앞 번호). 열린 구역 수는 입주 수로 센다(`src/shared/zones.ts`).
 - 놀거리 (2026-11-15 사용자 요청): 돈은 "츄르"(서버만 지급, 지갑 한 줄 JSON 이라 DB 쓰기가 적다). 퀘스트는 주민에게 말을 걸어 받는다(주민마다 하루 하나, 한국 시간 자정에 새로 + 특별 부탁). 미니게임(낚시, 생선 받기, 동굴 캐기). 물고기/광석은 가방에 들어가고 잡화점에서 팔아야 츄르가 된다. 주민은 섬 모서리의 주민 집 8채에 산다(빈 집은 입주할 집일 뿐 들어갈 수 없다). 미니게임은 지금은 혼자 하는 2D 판이다(여럿이 하는 방 미니게임은 아직). 규칙은 `src/shared/economy.ts`.
+- 겨울 (2026-11-16 사용자): 기간(`WINTER_START`~`WINTER_END`)에는 눈 쌓인 크리스마스 섬. 눈은 **밤에만** 땅과 빈 집 지붕에 쌓이고, 낮에는 나무에만. 눈사람은 겨울 한정 선물(우편함), 마당에만 놓는다. 마당 넓히기는 300츄르(기본 6m → 7.2m).
 - 입주할 때 고양이(무늬, 털 색, 눈 색)를 고른다(DB houses.cat, 비어 있으면 아이디로 정해진 고양이). 빈 집 마당에는 고양이가 없다.
 
 ## 멀티플레이 방침
@@ -100,3 +102,4 @@ createIslandScene(canvas) → IslandScene
 - 입주 화면 변경(2026-11-15 사용자): 입주 첫 화면은 "팔로우하러 가기" 버튼 하나만 항상 띄운다("부탁해요"/"팔로우했어요" 버튼 없음. 누르면 인스타 프로필이 열리고 곧 입주 폼으로 넘어간다. 팔로우 여부는 여전히 확인하지 못한다). 인스타 아이디 대신 **닉네임**(한글/영문/숫자/_, 12자, 중복 불가)을 직접 정한다. 코드 이름 `handle`/`igHandle`/DB `ig_handle` 은 그대로 두고 뜻만 닉네임이다. 화면의 `@` 표시와 "인스타 보러 가기", 아이디 숨기기(설정과 입주 폼)는 없앴다(서버 `setPrivacy` API 는 남겨 둠).
 - 2026-11-15 (Opus, 씬 포함): 주변 채팅(저장 안 함), 이모티콘, 춤(츄르로 배움), 앉기, 마을 광장(게시판, 이장 냥냥, 장터 가판대: 잡화점/오락실 주인이 여기로), 이장님 소식(`src/shared/news.ts`, 배포 때 한 줄 추가), 마을 게시판, 섬 지도 개편(지도 탭으로 언제나, 확대, 표시 누르기, 길 안내, 우리 집), 친구/프로필/방명록(DB `0006`, 원격 적용), 입주 팔로우 15초 가짜 확인. 주민은 사람이 아니라 고양이로 둔다(사람 캐릭터는 하지 않음). README.md "소통".
 - 2026-11-16 (Opus, 씬 포함): 내 고양이 둘로 보이던 문제(다른 창 접속), 걷기 중 퀘스트, 작은 지도 매 프레임+회전, 화가/우체부 새 주민(잡화점·오락실은 광장에만), 냥냥 말투, 고양이 자동차(500츄르, 뒷자리 한 명), 눌러서 놓기, 마당 7.2m, 집 넓히기(400), 울타리 점프, 지붕 앞뒤 그림(100 한 번), 우편함(환영 편지 50츄르), 꾹 눌러 캐기, 그림 캔버스. README.md "2026-11-16".
+- 2026-11-16 (Opus, 씬 포함): 겨울 크리스마스 섬(낮 나무 눈, 밤 땅/빈 집 지붕 눈, LED, 광장 트리, 눈 내림), 눈사람(우편함 선물, 마당 전용), 마당 넓히기 300츄르(기본 6m), 자동 낚시. README.md "2026-11-16 겨울".
