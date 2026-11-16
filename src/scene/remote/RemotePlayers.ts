@@ -8,6 +8,7 @@ import { FishingRig, type FishingState } from '../fishing/FishingRig';
 import { hash01 } from '../util/rand';
 import { GRAVITY, groundHeightAt, JUMP_V, SPEED_FAST, STRIDE, type Bridge } from '../walk/Walker';
 import { NameTags } from './NameTags';
+import { CarLayer, CAR_SEAT_Y, seatOffset } from '../car/CatCar';
 import { danceMotion } from '../cat/dance';
 import type { PlayerAnim, RemotePlayer } from './types';
 
@@ -120,6 +121,13 @@ class Rec {
   /** 춤 id 와 춤을 시작한 시각 (초) */
   dance: string | null = null;
   danceT = 0;
+  /** 자동차: 0 안 탐, 1 운전, 2 뒷자리 (rideWith 운전자) */
+  car = 0;
+  rideWith: string | null = null;
+  carX = 0;
+  carZ = 0;
+  seatDx = 0;
+  seatDz = 0;
 
   push(t: number, x: number, z: number, rotY: number, anim: number) {
     if (this.n === SNAPS) {
@@ -182,6 +190,8 @@ export class RemotePlayers {
   private readonly rigOwner: Array<Rec | null> = [];
   private readonly fishSupport: RemoteFishingSupport | null;
   private readonly fishCand: Rec[] = [];
+  /** 다른 유저 자동차 (fishing support 의 shared 로 만든다) */
+  readonly cars: CarLayer | null;
 
   constructor(model: CatModel, fishing?: RemoteFishingSupport) {
     this.fishSupport = fishing ?? null;
@@ -192,6 +202,8 @@ export class RemotePlayers {
     this.near.mesh.visible = false;
     this.far.mesh.visible = false;
     this.group.add(this.near.mesh, this.far.mesh, this.tags.mesh);
+    this.cars = fishing ? new CarLayer(fishing.shared, POOL) : null;
+    if (this.cars) this.group.add(this.cars.mesh);
     for (let i = 0; i < POOL; i++) this.recs.push(new Rec());
     if (fishing)
       for (let i = 0; i < FISH_RIGS; i++) {
@@ -256,6 +268,8 @@ export class RemotePlayers {
       r.stamp = stamp;
       r.alive = true;
       r.fishing = p.fishing && FISH_STATES.has(p.fishing) ? p.fishing : null;
+      r.car = p.car === 'drive' ? 1 : p.car === 'ride' ? 2 : 0;
+      r.rideWith = r.car === 2 && typeof p.rideWith === 'string' ? p.rideWith : null;
       const dance = typeof p.dance === 'string' && p.dance ? p.dance : null;
       if (dance !== r.dance) {
         r.dance = dance;
@@ -287,6 +301,7 @@ export class RemotePlayers {
       if (this.shown) {
         this.shown = this.shownNear = this.shownTags = 0;
         this.near.mesh.visible = this.far.mesh.visible = false;
+        if (this.cars) this.cars.mesh.visible = false;
         this.tags.begin();
         this.tags.end(view.viewportW, view.viewportH);
       }
@@ -301,6 +316,7 @@ export class RemotePlayers {
     let nFar = 0;
     let nPicked = 0;
     const picked = this.picked;
+    this.cars?.begin();
 
     for (const r of this.recs) {
       if (!r.used) continue;
@@ -311,6 +327,28 @@ export class RemotePlayers {
         continue;
       }
       this.move(r, t, dt);
+      // 남의 차 뒷자리: 운전자 차의 뒷자리에 붙인다 (운전자가 안 보이면 받은 자리 그대로)
+      let seatY = 0;
+      if (r.car) {
+        const drv = r.car === 2 && r.rideWith ? this.byId.get(r.rideWith) : null;
+        if (drv && drv.used) {
+          const off = seatOffset(drv.yaw, true);
+          r.x = drv.x + off.dx;
+          r.z = drv.z + off.dz;
+          r.yaw = drv.yaw;
+          r.groundY = drv.groundY;
+        } else if (r.car === 1 && visible && r.show > 0.3) this.cars?.push(r.x, r.groundY + r.air, r.z, r.yaw, 1, r.speed > 0.4 ? Math.abs(Math.sin(r.phase * 0.5)) * 0.03 : 0);
+        if (r.car === 1) {
+          const off = seatOffset(r.yaw, false);
+          r.carX = r.x;
+          r.carZ = r.z;
+          r.seatDx = off.dx;
+          r.seatDz = off.dz;
+        }
+        seatY = CAR_SEAT_Y;
+        r.walk = 0;
+        r.sit = 1;
+      }
 
       const dx = r.x - view.focusX;
       const dz = r.z - view.focusZ;
@@ -329,7 +367,9 @@ export class RemotePlayers {
         // 춤: 서 있을 때만 (걷기 시작하면 멈춘다)
         const dm = r.dance && r.walk < 0.15 && r.air <= 0 ? danceMotion(r.dance, (r.danceT += dt)) : null;
         flock.setLookRaw(slot, r.fur, r.eye, r.pattern, r.seed, dm ? 0 : r.sit, 0);
-        flock.setPose(slot, r.x, r.groundY + r.air + hop + 0.035 + (dm?.dy ?? 0), r.z, r.yaw + (dm?.dyaw ?? 0), SCALE * Math.max(0.001, k) * (dm?.scale ?? 1));
+        const px = r.car === 1 ? r.x + r.seatDx : r.x;
+        const pz = r.car === 1 ? r.z + r.seatDz : r.z;
+        flock.setPose(slot, px, r.groundY + r.air + hop + 0.035 + seatY + (dm?.dy ?? 0), pz, r.yaw + (dm?.dyaw ?? 0), SCALE * Math.max(0.001, k) * (dm?.scale ?? 1));
         flock.setAnim(slot, dm && dm.walk ? dm.phase : r.phase, dm && dm.walk ? dm.walk : r.walk, 0, dm ? dm.happy : 0);
       }
 
@@ -350,6 +390,7 @@ export class RemotePlayers {
       }
     }
     for (let i = 0; i < nPicked; i++) picked[i].tagWant = true;
+    this.cars?.end();
 
     this.updateFishing(dt, visible);
 
@@ -392,6 +433,12 @@ export class RemotePlayers {
     this.shown = nNear + nFar;
     this.shownNear = nNear;
     this.shownTags = nTags;
+  }
+
+  /** 그 유저의 지금 그리는 자리 (자동차 뒷자리 따라가기용). 없으면 null */
+  posOf(id: string): { x: number; z: number; yaw: number; y: number; car: number } | null {
+    const r = this.byId.get(id);
+    return r && r.used && r.alive ? { x: r.x, z: r.z, yaw: r.yaw, y: r.groundY, car: r.car } : null;
   }
 
   /** 낚시 중인 가까운 유저에게 낚싯대를 나눠 주고 움직인다 */

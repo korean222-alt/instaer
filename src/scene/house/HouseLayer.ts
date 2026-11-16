@@ -9,7 +9,7 @@ import { LABEL_CAPACITY, LabelLayer, regionIndex, type LabelEntry } from '../cor
 import { itemDef, type ItemGeometries } from '../free/catalog';
 import type { DrawingStore } from '../free/drawings';
 import { FreeItems, type FreeGroup } from '../free/FreeItems';
-import { blockersOf, yardSpace, type Space } from '../free/space';
+import { blockersOf, pickItem, yardSpace, type Space } from '../free/space';
 import type { PlacedItem } from '../free/types';
 import { cellToLocal, ItemField } from '../items/ItemField';
 import { houseSlot, NEIGHBORHOODS, NEIGHBORHOODS_PER_ZONE, ZONE, zoneCenter } from '../layout';
@@ -144,7 +144,11 @@ export class HouseLayer {
   private freeSkip: string | null = null;
   /** 지붕 그림 (집 번호 → 그림 id) */
   private readonly roofArt = new Map<number, string>();
+  /** 지붕 뒷면 그림 (2026-11-16) */
+  private readonly roofArtBack = new Map<number, string>();
   private readonly roofArtGeometry = buildRoofArtGeometry();
+  /** 뒷면: 앞면 판을 집 가운데 축으로 반 바퀴 돌린 것 (지붕이 앞뒤 대칭이라 그대로 맞는다) */
+  private readonly roofArtBackGeometry = buildRoofArtGeometry().rotateY(Math.PI);
   private readonly roofArtMeshes: THREE.Mesh[] = [];
   /** 확인용: 지금 그리는 지붕 그림 수 */
   shownRoofArt = 0;
@@ -370,10 +374,13 @@ export class HouseLayer {
   }
 
   /** 지금 보여 줄 지붕 그림 전체. 목록에서 빠진 집은 그림을 뗀다 */
-  setRoofArt(items: ReadonlyArray<{ houseNo: number; drawingId: string }>) {
+  setRoofArt(items: ReadonlyArray<{ houseNo: number; drawingId: string; backId?: string | null }>) {
     this.roofArt.clear();
+    this.roofArtBack.clear();
     for (const it of items) {
-      if (it && Number.isFinite(it.houseNo) && typeof it.drawingId === 'string' && it.drawingId) this.roofArt.set(it.houseNo, it.drawingId);
+      if (!it || !Number.isFinite(it.houseNo)) continue;
+      if (typeof it.drawingId === 'string' && it.drawingId) this.roofArt.set(it.houseNo, it.drawingId);
+      if (typeof it.backId === 'string' && it.backId) this.roofArtBack.set(it.houseNo, it.backId);
     }
     this.redrawRoofArt();
   }
@@ -381,26 +388,29 @@ export class HouseLayer {
   /** 지붕 그림만 다시 붙인다 (가까운 집이 바뀌었거나 그림 목록이 바뀌었을 때) */
   redrawRoofArt() {
     let n = 0;
-    if (this.roofArt.size) {
+    if (this.roofArt.size || this.roofArtBack.size) {
       // near 는 가까운 순서라서 앞에서부터 채우면 가까운 집이 먼저다
       for (const r of this.near) {
-        if (n >= ROOF_ART_MAX) break;
-        const id = this.roofArt.get(r.house.houseNo);
-        const mat = id === undefined ? null : this.drawings.roofMaterial(id);
-        // 그림이 아직 안 왔으면 지붕 색만 보인다
-        if (!mat) continue;
-        let mesh = this.roofArtMeshes[n];
-        if (!mesh) {
-          mesh = this.roofArtMeshes[n] = new THREE.Mesh(this.roofArtGeometry);
-          mesh.matrixAutoUpdate = false;
-          mesh.frustumCulled = false;
-          mesh.receiveShadow = true;
-          this.group.add(mesh);
+        for (const back of [false, true]) {
+          if (n >= ROOF_ART_MAX) break;
+          const id = (back ? this.roofArtBack : this.roofArt).get(r.house.houseNo);
+          const mat = id === undefined ? null : this.drawings.roofMaterial(id);
+          // 그림이 아직 안 왔으면 지붕 색만 보인다
+          if (!mat) continue;
+          let mesh = this.roofArtMeshes[n];
+          if (!mesh) {
+            mesh = this.roofArtMeshes[n] = new THREE.Mesh(this.roofArtGeometry);
+            mesh.matrixAutoUpdate = false;
+            mesh.frustumCulled = false;
+            mesh.receiveShadow = true;
+            this.group.add(mesh);
+          }
+          mesh.geometry = back ? this.roofArtBackGeometry : this.roofArtGeometry;
+          mesh.material = mat;
+          mesh.matrix.copy(this.place(r, 0, HOUSE_OFFSET_Z, GROUND_Y));
+          mesh.visible = true;
+          n++;
         }
-        mesh.material = mat;
-        mesh.matrix.copy(this.place(r, 0, HOUSE_OFFSET_Z, GROUND_Y));
-        mesh.visible = true;
-        n++;
       }
     }
     for (let i = n; i < this.roofArtMeshes.length; i++) this.roofArtMeshes[i].visible = false;
@@ -421,6 +431,24 @@ export class HouseLayer {
     let s = this.spaces.get(houseNo);
     if (!s) this.spaces.set(houseNo, (s = yardSpace(houseNo, r.x, r.z, r.rot, GROUND_Y)));
     return s;
+  }
+
+  /** 가까운 집 마당에서 광선이 처음 닿는 그림 붙은 아이템 (2026-11-16: 캔버스 누르면 크게 보기) */
+  pickArt(ray: THREE.Ray): PlacedItem | null {
+    let best: PlacedItem | null = null;
+    let bestD = Infinity;
+    for (const r of this.near) {
+      const items = this.freeLists.get(r.house.houseNo);
+      if (!items?.length) continue;
+      const hit = pickItem(this.yardSpace(r.house.houseNo)!, items.filter((it) => it.drawingId), ray);
+      if (!hit) continue;
+      const d = ray.origin.distanceToSquared(new THREE.Vector3(r.x, GROUND_Y, r.z));
+      if (d < bestD) {
+        bestD = d;
+        best = hit;
+      }
+    }
+    return best;
   }
 
   /** 자유 배치 아이템만 다시 그린다 (skipId: 손에 든 아이템) */
@@ -792,6 +820,7 @@ export class HouseLayer {
     this.nearHouses.geometry.dispose();
     this.nearYards.geometry.dispose();
     this.roofArtGeometry.dispose();
+    this.roofArtBackGeometry.dispose();
     this.material.dispose();
     this.flagMaterial.dispose();
     this.flockLo.dispose();

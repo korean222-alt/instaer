@@ -137,6 +137,24 @@ function gift(): Pieces {
   return [box(0.5, 0.42, 0.5, 0, 0.21, 0, '#ffb3c1', 0.04), box(0.52, 0.43, 0.1, 0, 0.215, 0, WHITE, 0.02), box(0.1, 0.43, 0.52, 0, 0.215, 0, WHITE, 0.02), p(new THREE.SphereGeometry(0.08, 8, 6).translate(0, 0.47, 0), '#ff8fa3')];
 }
 
+/** 그림 캔버스 (2026-11-16): 세 발 이젤 위에 세운 하얀 도화지. 그림은 도화지 앞면에 붙는다 */
+function easel(): Pieces {
+  const o: Pieces = [];
+  const leg = (x: number, z: number, rx: number, rz: number) =>
+    o.push(p(new THREE.CylinderGeometry(0.03, 0.035, 1.78, 6).rotateX(rx).rotateZ(rz).translate(x, 0.87, z), WOOD));
+  leg(-0.34, 0.02, -0.09, -0.17);
+  leg(0.34, 0.02, -0.09, 0.17);
+  leg(0, -0.36, 0.38, 0);
+  // 도화지 받침대와 도화지 (흰 테두리)
+  o.push(box(0.98, 0.06, 0.16, 0, 0.6, 0.1, WOOD_DARK, 0.02));
+  o.push(box(0.94, 0.94, 0.05, 0, 1.1, 0.06, WHITE, 0.02));
+  o.push(box(0.2, 0.06, 0.08, 0, 1.6, 0.05, WOOD, 0.02));
+  // 받침대 위 작은 물감 통
+  o.push(p(new THREE.CylinderGeometry(0.05, 0.05, 0.07, 8).translate(0.36, 0.67, 0.12), '#ff8f7a'));
+  o.push(p(new THREE.CylinderGeometry(0.05, 0.05, 0.07, 8).translate(0.24, 0.67, 0.14), '#7cc4f2'));
+  return o;
+}
+
 export const FREE_ITEMS: Record<string, ItemDef> = {
   // ── 기존 마당 아이템 8종 (마당과 집 안 어디든) ──
   cat_tower: { label: '캣타워', mount: 'floor', hx: 0.45, hz: 0.45, height: 1.7, block: [[0, 0, 0.42]], build: yard('cat_tower') },
@@ -157,6 +175,7 @@ export const FREE_ITEMS: Record<string, ItemDef> = {
   rug: { label: '러그', mount: 'rug', hx: 0.8, hz: 0.8, height: 0.05, art: { size: 1.3, x: 0, y: 0.04, z: 0, flat: true }, build: () => merge(rug()) },
   frame: { label: '액자', mount: 'wall', hx: 0.43, hz: 0.05, y0: 1.32, height: 0.86, art: { size: 0.7, x: 0, y: 1.75, z: 0.068 }, build: () => merge(frame()) },
   window: { label: '창문', mount: 'wall', hx: 0.65, hz: 0.08, y0: 1.24, height: 1.1, build: () => merge(windowItem()) },
+  easel: { label: '그림 캔버스', mount: 'floor', hx: 0.5, hz: 0.32, height: 1.8, block: [[0, 0, 0.36]], art: { size: 0.84, x: 0, y: 1.1, z: 0.09 }, build: () => merge(easel()) },
 };
 
 /** 모르는 종류 이름이 왔을 때 대신 그리는 선물 상자 */

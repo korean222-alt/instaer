@@ -10,6 +10,39 @@ export const DAILY_GAME_CAP = 400;
 /** 닉네임(= 고양이 이름) 바꾸기 값 */
 export const RENAME_COST = 500;
 
+// ── 한 번 사면 계속 쓰는 것 (2026-11-16 사용자 요청). 지갑 owned 에 key 로 들어간다 ──
+export const UPGRADES = [
+  { key: 'cat_car', label: '고양이 자동차', price: 500, desc: '타고 내릴 수 있어요. 더 빠르고, 뒤에 한 명 더 탈 수 있어요' },
+  { key: 'room_big', label: '집 넓히기', price: 400, desc: '집 안이 8m에서 11m로 넓어지고 가구를 40개까지 놓아요' },
+  { key: 'roof_art', label: '지붕 그림 그리기', price: 100, desc: '한 번 사면 지붕 앞뒤에 그림을 계속 바꿔 그릴 수 있어요' },
+] as const;
+export type UpgradeKey = (typeof UPGRADES)[number]['key'];
+export const upgradeDef = (key: string) => UPGRADES.find((u) => u.key === key);
+/** 넓힌 집 안에 놓을 수 있는 가구 수, 방 한 변 절반 (씬 ROOM_HALF_BIG 과 같다) */
+export const FREE_ROOM_MAX_BIG = 40;
+export const ROOM_HALF_BIG = 5.5;
+
+// ── 우편함 (2026-11-16): 집 앞 우편함에서 편지를 받는다. 처음 입주하면 환영 편지에 WELCOME_COINS ──
+export interface MailItem {
+  id: string;
+  from: string;
+  title: string;
+  text: string;
+  /** 같이 든 츄르 (받으면 0 이 된다) */
+  coins: number;
+  /** 읽음 (편지를 열었음) */
+  read: boolean;
+}
+export const MAIL_MAX = 20;
+export const welcomeMail = (): MailItem => ({
+  id: 'welcome',
+  from: '이장 냥냥',
+  title: '고양이섬에 온 걸 환영한다냥!',
+  text: `입주를 축하한다냥! 이웃들이랑 사이좋게 지내자냥. 작은 선물로 ${WELCOME_COINS} 츄르를 넣어 두었다냥. 주민들에게 말을 걸면 부탁도 들어줄 수 있다냥.`,
+  coins: WELCOME_COINS,
+  read: false,
+});
+
 /** 한국 시간 날짜 'YYYY-MM-DD' (퀘스트는 한국 시간 자정에 바뀐다) */
 export const kstDay = (now = Date.now()) => new Date(now + 9 * 3600_000).toISOString().slice(0, 10);
 
@@ -211,6 +244,8 @@ export interface WalletData {
   dex: string[];
   /** 마지막으로 물고기를 알린 시각 (unix 초) */
   lastFish: number;
+  /** 우편함 편지 (새것이 앞) */
+  mail: MailItem[];
 }
 
 export interface Wallet {
@@ -280,8 +315,16 @@ export function normalizeWallet(raw: unknown, today = kstDay()): WalletData {
     dex: strs(o.dex),
     lastFish: num(o.lastFish),
     lastMine: num(o.lastMine),
+    mail: Array.isArray(o.mail)
+      ? (o.mail as Array<Record<string, unknown>>)
+          .filter((m) => m && typeof m.id === 'string')
+          .slice(0, MAIL_MAX)
+          .map((m) => ({ id: String(m.id), from: String(m.from ?? ''), title: String(m.title ?? ''), text: String(m.text ?? ''), coins: num(m.coins), read: m.read === true }))
+      : [],
   };
 }
+/** 안 읽었거나 츄르가 든 편지 수 */
+export const unreadMail = (data: WalletData) => data.mail.filter((m) => !m.read || m.coins > 0).length;
 
 /** 그 아이템을 가졌는지 (기본 아이템은 늘 가짐) */
 export const owns = (data: WalletData, type: string) => STARTER_ITEMS.includes(type) || data.owned.includes(type);
@@ -299,7 +342,7 @@ export function prizeItem(data: WalletData, rand: () => number = Math.random, ma
 export type QuestKey = 'fish' | 'rare' | 'arcadeBest' | 'visits' | 'like' | 'draw' | 'decorate' | 'mine' | 'sold';
 
 /** 주민 역할. resident 는 그냥 이웃 (부탁은 없고 방문만) */
-export type NpcRole = 'shop' | 'arcade' | 'fisher' | 'gardener' | 'explorer';
+export type NpcRole = 'shop' | 'arcade' | 'fisher' | 'gardener' | 'explorer' | 'painter' | 'mailman';
 export type HomeRole = NpcRole | 'resident';
 
 export interface DailyQuestDef {
@@ -316,19 +359,23 @@ export interface DailyQuestDef {
   hint: string;
 }
 
+// 2026-11-16: 주민 말투를 "~냥" 으로
 export const DAILY_QUESTS: readonly DailyQuestDef[] = [
-  { id: 'd_fish3', npc: 'fisher', label: '물고기 3마리 낚기', ask: '오늘 저녁거리가 없어... 물고기 3마리만 낚아 줄래?', key: 'fish', target: 3, coins: 30, hint: '연못이나 부두 끝에서 "낚시하기"' },
-  { id: 'd_fish6', npc: 'fisher', label: '물고기 6마리 낚기', ask: '낚시 대회 연습 중이야. 6마리 낚으면 인정!', key: 'fish', target: 6, coins: 45, hint: '연못이나 부두에서 낚시' },
-  { id: 'd_rare', npc: 'fisher', label: '희귀한 물고기 낚기', ask: '금붕어나 참돔 같은 귀한 물고기 본 적 있어?', key: 'rare', target: 1, coins: 50, hint: '금붕어, 비단잉어, 참돔, 황금 잉어, 참다랑어' },
-  { id: 'd_arcade20', npc: 'arcade', label: '생선 받기 20점', ask: '오늘의 목표 점수는 20점! 넘겨 봐!', key: 'arcadeBest', target: 20, coins: 30, hint: '오락실 콩이에게 말 걸고 한 판' },
-  { id: 'd_arcade35', npc: 'arcade', label: '생선 받기 35점', ask: '35점 넘기면 진짜 고수 인정이다냥.', key: 'arcadeBest', target: 35, coins: 45, hint: '오락실 콩이에게 말 걸고 한 판' },
-  { id: 'd_sell5', npc: 'shop', label: '물건 5개 팔기', ask: '가게 진열대가 텅 비었어. 물고기든 광석이든 5개만 팔아 줘!', key: 'sold', target: 5, coins: 25, hint: '잡화점 보리에게 "팔기"' },
-  { id: 'd_visit2', npc: 'shop', label: '이웃 집 2곳 들르기', ask: '이웃들 집에 안부 좀 전해 줘. 두 집이면 돼.', key: 'visits', target: 2, coins: 25, hint: '섬 모서리의 주민 집 문 앞에서 "들어가기"' },
-  { id: 'd_decorate', npc: 'gardener', label: '내 집 꾸미기 저장하기', ask: '집 앞을 예쁘게 꾸미면 동네가 환해져!', key: 'decorate', target: 1, coins: 20, hint: '꾸미기 탭' },
-  { id: 'd_draw', npc: 'gardener', label: '그림 한 장 그리기', ask: '꽃 그림 하나 그려 줄래? 아무 그림이나 좋아!', key: 'draw', target: 1, coins: 25, hint: '꾸미기 탭 → 그림 그리기' },
-  { id: 'd_like2', npc: 'gardener', label: '다른 집에 예뻐요 2번', ask: '예쁜 집을 보면 칭찬해 주자. 두 집만!', key: 'like', target: 2, coins: 25, hint: '집을 누르고 예뻐요' },
-  { id: 'd_mine3', npc: 'explorer', label: '광석 3개 캐기', ask: '동굴에 반짝이는 바위가 있어. 3개만 캐 와!', key: 'mine', target: 3, coins: 30, hint: '섬 북서쪽 산의 동굴에서 "캐기"' },
-  { id: 'd_mine8', npc: 'explorer', label: '광석 8개 캐기', ask: '깊은 곳까지 가 볼 용기 있어? 8개 캐 오기!', key: 'mine', target: 8, coins: 50, hint: '동굴 안쪽으로 더 들어가면 귀한 광석' },
+  { id: 'd_fish3', npc: 'fisher', label: '물고기 3마리 낚기', ask: '오늘 저녁거리가 없다냥... 물고기 3마리만 낚아 줄래냥?', key: 'fish', target: 3, coins: 30, hint: '연못이나 부두 끝에서 "낚시하기"' },
+  { id: 'd_fish6', npc: 'fisher', label: '물고기 6마리 낚기', ask: '낚시 대회 연습 중이다냥. 6마리 낚으면 인정해 줄게냥!', key: 'fish', target: 6, coins: 45, hint: '연못이나 부두에서 낚시' },
+  { id: 'd_rare', npc: 'fisher', label: '희귀한 물고기 낚기', ask: '금붕어나 참돔 같은 귀한 물고기 본 적 있냥? 하나만 낚아 오자냥!', key: 'rare', target: 1, coins: 50, hint: '금붕어, 비단잉어, 참돔, 황금 잉어, 참다랑어' },
+  { id: 'd_arcade20', npc: 'arcade', label: '생선 받기 20점', ask: '오늘의 목표 점수는 20점이다냥! 넘겨 보자냥!', key: 'arcadeBest', target: 20, coins: 30, hint: '마을 광장 오락실 콩이에게 말 걸고 한 판' },
+  { id: 'd_arcade35', npc: 'arcade', label: '생선 받기 35점', ask: '35점 넘기면 진짜 고수 인정이다냥.', key: 'arcadeBest', target: 35, coins: 45, hint: '마을 광장 오락실 콩이에게 말 걸고 한 판' },
+  { id: 'd_sell5', npc: 'shop', label: '물건 5개 팔기', ask: '가게 진열대가 텅 비었다냥. 물고기든 광석이든 5개만 팔아 주자냥!', key: 'sold', target: 5, coins: 25, hint: '마을 광장 잡화점 보리에게 "팔기"' },
+  { id: 'd_sell10', npc: 'shop', label: '물건 10개 팔기', ask: '오늘은 손님이 많다냥. 10개만 팔아 주면 고맙겠다냥!', key: 'sold', target: 10, coins: 40, hint: '마을 광장 잡화점 보리에게 "팔기"' },
+  { id: 'd_visit2', npc: 'mailman', label: '이웃 집 2곳 들르기', ask: '편지가 너무 많다냥! 이웃 두 집에 안부 좀 전해 주자냥.', key: 'visits', target: 2, coins: 25, hint: '섬 모서리의 주민 집 문 앞에서 "들어가기"' },
+  { id: 'd_visit3', npc: 'mailman', label: '이웃 집 3곳 들르기', ask: '오늘은 소포까지 있다냥. 이웃 세 집만 같이 돌자냥!', key: 'visits', target: 3, coins: 35, hint: '섬 모서리의 주민 집 문 앞에서 "들어가기"' },
+  { id: 'd_decorate', npc: 'gardener', label: '내 집 꾸미기 저장하기', ask: '집 앞을 예쁘게 꾸미면 동네가 환해진다냥! 같이 꾸미자냥.', key: 'decorate', target: 1, coins: 20, hint: '꾸미기 탭' },
+  { id: 'd_like2', npc: 'gardener', label: '다른 집에 예뻐요 2번', ask: '예쁜 집을 보면 칭찬해 주자냥. 두 집만!', key: 'like', target: 2, coins: 25, hint: '집을 누르고 예뻐요' },
+  { id: 'd_draw', npc: 'painter', label: '그림 한 장 그리기', ask: '오늘은 영감이 안 떠오른다냥... 그림 하나 그려 줄래냥?', key: 'draw', target: 1, coins: 25, hint: '꾸미기 탭 → 그림 그리기' },
+  { id: 'd_draw2', npc: 'painter', label: '그림 두 장 그리기', ask: '전시회를 열 거다냥! 그림 두 장만 그려 주자냥.', key: 'draw', target: 2, coins: 40, hint: '꾸미기 탭 → 그림 그리기' },
+  { id: 'd_mine3', npc: 'explorer', label: '광석 3개 캐기', ask: '동굴에 반짝이는 바위가 있다냥. 3개만 캐 오자냥!', key: 'mine', target: 3, coins: 30, hint: '섬 북서쪽 산의 동굴에서 "캐기" 꾹 누르기' },
+  { id: 'd_mine8', npc: 'explorer', label: '광석 8개 캐기', ask: '깊은 곳까지 가 볼 용기 있냥? 8개 캐 오자냥!', key: 'mine', target: 8, coins: 50, hint: '동굴 안쪽으로 더 들어가면 귀한 광석' },
 ];
 /** 하루에 부탁을 이만큼 끝내면 받는 보너스 */
 export const DAILY_ALL_ID = 'd_all';
@@ -343,10 +390,10 @@ function mix(n: number): number {
   return (x ^ (x >>> 16)) >>> 0;
 }
 
-/** 그날 그 집에 주민마다 주는 오늘의 부탁 (날짜와 번지로 항상 같은 결과). 주민 다섯 명 → 부탁 다섯 개 */
+/** 그날 그 집에 주민마다 주는 오늘의 부탁 (날짜와 번지로 항상 같은 결과). 주민 일곱 명 → 부탁 일곱 개 */
 export function dailyQuests(day: string, houseNo: number): DailyQuestDef[] {
   const seed = houseNo * 31 + [...day].reduce((s, c) => s * 33 + c.charCodeAt(0), 7);
-  const roles: NpcRole[] = ['fisher', 'arcade', 'shop', 'gardener', 'explorer'];
+  const roles: NpcRole[] = ['fisher', 'arcade', 'shop', 'gardener', 'explorer', 'painter', 'mailman'];
   return roles.map((role, i) => {
     const pool = DAILY_QUESTS.filter((q) => q.npc === role);
     return pool[mix(seed + i * 977) % pool.length];
@@ -379,22 +426,26 @@ export interface StoryQuestDef {
 
 /** 한 번만 하는 특별 부탁. 끝내면 아이템을 준다 (평생 누적으로 센다) */
 export const STORY_QUESTS: readonly StoryQuestDef[] = [
-  { id: 's_garden_plant', npc: 'gardener', label: '물고기 3마리 낚아 오기', ask: '화분에 줄 거름이 필요해. 물고기 3마리만 잡아 줄래?', key: 'fish', target: 3, item: 'plant', coins: 10 },
-  { id: 's_garden_lamp', npc: 'gardener', label: '그림 2장 그리기', ask: '정원에 걸 그림이 보고 싶어. 2장만 그려 줘!', key: 'draw', target: 2, item: 'floor_lamp', coins: 10 },
-  { id: 's_fisher_rack', npc: 'fisher', label: '희귀한 물고기 1마리', ask: '금붕어나 비단잉어를 낚으면 건조대를 하나 줄게.', key: 'rare', target: 1, item: 'fish_rack', coins: 20 },
-  { id: 's_fisher_hammock', npc: 'fisher', label: '물고기 20마리 낚기', ask: '진짜 낚시꾼이라면 20마리는 잡아야지. 해먹을 걸고 내기!', key: 'fish', target: 20, item: 'hammock', coins: 30 },
-  { id: 's_shop_window', npc: 'shop', label: '물건 15개 팔기', ask: '단골이 되어 줘! 15개 팔면 창문을 하나 줄게.', key: 'sold', target: 15, item: 'window', coins: 10 },
-  { id: 's_arcade_tower', npc: 'arcade', label: '생선 받기 40점', ask: '40점을 넘기면 내 캣타워를 줄게. 해 볼래?', key: 'arcadeBest', target: 40, item: 'cat_tower', coins: 20 },
-  { id: 's_explorer_shelf', npc: 'explorer', label: '광석 20개 캐기', ask: '동굴 지도를 만들고 있어. 광석 20개를 캐 오면 책장을 줄게.', key: 'mine', target: 20, item: 'bookshelf', coins: 20 },
+  { id: 's_garden_plant', npc: 'gardener', label: '물고기 3마리 낚아 오기', ask: '화분에 줄 거름이 필요하다냥. 물고기 3마리만 잡아 주자냥!', key: 'fish', target: 3, item: 'plant', coins: 10 },
+  { id: 's_garden_lamp', npc: 'gardener', label: '그림 2장 그리기', ask: '정원에 걸 그림이 보고 싶다냥. 2장만 그려 줘냥!', key: 'draw', target: 2, item: 'floor_lamp', coins: 10 },
+  { id: 's_fisher_rack', npc: 'fisher', label: '희귀한 물고기 1마리', ask: '금붕어나 비단잉어를 낚으면 건조대를 하나 준다냥.', key: 'rare', target: 1, item: 'fish_rack', coins: 20 },
+  { id: 's_fisher_hammock', npc: 'fisher', label: '물고기 20마리 낚기', ask: '진짜 낚시꾼이라면 20마리는 잡아야지냥. 해먹을 걸고 내기하자냥!', key: 'fish', target: 20, item: 'hammock', coins: 30 },
+  { id: 's_shop_window', npc: 'shop', label: '물건 15개 팔기', ask: '단골이 되어 줘냥! 15개 팔면 창문을 하나 준다냥.', key: 'sold', target: 15, item: 'window', coins: 10 },
+  { id: 's_arcade_tower', npc: 'arcade', label: '생선 받기 40점', ask: '40점을 넘기면 내 캣타워를 준다냥. 해 보자냥!', key: 'arcadeBest', target: 40, item: 'cat_tower', coins: 20 },
+  { id: 's_explorer_shelf', npc: 'explorer', label: '광석 20개 캐기', ask: '동굴 지도를 만들고 있다냥. 광석 20개를 캐 오면 책장을 준다냥.', key: 'mine', target: 20, item: 'bookshelf', coins: 20 },
+  { id: 's_painter_easel', npc: 'painter', label: '그림 3장 그리기', ask: '그림 세 장을 그려 오면 내 캔버스를 하나 준다냥. 그림을 걸어 두고 자랑하자냥!', key: 'draw', target: 3, item: 'easel', coins: 15 },
+  { id: 's_mailman_bench', npc: 'mailman', label: '주민 집 6곳 방문', ask: '우편 배달을 도와주면 쉬어 갈 의자를 준다냥. 주민 집 6곳만 들르자냥!', key: 'visits', target: 6, item: 'sofa', coins: 20 },
 ];
 export const storyQuest = (id: string) => STORY_QUESTS.find((q) => q.id === id);
 
 export const NPC_INFO: Record<NpcRole, { name: string; title: string; hello: string }> = {
-  shop: { name: '보리', title: '잡화점', hello: '어서 와! 사고 싶은 것도, 팔고 싶은 것도 다 여기서.' },
-  arcade: { name: '콩이', title: '오락실', hello: '생선 받기 한 판 할래? 점수가 높으면 상품을 줘!' },
-  fisher: { name: '멸치', title: '낚시꾼', hello: '연못에 큰 놈이 산다던데... 너도 낚아 볼래?' },
-  gardener: { name: '쑥이', title: '정원사', hello: '꽃이 예쁘게 폈지? 부탁 하나만 들어줄래?' },
-  explorer: { name: '두더지', title: '탐험가', hello: '저 산 동굴 안쪽에 반짝이는 게 있어. 같이 탐험할래?' },
+  shop: { name: '보리', title: '잡화점', hello: '어서 오라냥! 사고 싶은 것도, 팔고 싶은 것도 다 여기서 하자냥.' },
+  arcade: { name: '콩이', title: '오락실', hello: '생선 받기 한 판 하자냥! 점수가 높으면 상품을 준다냥!' },
+  fisher: { name: '멸치', title: '낚시꾼', hello: '연못에 큰 놈이 산다던데냥... 너도 낚아 보자냥?' },
+  gardener: { name: '쑥이', title: '정원사', hello: '꽃이 예쁘게 폈지냥? 부탁 하나만 들어주자냥.' },
+  explorer: { name: '두더지', title: '탐험가', hello: '저 산 동굴 안쪽에 반짝이는 게 있다냥. 같이 탐험하자냥!' },
+  painter: { name: '물감', title: '화가', hello: '오늘도 그림 그리기 좋은 날이다냥! 그린 그림은 캔버스에 걸어 두자냥.' },
+  mailman: { name: '편지', title: '우체부', hello: '편지 왔다냥! 집 앞 우편함도 꼭 열어 보자냥.' },
 };
 
 /** 이웃 주민(부탁 없이 방문만 하는 주민) 이름 */
@@ -403,8 +454,10 @@ export const residentName = (i: number) => RESIDENT_NAMES[mix(i) % RESIDENT_NAME
 
 /**
  * 섬 모서리의 주민 집 8채의 주인 (씬 layout.ts 의 HOME_SPOTS 순서와 같다. 구역마다 같은 배치).
- * 0,1: 북서(동굴 산 앞) / 2,3: 북동 / 4,5: 남서 / 6,7: 남동
+ * 0,1: 북서(동굴 산 앞) / 2,3: 북동(화가, 우체부) / 4,5: 남서 / 6,7: 남동
  */
-export const HOME_ROLES: readonly HomeRole[] = ['explorer', 'resident', 'shop', 'arcade', 'fisher', 'resident', 'gardener', 'resident'];
+export const HOME_ROLES: readonly HomeRole[] = ['explorer', 'resident', 'painter', 'mailman', 'fisher', 'resident', 'gardener', 'resident'];
+/** 2026-11-16: 잡화점, 오락실 주인은 집 없이 마을 광장 장터 가판대에만 있다 (모서리에 빈 가게 집이 남던 것을 정리) */
+export const STALL_ROLES: readonly NpcRole[] = ['shop', 'arcade'];
 /** 주민 집 번호(구역 * 8 + 순번) → 주인 역할 */
 export const homeRole = (homeId: number): HomeRole => HOME_ROLES[((homeId % HOME_ROLES.length) + HOME_ROLES.length) % HOME_ROLES.length];

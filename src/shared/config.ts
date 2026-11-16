@@ -97,6 +97,8 @@ export const DECOR_ITEMS = [
   { type: 'cat_tower', label: '캣타워', mount: 'floor', art: false, price: 130 },
   { type: 'bed', label: '침대', mount: 'floor', art: false, price: 140 },
   { type: 'sofa', label: '소파', mount: 'floor', art: false, price: 160 },
+  // 2026-11-16: 그림을 걸어 두는 캔버스 (누르면 크게 본다)
+  { type: 'easel', label: '그림 캔버스', mount: 'floor', art: true, price: 80 },
 ] as const;
 export type DecorType = (typeof DECOR_ITEMS)[number]['type'];
 /** 처음부터 가진 아이템 */

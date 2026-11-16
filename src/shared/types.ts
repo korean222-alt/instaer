@@ -63,6 +63,9 @@ export interface RemotePlayer {
   fishing?: FishingPose | null;
   /** 추고 있는 춤 id (src/shared/social.ts 의 DANCES). 없거나 null 이면 춤 안 춤. 걷는 동안은 씬이 멈춘다 */
   dance?: string | null;
+  /** 고양이 자동차 (2026-11-16): 'drive' 운전 중, 'ride' 남의 차 뒷자리 (rideWith 가 운전자 id) */
+  car?: 'drive' | 'ride' | null;
+  rideWith?: string | null;
 }
 
 /** 걷기 모드에서 내 고양이 상태 */

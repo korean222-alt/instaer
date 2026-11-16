@@ -19,6 +19,7 @@ import type { Drawing, InteriorItem, PlacedItem } from './free/types';
 import { Interior, ROOM_CAM_YAW, ROOM_EXIT, ROOM_START, ROOM_WALK } from './interior/Interior';
 import { ROOM_HALF, ROOM_HALF_BIG } from './free/space';
 import { Npcs, type SceneNpc } from './npc/Npcs';
+import { CarLayer, CAR_SEAT_Y, CAR_SPEED, seatOffset } from './car/CatCar';
 import { RemotePlayers } from './remote/RemotePlayers';
 import { danceMotion } from './cat/dance';
 import type { LocalState, RemotePlayer } from './remote/types';
@@ -155,7 +156,7 @@ export interface IslandScene {
    * 지금 보여 줄 지붕 그림 전체 (가까운 집 것만). 목록에서 빠진 집은 그림을 뗀다.
    * 그림 내용은 setDrawings 로 넘긴 것을 쓴다. 그림이 아직 안 왔으면 지붕 색만 보인다.
    */
-  setRoofArt(items: Array<{ houseNo: number; drawingId: string }>): void;
+  setRoofArt(items: Array<{ houseNo: number; drawingId: string; backId?: string | null }>): void;
   /**
    * 지금 보여 줄 주민(NPC) 고양이 전체. 이름표는 '@' 없이 연두색이고, role 에 따라 작은 표시가 붙는다.
    * 주민은 준 자리에 앉아 있다가 가끔 둘레를 조금 걷는다. 집 안에 있을 때는 방 좌표로 넘긴다.
@@ -218,6 +219,18 @@ export interface IslandScene {
   catScreenPos(id: string | null): { x: number; y: number } | null;
   /** 다른 유저 고양이를 눌렀을 때 그 id 를 알린다 (프로필) */
   onRemoteTap(cb: (id: string) => void): void;
+
+  // ── 2026-11-16: 캔버스, 우편함, 자동차, 지도 회전 ──
+
+  /** 그림이 붙은 아이템(캔버스, 액자, 간판, 러그)을 눌렀을 때 (꾸미기 중이 아닐 때만). 크게 보기용 */
+  onArtTap(cb: (drawingId: string, type: string) => void): void;
+  /** 걷기 카메라가 보는 방향 (라디안. 0 이면 카메라가 고양이 남쪽(+z)에서 북쪽을 본다). 지도 돌리기용 */
+  getViewYaw(): number;
+  /**
+   * 고양이 자동차 (2026-11-16). 내 고양이가 자동차에 타거나(on) 내린다. 타면 빠르게 달린다.
+   * passenger: 남의 차 뒷자리에 탔을 때 (조이스틱이 듣지 않고, 앱이 setLocalPosition 으로 운전자 자리를 따라가게 한다)
+   */
+  setRiding(mode: 'drive' | 'passenger' | null, driverId?: string): void;
 
   /** 캔버스 크기가 바뀌면 부른다 */
   resize(): void;
@@ -329,6 +342,11 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   /** 낚시를 시작하면 이 시간(초) 동안 카메라를 고양이 뒤로 돌려 물 쪽을 보게 한다 */
   let fishCamTurn = 0;
   let npcTapCb: ((id: string) => void) | null = null;
+  let artTapCb: ((drawingId: string, type: string) => void) | null = null;
+  // 고양이 자동차 (2026-11-16)
+  let riding: 'drive' | 'passenger' | null = null;
+  let rideDriver: string | null = null;
+  const myCar = new CarLayer(atmosphere.shared, 1);
   let remoteTapCb: ((id: string) => void) | null = null;
   let dance: string | null = null;
   let danceT = 0;
@@ -341,10 +359,21 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   };
   /** 내 고양이 그리기 (춤 포함). yOff: 땅에서 띄우는 값 */
   const drawPlayer = (dt: number, yOff: number, happy = 0, allowDance = true) => {
-    const dm = allowDance && dance && walker.walk < 0.15 && walker.air <= 0 ? danceMotion(dance, (danceT += dt)) : null;
+    const ride = riding !== null && walking && inside === null && !inCave;
+    const dm = !ride && allowDance && dance && walker.walk < 0.15 && walker.air <= 0 ? danceMotion(dance, (danceT += dt)) : null;
     if (!dm) danceT = 0;
-    player.setPose(0, walker.x, walker.y + yOff + (dm?.dy ?? 0), walker.z, walker.yaw + (dm?.dyaw ?? 0), PLAYER_SCALE * (dm?.scale ?? 1));
-    player.setAnim(0, dm && dm.walk ? dm.phase : walker.phase, dm && dm.walk ? dm.walk : walker.walk, 0, dm ? dm.happy : happy);
+    myCar.begin();
+    if (ride) {
+      // 차에 타면 자리에 앉아서 간다 (운전이면 차도 같이 그린다. 뒷자리면 운전자 차가 그려 준다)
+      if (riding === 'drive') myCar.push(walker.x, walker.y + yOff - 0.035, walker.z, walker.yaw, 1, walker.speed > 0.5 ? Math.abs(Math.sin(walker.phase * 0.5)) * 0.03 : 0);
+      const off = riding === 'drive' ? seatOffset(walker.yaw, false) : { dx: 0, dz: 0 };
+      player.setPose(0, walker.x + off.dx, walker.y + yOff + CAR_SEAT_Y, walker.z + off.dz, walker.yaw, PLAYER_SCALE);
+      player.setAnim(0, walker.phase, 0, 0, happy);
+    } else {
+      player.setPose(0, walker.x, walker.y + yOff + (dm?.dy ?? 0), walker.z, walker.yaw + (dm?.dyaw ?? 0), PLAYER_SCALE * (dm?.scale ?? 1));
+      player.setAnim(0, dm && dm.walk ? dm.phase : walker.phase, dm && dm.walk ? dm.walk : walker.walk, 0, dm ? dm.happy : happy);
+    }
+    myCar.end();
     return dm;
   };
   let preview: CatPreview | null = null;
@@ -363,7 +392,7 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   /** 동굴에서 나오면 설 자리 (들어간 입구 앞) */
   const caveReturn = { x: 0, z: 0, yaw: 0 };
   let itemPreview: ItemPreview | null = null;
-  scene.add(world.group, houses.group, mark.group, player.mesh, remotes.group, npcs.group, fishRig.group, placer.group);
+  scene.add(world.group, houses.group, mark.group, player.mesh, remotes.group, npcs.group, fishRig.group, placer.group, myCar.mesh);
   placer.onChange = () => {
     if (inside !== null) interior?.redraw(placer.heldId);
     else houses.redrawFree(placer.heldId);
@@ -528,11 +557,19 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     if (inside !== null) {
       // 집 안: 아이템을 누르면 알린다 (꾸미기 모드에서는 끌어 놓기 쪽이 먼저 받는다)
       const hit = interior && !placer.active ? pickItem(interior.space, interior.list, rig.rayFrom(cx, cy)) : null;
-      if (hit) placer.onPick?.(hit.id);
+      if (hit?.drawingId && artTapCb) artTapCb(hit.drawingId, hit.type);
+      else if (hit) placer.onPick?.(hit.id);
       return;
     }
     if (placer.active) return;
     const ray = rig.rayFrom(cx, cy);
+    if (artTapCb) {
+      const art = houses.pickArt(ray);
+      if (art?.drawingId) {
+        artTapCb(art.drawingId, art.type);
+        return;
+      }
+    }
     let houseNo = houses.petCat(ray) ?? houses.pickBuilding(ray);
     if (houseNo === null) {
       const g = rig.groundPoint(cx, cy);
@@ -823,11 +860,23 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
           fishCamTurn -= dt;
           walkCam.yaw += wrapAngle(fishYaw + Math.PI - walkCam.yaw) * (1 - Math.exp(-dt * 4));
         }
+      } else if (riding === 'passenger') {
+        // 남의 차 뒷자리: 운전자 차를 따라간다 (조이스틱은 듣지 않는다)
+        const d = rideDriver ? remotes.posOf(rideDriver) : null;
+        walker.update(dt, 0, 0, walkCam.yaw, false);
+        if (d) {
+          const off = seatOffset(d.yaw, true);
+          walker.x = d.x + off.dx;
+          walker.z = d.z + off.dz;
+          walker.yaw = d.yaw;
+          walker.groundY = d.y;
+          walker.y = d.y;
+        }
       } else walker.update(dt, controls.moveX, controls.moveY, walkCam.yaw, jump);
       walkCam.update(dt, camera, walker.x, walker.groundY, walker.air, walker.z, controls.takeLook());
       // 물고기를 낚으면 눈웃음을 짓는다
       const dmw = drawPlayer(dt, 0.035, fishing === 'caught' ? 1 : 0, fishing === null);
-      player.setMood(0, dmw ? 0 : walker.sit, fishing !== null ? 0 : walker.yawn);
+      player.setMood(0, riding ? 1 : dmw ? 0 : walker.sit, fishing !== null || riding ? 0 : walker.yawn);
       fishRig.update(dt, walker.x, walker.y + 0.035, walker.z, walker.yaw, PLAYER_SCALE);
       walkFocus.x = walker.x;
       walkFocus.z = walker.z;
@@ -1038,6 +1087,8 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
         walking = false;
         controls.setActive(false);
         player.mesh.visible = false;
+        myCar.begin();
+        myCar.end();
         houses.setAwayCat(null);
         houses.setWalkFocus(null);
         startBlend();
@@ -1185,6 +1236,19 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
       houses.redrawRoofArt();
       interior?.refreshDrawings();
       placer.refresh();
+    },
+    onArtTap(cb) {
+      artTapCb = cb;
+    },
+    getViewYaw: () => (walking ? walkCam.yaw : 0),
+    setRiding(mode, driverId) {
+      riding = mode === 'drive' || mode === 'passenger' ? mode : null;
+      rideDriver = riding === 'passenger' ? (driverId ?? null) : null;
+      walker.speedMul = riding === 'drive' ? CAR_SPEED : 1;
+      if (!riding) {
+        myCar.begin();
+        myCar.end();
+      }
     },
     setRoofArt(items) {
       houses.setRoofArt(Array.isArray(items) ? items : []);
