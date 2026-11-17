@@ -53,7 +53,25 @@ function renderMine(root: HTMLElement, justMoved: { rank: number; total: number;
   root.querySelector('[data-act="decorate"]')?.addEventListener('click', () => go('decorate'));
 }
 
+/** DM 링크(/?k=암호)로 들어오면 암호 칸을 미리 채우고, 주소에서는 암호를 지운다 */
+function takePrefillPass(): string {
+  try {
+    const u = new URL(location.href);
+    const k = u.searchParams.get('k');
+    if (k) {
+      u.searchParams.delete('k');
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+      prefillPassValue = k.slice(0, 40);
+    }
+  } catch {
+    /* 주소를 못 읽으면 빈 칸 */
+  }
+  return prefillPassValue;
+}
+let prefillPassValue = '';
+
 function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
+  const prefillPass = takePrefillPass();
   const options = REGIONS.map((r) => `<option value="${r.id}">${r.label}</option>`).join('');
   root.innerHTML = `
     <p class="lead">집 한 채와 고양이 한 마리를 무료로 받아요.<br />집에는 내 인스타 아이디 이름표가 걸려요.</p>
@@ -65,6 +83,10 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
         <small class="hint" data-hint></small>
       </label>
       <div class="preview" data-preview hidden></div>
+      <label class="field">
+        <span>입주 암호 <small>인스타 DM 으로 받은 암호</small></span>
+        <input name="pass" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="40" placeholder="DM 에 적힌 암호" value="${esc(prefillPass)}" />
+      </label>
       <label class="field">
         <span>사는 지역 <small>한 번 정하면 못 바꿔요</small></span>
         <select name="region" required>
