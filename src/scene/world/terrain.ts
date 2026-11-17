@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Atmosphere } from '../core/atmosphere';
+import { SNOW } from '../core/glowLambert';
 import { GRASS_EDGE, LAND_RANGE, PATH_RANGE, SHORE_D } from './constants';
 import { heightFromLand } from './mapField';
 import type { MapUniforms } from './mapUniforms';
@@ -71,6 +72,7 @@ export function createTerrainMaterial(
     uMapMin: map.uMapMin,
     uMapSize: map.uMapSize,
     uNight: atmosphere.shared.uNight,
+    uWinter: SNOW.uWinter,
     uLockTint: c('#e6eef2'),
     uSand: c('#f7e6bb'),
     uSandLight: c('#fdf1d2'),
@@ -100,6 +102,8 @@ export function createTerrainMaterial(
         uniform float uMapSize;
         uniform vec3 uSand, uSandLight, uSandWet, uGrass, uGrassLight, uGrassDark;
         uniform vec3 uPath, uPathLight, uPathEdge, uStone, uStoneDark, uLockTint;
+        uniform float uNight;
+        uniform float uWinter;
 
         float edgeMask(float d) {
           float aa = max(fwidth(d), 1e-4);
@@ -151,6 +155,16 @@ export function createTerrainMaterial(
           sc = mix(sc, uStoneDark * 0.86, edgeMask(max(joint, round)));
           sc = mix(sc, uStoneDark * 0.86, (1.0 - smoothstep(0.0, 0.14, dPlaza)) * 0.8);
           col = mix(col, sc, edgeMask(dPlaza) * grass);
+          // 겨울 밤 (2026-11-16): 눈이 쌓인다. 풀밭은 하얗게, 길과 광장은 밟힌 자국이 남고, 모래는 물가 쪽이 덜 쌓인다
+          float snowAmt = uWinter * uNight;
+          if (snowAmt > 0.001) {
+            vec3 snowC = mix(vec3(0.94, 0.96, 1.0), vec3(0.84, 0.89, 0.98), smoothstep(0.3, 0.7, nMid.r) * 0.7 + nHi.g * 0.15);
+            float onPath = edgeMask(pe) * grass;
+            float onPlaza = edgeMask(dPlaza) * grass;
+            float k = mix(0.75 * (1.0 - wet) * smoothstep(0.2, 1.2, dLand), 1.0, grass);
+            k *= 1.0 - 0.55 * onPath * (0.6 + 0.4 * smoothstep(0.35, 0.6, nMid.a + 0.1)) - 0.38 * onPlaza;
+            col = mix(col, snowC, clamp(snowAmt * k, 0.0, 1.0));
+          }
           // 아직 열리지 않은 구역은 안개 낀 듯 흐리게
           float lum = dot(col, vec3(0.3, 0.59, 0.11));
           col = mix(col, mix(vec3(lum), uLockTint, 0.6), (1.0 - m.a) * 0.72);
@@ -159,6 +173,6 @@ export function createTerrainMaterial(
       )
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = groundColor();');
   };
-  mat.customProgramCacheKey = () => 'terrain-v1';
+  mat.customProgramCacheKey = () => 'terrain-v2';
   return mat;
 }

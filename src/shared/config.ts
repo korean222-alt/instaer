@@ -11,6 +11,12 @@ export const FOUNDER_MAX = 100;
 /** 동네 하나의 집 수 (구역 하나 = 동네 10개) */
 export const NEIGHBORHOOD_SIZE = 10;
 
+/**
+ * 입주 전에 팔로우해 달라고 보낼 인스타 계정 (@ 없이). 비워 두면 팔로우 단계를 건너뛴다.
+ * 팔로우했는지는 확인하지 않는다(인스타 메시지 API 는 사업자 인증이 필요해서 못 쓴다). 2026-11-15
+ */
+export const FOLLOW_HANDLE = 'goyangi.seom';
+
 /** 실시간: 내 주변에서 보이는 다른 유저 수 상한 */
 export const NEARBY_MAX = 20;
 /** 실시간: 주변으로 치는 거리 (월드 단위) */
@@ -63,3 +69,81 @@ export const REGIONS = [
   { id: 'jeju', label: '제주', color: '#ff8a3d' },
   { id: 'other', label: '기타', color: '#9aa3ad' },
 ] as const;
+
+// ── 자유 배치 꾸미기 (씬 작업 4) ──
+
+/**
+ * 자유 배치 아이템 전체. 씬의 src/scene/free/catalog.ts 와 종류 이름이 같아야 한다.
+ * - mount: floor(바닥), rug(깔개), wall(벽, 집 안만)
+ * - art: 직접 그린 그림을 붙일 수 있는지
+ * - price: 상점 가격(츄르). null 이면 처음부터 가진 기본 아이템
+ * - quest: 퀘스트로도 받을 수 있으면 true (상점에서도 살 수 있다)
+ */
+export const DECOR_ITEMS = [
+  { type: 'cushion', label: '방석', mount: 'floor', art: false, price: null },
+  { type: 'sign', label: '간판', mount: 'floor', art: true, price: null },
+  { type: 'lantern', label: '등불', mount: 'floor', art: false, price: null },
+  { type: 'bench', label: '벤치', mount: 'floor', art: false, price: null },
+  { type: 'chair', label: '의자', mount: 'floor', art: false, price: null },
+  { type: 'table', label: '탁자', mount: 'floor', art: false, price: null },
+  { type: 'rug', label: '러그', mount: 'rug', art: true, price: null },
+  { type: 'frame', label: '액자', mount: 'wall', art: true, price: null },
+  { type: 'plant', label: '화분', mount: 'floor', art: false, price: 40 },
+  { type: 'window', label: '창문', mount: 'wall', art: false, price: 50 },
+  { type: 'fish_rack', label: '생선 건조대', mount: 'floor', art: false, price: 60 },
+  { type: 'floor_lamp', label: '스탠드 조명', mount: 'floor', art: false, price: 70 },
+  { type: 'hammock', label: '해먹', mount: 'floor', art: false, price: 90 },
+  { type: 'bookshelf', label: '책장', mount: 'floor', art: false, price: 100 },
+  { type: 'cat_tower', label: '캣타워', mount: 'floor', art: false, price: 130 },
+  { type: 'bed', label: '침대', mount: 'floor', art: false, price: 140 },
+  { type: 'sofa', label: '소파', mount: 'floor', art: false, price: 160 },
+  // 2026-11-16: 그림을 걸어 두는 캔버스 (누르면 크게 본다)
+  { type: 'easel', label: '그림 캔버스', mount: 'floor', art: true, price: 80 },
+  // 2026-11-16: 겨울 한정 눈사람. 팔지 않고 우편함 선물로만 받는다 (GIFT_ITEMS), 마당에만 놓는다 (YARD_ONLY_ITEMS)
+  { type: 'snowman', label: '눈사람', mount: 'floor', art: false, price: null },
+] as const;
+export type DecorType = (typeof DECOR_ITEMS)[number]['type'];
+/** 상점에서 팔지 않고 선물(우편함, 행사)로만 받는 아이템 */
+export const GIFT_ITEMS: readonly string[] = ['snowman'];
+/** 마당에만 놓을 수 있는 아이템 (집 안 불가) */
+export const YARD_ONLY_ITEMS: readonly string[] = ['snowman'];
+/** 처음부터 가진 아이템 */
+export const STARTER_ITEMS: readonly string[] = DECOR_ITEMS.filter((i) => i.price === null && !GIFT_ITEMS.includes(i.type)).map((i) => i.type);
+
+/**
+ * 겨울 꾸미기 기간 (한국 시간 날짜 'YYYY-MM-DD', 끝 날 포함). 2026-11-16 사용자: 눈 쌓인 크리스마스 맵.
+ * 이 기간에는 섬에 눈이 오고(밤에는 땅과 빈 집 지붕에도 눈), 우편함에 눈사람 선물 편지가 온다.
+ */
+export const WINTER_START = '2026-11-16';
+export const WINTER_END = '2027-02-28';
+export const isWinter = (day: string) => day >= WINTER_START && day <= WINTER_END;
+export const decorItem = (type: string) => DECOR_ITEMS.find((i) => i.type === type);
+
+/** 마당 한 변의 절반 (자유 배치 좌표 -3 ~ 3). 2026-11-16: 기본 6m, 마당 넓히기(300츄르, 지갑 owned 'yard_big')를 사면 7.2m */
+export const YARD_HALF = 3.0;
+export const YARD_HALF_BIG = 3.6;
+/** 집 안 한 변의 절반 (자유 배치 좌표 -4 ~ 4) */
+export const ROOM_HALF = 4;
+/** 마당 / 집 안에 놓을 수 있는 아이템 수 */
+export const FREE_YARD_MAX = 20;
+export const FREE_ROOM_MAX = 30;
+
+/** 벽지, 바닥 기본 무늬 (씬의 ROOM_STYLES 와 같다). 이 밖에 '#rrggbb' 와 'drawing:그림id' 도 된다 */
+export const WALLPAPERS = [
+  { id: 'cream', label: '크림' },
+  { id: 'stripe', label: '줄무늬' },
+  { id: 'dots', label: '물방울' },
+] as const;
+export const FLOORS = [
+  { id: 'wood', label: '나무' },
+  { id: 'tile', label: '타일' },
+  { id: 'carpet', label: '카펫' },
+] as const;
+/** 벽지/바닥 단색 고르기 */
+export const ROOM_COLORS = ['#fff4e0', '#ffe1d6', '#e6f2d9', '#d9ecf2', '#e8e0f5', '#f2e6c9', '#d8c3a5', '#bfd8c9'] as const;
+
+/** 직접 그린 그림: 32x32 픽셀, 16색, 512바이트 */
+export const DRAWING_SIZE = 32;
+export const DRAWING_BYTES = 512;
+/** 집 한 채가 가질 수 있는 그림 수 */
+export const DRAWING_MAX = 12;

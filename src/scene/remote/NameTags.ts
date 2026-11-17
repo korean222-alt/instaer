@@ -16,6 +16,15 @@ export const TAG_SLOTS = COLS * ROWS;
 const ATLAS_SCALE = 0.56;
 const FONT = '700 23px "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif';
 
+export interface NameTagStyle {
+  /** 이름 앞에 붙이는 글자 (유저는 '@', 주민은 없음) */
+  prefix: string;
+  /** 바탕색과 글자색 */
+  bg: string;
+  fg: string;
+}
+const USER_STYLE: NameTagStyle = { prefix: '', bg: 'rgba(74, 56, 44, 0.84)', fg: '#fffaf0' };
+
 export class NameTags {
   readonly mesh: THREE.InstancedMesh;
   private readonly canvas = document.createElement('canvas');
@@ -31,7 +40,7 @@ export class NameTags {
   private readonly slotUsed: boolean[] = new Array(TAG_SLOTS).fill(false);
   private n = 0;
 
-  constructor() {
+  constructor(private readonly style: NameTagStyle = USER_STYLE) {
     this.canvas.width = SLOT_W * COLS;
     this.canvas.height = SLOT_H * ROWS;
     this.ctx = this.canvas.getContext('2d')!;
@@ -162,7 +171,7 @@ export class NameTags {
     const pillH = 36;
     ctx.font = FONT;
     const maxW = SLOT_W - margin * 2 - pad * 2;
-    let text = `@${handle}`;
+    let text = `${this.style.prefix}${handle}`;
     if (ctx.measureText(text).width > maxW) {
       while (text.length > 2 && ctx.measureText(`${text}…`).width > maxW) text = text.slice(0, -1);
       text += '…';
@@ -171,12 +180,12 @@ export class NameTags {
     const w = textW + pad * 2;
     const px = x0 + margin;
     const py = y0 + (SLOT_H - pillH) / 2;
-    ctx.fillStyle = 'rgba(74, 56, 44, 0.84)';
+    ctx.fillStyle = this.style.bg;
     ctx.beginPath();
     ctx.roundRect(px, py, w, pillH, pillH / 2);
     ctx.fill();
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#fffaf0';
+    ctx.fillStyle = this.style.fg;
     ctx.fillText(text, px + pad, py + pillH / 2 + 1.5);
     return w + margin * 2;
   }

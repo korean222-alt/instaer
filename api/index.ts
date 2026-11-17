@@ -4,11 +4,15 @@ import type { Env } from './env';
 import { error } from './http';
 import { health } from './routes/health';
 import { like } from './routes/like';
-import { me, moveIn, setPrivacy } from './routes/moveIn';
+import { me, moveIn, rename, setPrivacy } from './routes/moveIn';
 import { regions } from './routes/regions';
 import { village } from './routes/village';
 import { realtimeConnect, realtimeUsage } from './routes/realtime';
-import { getYard, putYard } from './routes/yard';
+import { deleteDrawing, getDecor, getDrawings, getWallet, myDrawings, postDrawing, putDecor } from './routes/decor';
+import { adminAction, adminState, authInfo, getWishes, postWish, reclaimPoll, reclaimStart, report } from './routes/auth';
+import { cron } from './lib/insta';
+import { accept, arcade, buy, claim, fish, mine, openMail, sell, visit } from './routes/game';
+import { deleteBoard, deleteGuestbook, friendAction, getBoard, getFriends, houseSocial, postBoard, postGuestbook } from './routes/social';
 
 export { RealtimeRoom } from './realtime/RealtimeRoom';
 
@@ -33,20 +37,67 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (method === 'GET' && path === '/api/regions') return regions(env, ctx);
   if (method === 'GET' && path === '/api/me') return me(request, env);
   if (method === 'POST' && path === '/api/move-in') return moveIn(request, env);
+  if (method === 'GET' && path === '/api/auth-info') return authInfo(env);
+  if (method === 'POST' && path === '/api/reclaim') return reclaimStart(request, env);
+  if (method === 'POST' && path === '/api/report') return report(request, env);
+  if (method === 'GET' && path === '/api/wishes') return getWishes(env, ctx);
+  if (method === 'POST' && path === '/api/wishes') return postWish(request, env);
+  if (method === 'GET' && path === '/api/admin') return adminState(request, env);
+  if (method === 'POST' && path === '/api/admin') return adminAction(request, env);
+  {
+    const rc = path.match(/^\/api\/reclaim\/([A-Z0-9]{4,10})$/);
+    if (rc && method === 'GET') return reclaimPoll(rc[1], request, env);
+  }
   if (method === 'PUT' && path === '/api/me/privacy') return setPrivacy(request, env);
+
+  if (method === 'GET' && path === '/api/wallet') return getWallet(request, env);
+  if (method === 'GET' && path === '/api/me/drawings') return myDrawings(request, env);
+  if (method === 'GET' && path === '/api/drawings') return getDrawings(url, env);
+  if (method === 'POST' && path === '/api/drawings') return postDrawing(request, env);
+  if (method === 'POST' && path === '/api/shop/buy') return buy(request, env);
+  if (method === 'POST' && path === '/api/mail/open') return openMail(request, env);
+  if (method === 'POST' && path === '/api/quest/claim') return claim(request, env);
+  if (method === 'POST' && path === '/api/quest/accept') return accept(request, env);
+  if (method === 'POST' && path === '/api/shop/sell') return sell(request, env);
+  if (method === 'POST' && path === '/api/game/mine') return mine(request, env);
+  if (method === 'POST' && path === '/api/me/rename') return rename(request, env);
+  if (method === 'POST' && path === '/api/game/fish') return fish(request, env);
+  if (method === 'POST' && path === '/api/game/arcade') return arcade(request, env);
+  if (method === 'POST' && path === '/api/game/visit') return visit(request, env);
+
+  if (method === 'GET' && path === '/api/board') return getBoard(env, ctx);
+  if (method === 'POST' && path === '/api/board') return postBoard(request, env);
+  if (method === 'GET' && path === '/api/friends') return getFriends(request, env);
 
   let m = path.match(/^\/api\/rt\/(zone|room)\/([A-Za-z0-9%-]{1,64})$/);
   if (m && method === 'GET') return realtimeConnect(m[1], m[2], request, env);
   m = path.match(/^\/api\/rt\/usage\/(zone|room)\/([a-z0-9-]{1,32})$/);
   if (m && method === 'GET') return realtimeUsage(m[1], m[2], env);
 
-  m = path.match(/^\/api\/yard\/(\d+)$/);
+  m = path.match(/^\/api\/house\/(\d+)$/);
   if (m) {
     const no = houseNoOf(m[1]);
     if (!no) return error(400, 'bad_house', '번지가 이상해요');
-    if (method === 'GET') return getYard(no, env);
-    if (method === 'PUT') return putYard(no, request, env);
+    if (method === 'GET') return getDecor(no, env);
+    if (method === 'PUT') return putDecor(no, request, env);
   }
+  m = path.match(/^\/api\/house\/(\d+)\/(social|guestbook)$/);
+  if (m) {
+    const no = houseNoOf(m[1]);
+    if (!no) return error(400, 'bad_house', '번지가 이상해요');
+    if (m[2] === 'social' && method === 'GET') return houseSocial(no, request, env);
+    if (m[2] === 'guestbook' && method === 'POST') return postGuestbook(no, request, env);
+  }
+  m = path.match(/^\/api\/friends\/(\d+)$/);
+  if (m && method === 'POST') {
+    const no = houseNoOf(m[1]);
+    if (!no) return error(400, 'bad_house', '번지가 이상해요');
+    return friendAction(no, request, env);
+  }
+  m = path.match(/^\/api\/(board|guestbook)\/(\d{1,12})$/);
+  if (m && method === 'DELETE') return m[1] === 'board' ? deleteBoard(Number(m[2]), request, env) : deleteGuestbook(Number(m[2]), request, env);
+  m = path.match(/^\/api\/drawings\/([A-Za-z0-9_-]{1,24})$/);
+  if (m && method === 'DELETE') return deleteDrawing(m[1], request, env);
   m = path.match(/^\/api\/like\/(\d+)$/);
   if (m && method === 'POST') {
     const no = houseNoOf(m[1]);
@@ -68,5 +119,9 @@ export default {
       if (/exceeded.*(limit|free tier)/i.test(message)) return error(503, 'quota', '오늘은 사람이 너무 많아요. 내일 다시 만나요');
       return error(500, 'server_error', '잠시 문제가 생겼어요');
     }
+  },
+  // 5분마다 (wrangler.jsonc triggers): 인스타 댓글 읽기, 토큰 갱신
+  async scheduled(_controller, env, ctx): Promise<void> {
+    ctx.waitUntil(cron(env).catch((e) => console.error('[cron]', e instanceof Error ? e.message : e)));
   },
 } satisfies ExportedHandler<Env>;

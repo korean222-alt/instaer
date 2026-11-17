@@ -4,11 +4,13 @@ import { createGlowLambert, GLOW_ATTRS } from '../core/glowLambert';
 import {
   BRIDGE,
   bridgeOf,
+  CAVE_HILL,
   HARBOR,
   linkPaths,
   NEIGHBORHOODS,
   PLAZA_R,
   POND_R,
+  TOWN_SQUARE,
   ZONE,
   ZONE_PATHS,
   ZONE_SCENERY,
@@ -17,7 +19,7 @@ import {
   zoneLandLocal,
   zoneLink,
 } from '../layout';
-import { mergeParts } from '../util/geo';
+import { fillAttr, mergeParts } from '../util/geo';
 import { hash01, mulberry32 } from '../util/rand';
 import { GROUND_Y } from './constants';
 import { createNoiseTexture, MapField, type ZoneShape } from './mapField';
@@ -26,6 +28,11 @@ import { Fireflies, GlowPools, type Pool } from './nightFx';
 import * as props from './props';
 import { createSea } from './sea';
 import { buildTerrainGeometry, createTerrainMaterial } from './terrain';
+import { buildWinterTemplate, createLedMaterial, type WinterTemplate } from './winter';
+
+const WINTER_TREES = new Set(['plazaTree', 'bigTree', 'roundTree', 'coneTree', 'townTree']);
+/** 섬 장식 꼭짓점 값. aSnow: 0 이면 겨울 밤에 위쪽에 눈, -1 이면 눈 없음(물, 눈을 모양으로 만든 겨울 나무) */
+const DECOR_ATTRS = { ...GLOW_ATTRS, aSnow: 1 } as const;
 
 /**
  * 섬 전체(군도)를 만든다: 구역별 땅, 장식, 다리, 항구, 잠긴 구역의 구름, 바다.
@@ -44,7 +51,8 @@ interface DecorTemplate {
   fireflies: Array<[number, number, number]>;
 }
 
-function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
+/** winter: 나무를 눈 덮인 전나무로 (2026-11-16) */
+function buildDecorTemplate(withHarbor: boolean, winter = false): DecorTemplate {
   const tall: THREE.BufferGeometry[] = [];
   const low: THREE.BufferGeometry[] = [];
   const lanterns: Array<[number, number]> = [];
@@ -55,16 +63,16 @@ function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
     let list = tall;
     switch (s.kind) {
       case 'plazaTree':
-        pieces = props.plazaTree();
+        pieces = winter ? props.plazaFir() : props.plazaTree();
         break;
       case 'bigTree':
-        pieces = props.bigTree();
+        pieces = winter ? props.bigFir() : props.bigTree();
         break;
       case 'roundTree':
-        pieces = props.roundTree(s.seed);
+        pieces = winter ? props.frostedFir(props.roundFirTiers(s.seed), s.seed, undefined, 8) : props.roundTree(s.seed);
         break;
       case 'coneTree':
-        pieces = props.coneTree(s.seed);
+        pieces = winter ? props.frostedFir(props.coneFirTiers(s.seed), s.seed, undefined, 8) : props.coneTree(s.seed);
         break;
       case 'bench':
         pieces = props.plazaBench();
@@ -83,6 +91,25 @@ function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
       case 'rock':
         pieces = props.rock(s.seed);
         break;
+      case 'npcHome':
+        pieces = props.npcHome(s.seed);
+        break;
+      case 'caveHill':
+        // 산은 반지름을 직접 받으므로 scale 은 1 로 둔다
+        pieces = props.caveHill(CAVE_HILL.r);
+        break;
+      case 'hill':
+        pieces = props.hill(s.seed);
+        break;
+      case 'townBoard':
+        pieces = props.townBoard();
+        break;
+      case 'stall':
+        pieces = props.stall(s.seed);
+        break;
+      case 'townTree':
+        pieces = winter ? props.townFir() : props.townTree();
+        break;
       case 'tuft':
         pieces = props.tuft(s.seed);
         list = low;
@@ -92,7 +119,13 @@ function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
         list = low;
         if (rnd() < 0.3) fireflies.push([s.x, GROUND_Y + 0.7 + rnd() * 1.2, s.z]);
     }
-    list.push(...props.place(pieces, s.x, GROUND_Y, s.z, s.rot, s.scale));
+    // 겨울 나무는 눈을 모양으로 만들었으므로 재질의 얼룩 눈을 끈다
+    if (winter && WINTER_TREES.has(s.kind)) for (const g of pieces) fillAttr(g, 'aSnow', [-1]);
+    if (s.kind === 'hill') {
+      // 언덕은 옆으로 넓고 키는 덜 크게
+      for (const g of pieces) g.scale(s.scale, s.scale * 0.85, s.scale);
+      list.push(...props.place(pieces, s.x, GROUND_Y, s.z, s.rot, 1));
+    } else list.push(...props.place(pieces, s.x, GROUND_Y, s.z, s.rot, s.scale));
   }
   if (withHarbor) {
     const dockZ = ZONE.halfZ + 3.4;
@@ -100,7 +133,7 @@ function buildDecorTemplate(withHarbor: boolean): DecorTemplate {
     lanterns.push([HARBOR.x + 1.5, ZONE.halfZ - 2.2]);
     tall.push(...props.place(props.lantern(), HARBOR.x + 1.5, GROUND_Y, ZONE.halfZ - 2.2));
   }
-  return { geometry: mergeParts(tall, GLOW_ATTRS), ground: mergeParts(low, GLOW_ATTRS), lanterns, fireflies };
+  return { geometry: mergeParts(tall, DECOR_ATTRS), ground: mergeParts(low, DECOR_ATTRS), lanterns, fireflies };
 }
 
 export interface WorldBounds {
@@ -131,7 +164,7 @@ export class World {
   private readonly cloudMaterial: THREE.MeshLambertMaterial;
   private readonly sea: THREE.Mesh;
   private readonly zonesGroup = new THREE.Group();
-  private readonly templates = new Map<boolean, DecorTemplate>();
+  private readonly templates = new Map<string, DecorTemplate>();
   private readonly pools = new GlowPools(1200);
   private readonly fireflyLayers: Fireflies[] = [];
   private bridgeGeometry: THREE.BufferGeometry | null = null;
@@ -145,11 +178,22 @@ export class World {
   private readonly zoneGroups: Array<{ group: THREE.Group; box: THREE.Box3 }> = [];
   private readonly tallDecor: THREE.Mesh[] = [];
   private readonly groundDecor: THREE.Mesh[] = [];
+  /** 겨울 장식 (별, 장식 공, 선물)과 LED 전구. 겨울일 때만 보인다 */
+  private winterTpl: WinterTemplate | null = null;
+  private readonly winterDecor: THREE.Mesh[] = [];
+  private readonly winterLeds: THREE.Points[] = [];
+  private readonly ledMaterial: THREE.ShaderMaterial;
+  private readonly ledScale = { value: 600 };
+  private readonly ledMaxNight = { value: 16 };
+  /** 저사양 모드: 반딧불 끔, 전구 빛 작게 (2026-11-17) */
+  private low = false;
+  private winter = false;
 
   constructor(atmosphere: Atmosphere) {
     this.atmosphere = atmosphere;
     this.terrainMaterial = createTerrainMaterial(this.mapUniforms, this.noise, atmosphere);
-    this.decorMaterial = createGlowLambert(atmosphere.shared, { instanced: false });
+    this.decorMaterial = createGlowLambert(atmosphere.shared, { instanced: false, snow: 'decor' });
+    this.ledMaterial = createLedMaterial(atmosphere.shared, this.ledScale, this.ledMaxNight);
     this.cloudMaterial = new THREE.MeshLambertMaterial({ color: '#ffffff', emissive: '#9fb4c8', emissiveIntensity: 0.35 });
     const sea = createSea(this.mapUniforms, this.noise, atmosphere);
     this.sea = sea.mesh;
@@ -205,7 +249,7 @@ export class World {
           bz: s.bz + c.z,
           r: s.r,
         })),
-        plazas: NEIGHBORHOODS.filter((n) => n.feature === 'plaza').map((n) => ({ x: c.x + n.x, z: c.z + n.z, r: PLAZA_R })),
+        plazas: [...NEIGHBORHOODS.filter((n) => n.feature === 'plaza').map((n) => ({ x: c.x + n.x, z: c.z + n.z, r: PLAZA_R })), { x: c.x + TOWN_SQUARE.x, z: c.z + TOWN_SQUARE.z, r: TOWN_SQUARE.r }],
         locked: zone >= unlocked,
       };
       shapes.push(shape);
@@ -244,6 +288,7 @@ export class World {
       }
       const tpl = this.template(zone === 0);
       const decor = new THREE.Mesh(tpl.geometry, this.decorMaterial);
+      decor.userData.harbor = zone === 0;
       decor.position.set(c.x, 0, c.z);
       decor.castShadow = true;
       decor.receiveShadow = true;
@@ -256,6 +301,8 @@ export class World {
       this.groundDecor.push(ground);
       zg.add(decor, ground);
       for (const [lx, lz] of tpl.lanterns) if (poolList.length < 1200) poolList.push({ x: c.x + lx, y: GROUND_Y + 0.05, z: c.z + lz, sx: 5.2, sz: 5.2 });
+      // 겨울 장식은 처음 겨울을 켤 때 만든다 (안 쓰면 만들지 않는다)
+      if (this.winter) this.addWinter(zg, c);
       const ff = new Fireflies(tpl.fireflies, this.atmosphere.shared);
       ff.points.position.set(c.x, 0, c.z);
       ff.resize(this.fireflyScale[0], this.fireflyScale[1]);
@@ -263,7 +310,7 @@ export class World {
       zg.add(ff.points);
 
       if (zone === 0) {
-        this.boatGeometry ??= mergeParts(props.boat(), GLOW_ATTRS);
+        this.boatGeometry ??= mergeParts(props.boat(), DECOR_ATTRS);
         this.boat = new THREE.Mesh(this.boatGeometry, this.decorMaterial);
         this.boat.castShadow = true;
         this.boat.position.set(c.x + HARBOR.x + 2.9, 0, c.z + ZONE.halfZ + 3.4 + 3.7);
@@ -273,7 +320,7 @@ export class World {
     }
 
     if (bridges.length) {
-      this.bridgeGeometry ??= mergeParts(props.bridge(BRIDGE.length, GROUND_Y, BRIDGE.rise), GLOW_ATTRS);
+      this.bridgeGeometry ??= mergeParts(props.bridge(BRIDGE.length, GROUND_Y, BRIDGE.rise), DECOR_ATTRS);
       for (const br of bridges) {
         const m = new THREE.Mesh(this.bridgeGeometry, this.decorMaterial);
         m.position.set(br.x, 0, br.z);
@@ -300,9 +347,50 @@ export class World {
     return b;
   }
 
+  /** 겨울 꾸미기 켜기/끄기 */
+  setWinter(on: boolean) {
+    if (on === this.winter) return;
+    this.winter = on;
+    if (on && !this.winterDecor.length) {
+      // 이미 만든 구역에 겨울 장식을 붙인다
+      this.zoneGroups.forEach((z, zone) => {
+        if (zone < this.unlocked) this.addWinter(z.group, zoneCenter(zone));
+      });
+    }
+    for (const m of this.winterDecor) m.visible = on;
+    for (const p of this.winterLeds) p.visible = on;
+    // 나무를 겨울 전나무 / 원래 나무로 바꾼다 (장식 덩어리 모양만 갈아 끼운다)
+    for (const d of this.tallDecor) d.geometry = this.template(!!d.userData.harbor, on).geometry;
+  }
+
+  private addWinter(zg: THREE.Group, c: { x: number; z: number }) {
+    this.winterTpl ??= buildWinterTemplate();
+    const decor = new THREE.Mesh(this.winterTpl.decor, this.decorMaterial);
+    decor.position.set(c.x, 0, c.z);
+    decor.castShadow = true;
+    decor.frustumCulled = false;
+    const leds = new THREE.Points(this.winterTpl.leds, this.ledMaterial);
+    leds.position.set(c.x, 0, c.z);
+    leds.frustumCulled = false;
+    leds.renderOrder = 4;
+    this.winterDecor.push(decor);
+    this.winterLeds.push(leds);
+    zg.add(decor, leds);
+  }
+
   resize(viewportHpx: number, fovDeg: number) {
+    this.ledScale.value = viewportHpx / (2 * Math.tan(THREE.MathUtils.degToRad(fovDeg) / 2));
     this.fireflyScale = [viewportHpx, fovDeg];
     for (const f of this.fireflyLayers) f.resize(viewportHpx, fovDeg);
+  }
+
+  /**
+   * 그리는 양 조절 (2026-11-17). pixelRatio: 지금 해상도 비율, low: 저사양 모드.
+   * 밤 전구는 기기 픽셀 기준 최대 크기를 해상도에 맞춰 줄인다 (해상도가 낮은데 점만 크면 화면을 덮는다).
+   */
+  setDetail(pixelRatio: number, low: boolean) {
+    this.low = low;
+    this.ledMaxNight.value = (low ? 9 : 16) * Math.min(1, pixelRatio / 2);
   }
 
   update(focusX: number, focusZ: number, dist: number, frustum: THREE.Frustum) {
@@ -316,7 +404,10 @@ export class World {
     this.seaUniforms.uFocus.value.set(focusX, focusZ);
     this.seaUniforms.uFade.value.set(80 + dist * 1.6, 420 + dist * 4);
     this.pools.update(night);
-    for (const f of this.fireflyLayers) f.points.visible = night > 0.02 && dist < 150;
+    // 겨울에는 반딧불 대신 전구
+    for (const f of this.fireflyLayers) f.points.visible = !this.low && !this.winter && night > 0.02 && dist < 150;
+    for (const d of this.winterDecor) d.visible = this.winter && dist < 620;
+    for (const p of this.winterLeds) p.visible = this.winter && dist < 900;
     // 멀리서는 꽃/덤불을 숨기고, 나무 그림자도 끈다 (그 거리에서는 거의 안 보인다)
     for (const g of this.groundDecor) g.visible = dist < 300;
     for (const d of this.tallDecor) d.visible = dist < 620;
@@ -336,6 +427,9 @@ export class World {
     this.noise.dispose();
     this.terrainMaterial.dispose();
     this.decorMaterial.dispose();
+    this.ledMaterial.dispose();
+    this.winterTpl?.decor.dispose();
+    this.winterTpl?.leds.dispose();
     this.cloudMaterial.dispose();
     this.sea.geometry.dispose();
     (this.sea.material as THREE.Material).dispose();
@@ -349,11 +443,12 @@ export class World {
     this.cloudGeometry?.dispose();
   }
 
-  private template(withHarbor: boolean): DecorTemplate {
-    let t = this.templates.get(withHarbor);
+  private template(withHarbor: boolean, winter = this.winter): DecorTemplate {
+    const key = `${withHarbor}-${winter}`;
+    let t = this.templates.get(key);
     if (!t) {
-      t = buildDecorTemplate(withHarbor);
-      this.templates.set(withHarbor, t);
+      t = buildDecorTemplate(withHarbor, winter);
+      this.templates.set(key, t);
     }
     return t;
   }
@@ -387,6 +482,8 @@ export class World {
     this.zoneGroups.length = 0;
     this.tallDecor.length = 0;
     this.groundDecor.length = 0;
+    this.winterDecor.length = 0;
+    this.winterLeds.length = 0;
     for (const g of this.zoneOnly) g.dispose();
     this.zoneOnly.length = 0;
     for (const f of this.fireflyLayers) f.dispose();

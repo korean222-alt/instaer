@@ -229,7 +229,7 @@ export class LabelLayer {
     const starW = founder ? 30 : 0;
     ctx.font = FONT_MAIN;
     const maxHandleW = SLOT_W - margin * 2 - pad * 2 - starW - regionW;
-    let handle = `@${e.handle}`;
+    let handle = e.handle;
     if (ctx.measureText(handle).width > maxHandleW) {
       while (handle.length > 2 && ctx.measureText(`${handle}…`).width > maxHandleW) handle = handle.slice(0, -1);
       handle += '…';

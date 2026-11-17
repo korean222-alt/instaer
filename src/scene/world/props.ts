@@ -47,6 +47,28 @@ function lowBlob(r: number, x: number, y: number, z: number, squash: number, bot
   return pg(g, bottom, top);
 }
 
+/** 동네 큰 나무의 잎 덩어리 [반지름, x, y, z] (겨울 장식을 잎 겉에 붙이려고 밖에서도 쓴다) */
+export const BIG_TREE_LEAVES: ReadonlyArray<[number, number, number, number]> = [
+  [2.2, 0, 4.9, 0],
+  [1.7, 1.75, 4.1, 0.5],
+  [1.75, -1.7, 4.2, 0.35],
+  [1.55, 0.2, 4.15, -1.65],
+  [1.5, 0.15, 3.9, 1.7],
+  [1.35, -1.0, 5.6, -0.5],
+  [1.25, 1.1, 5.5, 0.4],
+];
+export const BIG_TREE_SQUASH = 0.84;
+/** 광장 귤나무의 잎 덩어리 [반지름, x, y, z] */
+export const PLAZA_TREE_LEAVES: ReadonlyArray<[number, number, number, number]> = [
+  [1.55, 0, 3.55, 0],
+  [1.15, 1.15, 3.0, 0.35],
+  [1.2, -1.15, 3.1, 0.25],
+  [1.05, 0.15, 3.05, -1.05],
+  [1.0, 0.1, 2.85, 1.1],
+  [0.85, -0.75, 3.95, -0.35],
+];
+export const PLAZA_TREE_SQUASH = 0.86;
+
 /** 광장의 큰 귤나무 */
 export function plazaTree(): Pieces {
   const out: Pieces = [];
@@ -61,12 +83,7 @@ export function plazaTree(): Pieces {
   const soil = new THREE.CylinderGeometry(1.05, 1.05, 0.14, 20).translate(0, 0.07, 0);
   out.push(p(soil, '#8fcf70'));
   // 잎
-  out.push(blob(1.55, 0, 3.55, 0));
-  out.push(blob(1.15, 1.15, 3.0, 0.35));
-  out.push(blob(1.2, -1.15, 3.1, 0.25));
-  out.push(blob(1.05, 0.15, 3.05, -1.05));
-  out.push(blob(1.0, 0.1, 2.85, 1.1));
-  out.push(blob(0.85, -0.75, 3.95, -0.35));
+  for (const [r, x, y, z] of PLAZA_TREE_LEAVES) out.push(blob(r, x, y, z, PLAZA_TREE_SQUASH));
   // 귤
   const rnd = mulberry32(7);
   for (let i = 0; i < 16; i++) {
@@ -80,36 +97,46 @@ export function plazaTree(): Pieces {
   return out;
 }
 
+/** 작은 동글 나무의 모양 (겨울 LED 를 잎에 맞춰 두르려고 따로 뺐다) */
+export function roundTreeShape(seed: number) {
+  const rnd = mulberry32(seed);
+  const h = 0.9 + rnd() * 0.35;
+  const r = 0.72 + rnd() * 0.22;
+  return { h, r };
+}
+
 /** 작은 동글 나무 */
 export function roundTree(seed: number): Pieces {
-  const rnd = mulberry32(seed);
   const out: Pieces = [];
-  const h = 0.9 + rnd() * 0.35;
+  const { h, r } = roundTreeShape(seed);
   const trunk = new THREE.CylinderGeometry(0.11, 0.17, h, 8);
   trunk.translate(0, h / 2, 0);
   out.push(pg(trunk, '#93643f', '#b98858'));
-  const r = 0.72 + rnd() * 0.22;
   out.push(blob(r, 0, h + r * 0.62, 0, 0.9));
   out.push(blob(r * 0.66, r * 0.55, h + r * 0.35, r * 0.2, 0.9));
   out.push(blob(r * 0.6, -r * 0.5, h + r * 0.45, -r * 0.25, 0.9));
   return out;
 }
 
+/** 층층이 쌓인 뾰족 나무의 층 [반지름, 높이, 바닥 y] (크기 s 를 곱한 값) */
+export function coneTreeTiers(seed: number): Array<[number, number, number]> {
+  const rnd = mulberry32(seed);
+  const s = 0.9 + rnd() * 0.3;
+  return [
+    [0.78 * s, 0.95 * s, 0.45 * s],
+    [0.6 * s, 0.85 * s, 1.0 * s],
+    [0.42 * s, 0.75 * s, 1.5 * s],
+  ];
+}
+
 /** 층층이 쌓인 뾰족 나무 */
 export function coneTree(seed: number): Pieces {
-  const rnd = mulberry32(seed);
   const out: Pieces = [];
   const trunk = new THREE.CylinderGeometry(0.1, 0.15, 0.6, 8).translate(0, 0.3, 0);
   out.push(pg(trunk, '#8a5d3b', '#a97a50'));
-  const s = 0.9 + rnd() * 0.3;
-  const tiers = [
-    [0.78, 0.95, 0.45],
-    [0.6, 0.85, 1.0],
-    [0.42, 0.75, 1.5],
-  ];
-  for (const [r, h, y] of tiers) {
-    const c = new THREE.ConeGeometry(r * s, h * s, 10, 2);
-    c.translate(0, (y + h / 2) * s, 0);
+  for (const [r, h, y] of coneTreeTiers(seed)) {
+    const c = new THREE.ConeGeometry(r, h, 10, 2);
+    c.translate(0, y + h / 2, 0);
     out.push(pg(c, '#4fa46a', '#8fd58a'));
   }
   return out;
@@ -320,16 +347,7 @@ export function bigTree(): Pieces {
     root.translate(Math.cos(a) * 0.75, 0.12, Math.sin(a) * 0.75);
     out.push(pg(root, '#7c5235', '#a57a4f'));
   }
-  const leaves: Array<[number, number, number, number]> = [
-    [2.2, 0, 4.9, 0],
-    [1.7, 1.75, 4.1, 0.5],
-    [1.75, -1.7, 4.2, 0.35],
-    [1.55, 0.2, 4.15, -1.65],
-    [1.5, 0.15, 3.9, 1.7],
-    [1.35, -1.0, 5.6, -0.5],
-    [1.25, 1.1, 5.5, 0.4],
-  ];
-  for (const [r, x, y, z] of leaves) out.push(blob(r, x, y, z, 0.84, '#4fa860', '#a3dc78'));
+  for (const [r, x, y, z] of BIG_TREE_LEAVES) out.push(blob(r, x, y, z, BIG_TREE_SQUASH, '#4fa860', '#a3dc78'));
   return out;
 }
 
@@ -357,6 +375,8 @@ export function pond(radius: number, seed: number): Pieces {
     water.setAttribute('color', new THREE.BufferAttribute(arr, 3));
     fillAttr(water, 'aMask', [0, 0]);
   }
+  // 겨울에도 물 위에는 눈이 쌓이지 않는다
+  fillAttr(water, 'aSnow', [-1]);
   out.push(water);
   for (let i = 0; i < 6; i++) {
     const a = rnd() * Math.PI * 2;
@@ -387,5 +407,533 @@ export function tuft(seed: number): Pieces {
     g.translate((rnd() - 0.5) * 0.3, 0, (rnd() - 0.5) * 0.3);
     out.push(pg(g, '#7cc468', '#b6e88a'));
   }
+  return out;
+}
+
+// ───────────── 섬 모서리 (2026-11-15) ─────────────
+
+/** 주민 집 모양 (index: HOME_SPOTS 순번). 지붕/차양 색과 간판 그림이 집마다 다르다 */
+const HOME_STYLE: ReadonlyArray<{ roof: string; awning: string; wall: string; sign: 'pick' | 'leaf' | 'bag' | 'star' | 'fish' | 'flower' | 'heart' }> = [
+  { roof: '#8d7a6b', awning: '#f4c95d', wall: '#f3e3cc', sign: 'pick' },
+  { roof: '#9fb7d9', awning: '#ffffff', wall: '#fff3dc', sign: 'heart' },
+  // 2026-11-16: 북동 두 집은 화가(별), 우체부(하트)의 집 (잡화점/오락실 가게 모양을 없앴다)
+  { roof: '#d97bc4', awning: '#ffffff', wall: '#fff6f8', sign: 'star' },
+  { roof: '#5aa0d8', awning: '#ffffff', wall: '#f2f7ff', sign: 'heart' },
+  { roof: '#5cc2b5', awning: '#5cc2b5', wall: '#f2f6f2', sign: 'fish' },
+  { roof: '#e6a37e', awning: '#ffffff', wall: '#fff3dc', sign: 'heart' },
+  { roof: '#7fc98a', awning: '#ff9ec2', wall: '#f8fbef', sign: 'flower' },
+  { roof: '#d8a3c8', awning: '#ffffff', wall: '#fff3dc', sign: 'heart' },
+];
+
+/** 주민 집: 섬 집보다 조금 크고 문 위에 차양과 간판이 있다. 원점이 몸체 가운데, +z 가 앞 */
+export function npcHome(index: number): Pieces {
+  const st = HOME_STYLE[index % HOME_STYLE.length];
+  const out: Pieces = [];
+  const W = 3.5;
+  const D = 2.9;
+  out.push(p(new RoundedBoxGeometry(W + 0.3, 0.24, D + 0.3, 1, 0.08).translate(0, 0.12, 0), '#d6cbbb'));
+  out.push(p(new RoundedBoxGeometry(W, 1.9, D, 2, 0.16).translate(0, 1.15, 0), st.wall));
+  out.push(p(new RoundedBoxGeometry(W + 0.06, 0.4, D + 0.06, 1, 0.12).translate(0, 0.42, 0), '#f1dcc0', 0, 0.97));
+  // 박공 지붕 (앞뒤로 기운 두 판)
+  for (const side of [-1, 1]) {
+    const slab = new RoundedBoxGeometry(W + 0.7, 0.18, D * 0.72, 1, 0.08);
+    slab.rotateX(side * 0.62);
+    slab.translate(0, 2.55, side * D * 0.27);
+    out.push(p(slab, st.roof));
+  }
+  {
+    const s = new THREE.Shape();
+    s.moveTo(-D / 2, 0);
+    s.lineTo(D / 2, 0);
+    s.lineTo(0, 0.95);
+    s.lineTo(-D / 2, 0);
+    for (const sx of [-1, 1]) {
+      const g = new THREE.ShapeGeometry(s);
+      g.rotateY(Math.PI / 2);
+      g.translate(sx * (W / 2 - 0.02), 2.08, 0);
+      if (sx < 0) g.rotateY(0);
+      out.push(p(g, st.wall, 0, 0.94));
+      const back = g.clone();
+      back.scale(-1, 1, 1);
+      out.push(p(back, st.wall, 0, 0.94));
+    }
+  }
+  // 굴뚝
+  out.push(p(new RoundedBoxGeometry(0.4, 0.9, 0.4, 1, 0.06).translate(W * 0.28, 2.95, -0.55), '#e9d9c4'));
+  // 문, 창문 (밤에 빛남)
+  const fz = D / 2;
+  out.push(p(new RoundedBoxGeometry(0.86, 1.36, 0.1, 1, 0.08).translate(0, 0.9, fz + 0.02), '#fffdf6'));
+  out.push(p(new RoundedBoxGeometry(0.7, 1.24, 0.1, 1, 0.06).translate(0, 0.86, fz + 0.05), '#b9825a'));
+  out.push(p(new THREE.SphereGeometry(0.05, 6, 5).translate(0.22, 0.85, fz + 0.12), '#f4c95d'));
+  for (const sx of [-1, 1]) {
+    out.push(p(new RoundedBoxGeometry(0.66, 0.62, 0.1, 1, 0.08).translate(sx * 1.1, 1.2, fz + 0.02), '#fffdf6'));
+    out.push(p(new RoundedBoxGeometry(0.5, 0.46, 0.08, 1, 0.06).translate(sx * 1.1, 1.2, fz + 0.06), '#ffe7a6', 1));
+  }
+  // 차양 (줄무늬)
+  for (let i = 0; i < 6; i++) {
+    const seg = new THREE.BoxGeometry(W / 6 - 0.02, 0.06, 0.62);
+    seg.rotateX(0.38);
+    seg.translate(-W / 2 + (i + 0.5) * (W / 6), 1.92, fz + 0.32);
+    out.push(p(seg, i % 2 ? '#ffffff' : st.awning));
+  }
+  // 간판: 문 위 둥근 판 + 그림
+  out.push(p(new THREE.CylinderGeometry(0.42, 0.42, 0.08, 18).rotateX(Math.PI / 2).translate(0, 2.32, fz + 0.12), '#fffdf6'));
+  out.push(p(new THREE.TorusGeometry(0.42, 0.05, 5, 18).translate(0, 2.32, fz + 0.15), '#9a6645'));
+  const iconZ = fz + 0.18;
+  const ic = (g: THREE.BufferGeometry, color: string) => out.push(p(g.translate(0, 2.32, iconZ), color));
+  if (st.sign === 'pick') {
+    ic(new THREE.BoxGeometry(0.06, 0.5, 0.03).rotateZ(0.6), '#9a6645');
+    ic(new THREE.TorusGeometry(0.2, 0.04, 4, 10, Math.PI).rotateZ(0.6 + Math.PI / 2).translate(0.12, 0.14, 0), '#8a8f99');
+  } else if (st.sign === 'bag') {
+    ic(new RoundedBoxGeometry(0.4, 0.32, 0.04, 1, 0.06).translate(0, -0.04, 0), '#ff8f7a');
+    ic(new THREE.TorusGeometry(0.1, 0.03, 4, 10, Math.PI).translate(0, 0.12, 0), '#9a6645');
+  } else if (st.sign === 'star') {
+    const s = new THREE.Shape();
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 + Math.PI / 2;
+      const r = i % 2 ? 0.12 : 0.28;
+      if (i === 0) s.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      else s.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ic(new THREE.ShapeGeometry(s), '#ffcf3f');
+  } else if (st.sign === 'fish') {
+    ic(new THREE.SphereGeometry(0.2, 8, 6).scale(1.2, 0.6, 0.2), '#5f8fa8');
+    ic(new THREE.ConeGeometry(0.12, 0.18, 3).rotateZ(Math.PI / 2).scale(1, 1, 0.2).translate(0.3, 0, 0), '#5f8fa8');
+  } else if (st.sign === 'flower') {
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      ic(new THREE.SphereGeometry(0.1, 6, 5).scale(1, 1, 0.3).translate(Math.cos(a) * 0.14, Math.sin(a) * 0.14, 0), '#ff9ec2');
+    }
+    ic(new THREE.SphereGeometry(0.08, 6, 5).scale(1, 1, 0.4), '#ffd166');
+  } else {
+    // 하트
+    ic(new THREE.SphereGeometry(0.12, 8, 6).scale(1, 1, 0.3).translate(-0.09, 0.05, 0), '#ff8fa3');
+    ic(new THREE.SphereGeometry(0.12, 8, 6).scale(1, 1, 0.3).translate(0.09, 0.05, 0), '#ff8fa3');
+    ic(new THREE.ConeGeometry(0.19, 0.24, 4).rotateZ(Math.PI).scale(1, 1, 0.3).translate(0, -0.1, 0), '#ff8fa3');
+  }
+  // 문 앞 디딤돌과 화분
+  out.push(p(new RoundedBoxGeometry(1.1, 0.12, 0.5, 1, 0.05).translate(0, 0.06, fz + 0.45), '#d6cbbb'));
+  for (const sx of [-1, 1]) {
+    out.push(p(new THREE.CylinderGeometry(0.2, 0.15, 0.3, 8).translate(sx * 0.75, 0.15, fz + 0.5), '#d98b5e'));
+    out.push(blob(0.24, sx * 0.75, 0.45, fz + 0.5, 0.9, '#5fae62', '#a3dc78'));
+  }
+  return out;
+}
+
+/** 바위 언덕 겉면을 울퉁불퉁하게 */
+function lumpy(g: THREE.BufferGeometry, seed: number, amount: number) {
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const k = 1 + (Math.sin(x * 2.1 + seed) * Math.cos(z * 1.7 + seed * 0.7) + Math.sin(y * 2.9 + seed * 1.3)) * amount;
+    pos.setXYZ(i, x * k, y * (0.92 + (k - 1) * 0.5), z * k);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+/** 바위 언덕: 원점에 반지름 1 (scale 로 키운다). 위에 풀과 작은 나무 */
+export function hill(seed: number): Pieces {
+  const rnd = mulberry32(seed);
+  const out: Pieces = [];
+  const h = 0.75 + rnd() * 0.3;
+  const body = new THREE.CylinderGeometry(0.78, 1.0, h, 12, 3);
+  body.translate(0, h / 2, 0);
+  out.push(pg(lumpy(body, seed, 0.07), '#a89a8a', '#cfc3b2'));
+  const top = new THREE.SphereGeometry(0.8, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+  top.scale(1, 0.32, 1);
+  top.translate(0, h - 0.02, 0);
+  out.push(pg(lumpy(top, seed + 3, 0.05), '#7cc06a', '#a9df7c'));
+  for (let i = 0; i < 3; i++) {
+    const a = rnd() * Math.PI * 2;
+    const r = 0.25 + rnd() * 0.3;
+    out.push(blob(0.16 + rnd() * 0.08, Math.cos(a) * r, h + 0.2, Math.sin(a) * r, 0.9, '#4fa46a', '#8fd58a'));
+  }
+  // 아래쪽 굴러떨어진 돌
+  for (let i = 0; i < 3; i++) {
+    const a = rnd() * Math.PI * 2;
+    const g = new THREE.IcosahedronGeometry(0.12 + rnd() * 0.08, 0);
+    g.translate(Math.cos(a) * 1.08, 0.06, Math.sin(a) * 1.08);
+    out.push(pg(g, '#a89a8a', '#d6cbbb'));
+  }
+  return out;
+}
+
+/** 동굴 산: 원점에 큰 바위산, +z 쪽에 동굴 입구 (rot 으로 돌린다). r 은 산 반지름 */
+export function caveHill(r: number): Pieces {
+  const out: Pieces = [];
+  const rnd = mulberry32(77);
+  // 층층이 쌓인 바위
+  const tiers: Array<[number, number, number, number, number]> = [
+    [r, r * 0.95, 0, 2.2, 0],
+    [r * 0.82, r * 0.98, 2.1, 2.0, 1],
+    [r * 0.6, r * 0.8, 4.0, 1.8, 2],
+    [r * 0.36, r * 0.58, 5.7, 1.5, 3],
+  ];
+  for (const [top, bottom, y, h, k] of tiers) {
+    const g = new THREE.CylinderGeometry(top, bottom, h, 16, 3);
+    g.translate((rnd() - 0.5) * 0.6, y + h / 2, (rnd() - 0.5) * 0.6 - k * 0.25);
+    out.push(pg(lumpy(g, 31 + k * 7, 0.06), k % 2 ? '#9d8f82' : '#8f8276', k % 2 ? '#c3b6a6' : '#b8ab9c'));
+  }
+  // 꼭대기 풀과 나무
+  const cap = new THREE.SphereGeometry(r * 0.38, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+  cap.scale(1, 0.35, 1);
+  cap.translate(0, 7.15, -0.75);
+  out.push(pg(cap, '#6fb565', '#a3dc78'));
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.4;
+    const x = Math.cos(a) * r * 0.22;
+    const z = Math.sin(a) * r * 0.22 - 0.75;
+    out.push(p(new THREE.CylinderGeometry(0.08, 0.12, 0.6, 6).translate(x, 7.45, z), '#93643f'));
+    out.push(blob(0.5, x, 8.0, z, 0.95, '#4fa46a', '#8fd58a'));
+  }
+  // 층 사이 풀 띠
+  for (const y of [2.15, 4.05]) {
+    const t = new THREE.TorusGeometry(y < 3 ? r * 0.86 : r * 0.66, 0.22, 4, 24).rotateX(Math.PI / 2);
+    t.scale(1, 0.6, 1);
+    t.translate(0, y + 0.04, y < 3 ? -0.2 : -0.45);
+    out.push(pg(t, '#6fb565', '#93cf73'));
+  }
+  // 동굴 입구 (+z 쪽): 어두운 굴 + 나무 기둥 틀
+  const mz = r * 0.93;
+  const hole = new THREE.CircleGeometry(1.25, 18, 0, Math.PI);
+  hole.scale(1, 1.25, 1);
+  hole.translate(0, 0.02, mz + 0.06);
+  out.push(p(hole, '#1d1820'));
+  const holeIn = new THREE.CylinderGeometry(1.2, 1.2, 1.4, 14, 1, true, -Math.PI / 2, Math.PI);
+  holeIn.rotateX(Math.PI / 2);
+  holeIn.scale(1, 1, 1);
+  holeIn.translate(0, 0, mz - 0.6);
+  out.push(p(holeIn, '#2a2229'));
+  for (const sx of [-1, 1]) out.push(p(new THREE.BoxGeometry(0.22, 1.7, 0.22).translate(sx * 1.2, 0.85, mz + 0.25), '#9a6645'));
+  out.push(p(new THREE.BoxGeometry(2.8, 0.24, 0.26).translate(0, 1.78, mz + 0.25), '#9a6645'));
+  // 입구 간판과 광차 레일
+  out.push(p(new RoundedBoxGeometry(1.3, 0.42, 0.08, 1, 0.06).translate(0, 2.2, mz + 0.32), '#f4dfbd'));
+  for (let i = 0; i < 6; i++) out.push(p(new THREE.BoxGeometry(1.3, 0.06, 0.18).translate(0, 0.04, mz + 0.4 + i * 0.5), '#8a6a52'));
+  for (const sx of [-1, 1]) out.push(p(new THREE.BoxGeometry(0.06, 0.06, 3.0).translate(sx * 0.45, 0.09, mz + 1.6), '#8a8f99'));
+  // 입구 옆 반짝이는 수정 (밤에 빛남)
+  for (const [x, z, c] of [
+    [-1.9, mz + 0.2, '#b07ce8'],
+    [1.8, mz + 0.1, '#8fe3ff'],
+  ] as Array<[number, number, string]>) {
+    for (let i = 0; i < 3; i++) {
+      const g = new THREE.ConeGeometry(0.12, 0.6 - i * 0.12, 5);
+      g.rotateZ((i - 1) * 0.35);
+      g.translate(x + (i - 1) * 0.14, 0.28, z);
+      out.push(p(g, c, 1));
+    }
+  }
+  return out;
+}
+
+/** 마을 게시판 (2026-11-15): 기둥 두 개, 작은 지붕, 종이 쪽지들. 원점이 바닥 가운데, 앞이 +z */
+export function townBoard(): Pieces {
+  const out: Pieces = [];
+  const W = 3.4;
+  for (const sx of [-1, 1]) {
+    out.push(p(new THREE.CylinderGeometry(0.13, 0.16, 2.6, 8).translate(sx * (W / 2 + 0.05), 1.3, 0), '#8a5d3d'));
+    out.push(p(new THREE.CylinderGeometry(0.22, 0.26, 0.18, 8).translate(sx * (W / 2 + 0.05), 0.09, 0), '#bfb2a1'));
+  }
+  // 판 + 테두리
+  out.push(p(new RoundedBoxGeometry(W, 1.55, 0.14, 1, 0.05).translate(0, 1.45, 0), '#c99764'));
+  out.push(p(new RoundedBoxGeometry(W - 0.22, 1.33, 0.06, 1, 0.03).translate(0, 1.45, 0.06), '#e9cfa3'));
+  // 지붕 (앞뒤로 기운 판)
+  for (const side of [-1, 1]) {
+    const slab = new RoundedBoxGeometry(W + 0.6, 0.12, 0.55, 1, 0.05);
+    slab.rotateX(side * 0.5);
+    slab.translate(0, 2.52, side * 0.2);
+    out.push(p(slab, '#d9775a'));
+  }
+  // 쪽지들 (밤에 살짝 빛남)
+  const notes: Array<[number, number, number, number, string]> = [
+    [-1.15, 1.72, 0.62, 0.5, '#fffaf0'],
+    [-0.35, 1.62, 0.55, 0.68, '#ffe9a8'],
+    [0.45, 1.75, 0.7, 0.44, '#d8efff'],
+    [1.2, 1.55, 0.5, 0.6, '#ffd6e0'],
+    [-1.0, 1.08, 0.7, 0.42, '#e3f7d6'],
+    [0.05, 1.05, 0.62, 0.4, '#fffaf0'],
+    [0.95, 1.06, 0.6, 0.38, '#ffe9a8'],
+  ];
+  notes.forEach(([x, y, w, h, c], i) => {
+    const g = new THREE.BoxGeometry(w, h, 0.02);
+    g.rotateZ((i % 3 - 1) * 0.05);
+    out.push(p(g.translate(x, y, 0.1), c, 0.35));
+    out.push(p(new THREE.SphereGeometry(0.035, 5, 4).translate(x, y + h / 2 - 0.06, 0.12), '#e2574c'));
+  });
+  // 꼭대기 간판 (둥근 판 + 확성기 모양)
+  out.push(p(new RoundedBoxGeometry(1.5, 0.42, 0.1, 1, 0.08).translate(0, 2.9, 0.18), '#fffdf6'));
+  out.push(p(new THREE.ConeGeometry(0.15, 0.3, 10, 1, true).rotateZ(Math.PI / 2).translate(-0.45, 2.9, 0.26), '#f2a65a'));
+  for (let i = 0; i < 3; i++) out.push(p(new THREE.BoxGeometry(0.16, 0.06, 0.03).translate(-0.05 + i * 0.26, 2.9, 0.25), '#7a5a44'));
+  // 앞 화단
+  for (const sx of [-1, 1]) out.push(blob(0.32, sx * 1.25, 0.24, 0.55, 0.75, '#5fae62', '#a3dc78'));
+  out.push(p(new THREE.SphereGeometry(0.09, 6, 5).translate(-1.15, 0.5, 0.75), '#ff9ec2'));
+  out.push(p(new THREE.SphereGeometry(0.09, 6, 5).translate(1.3, 0.5, 0.72), '#ffd166'));
+  return out;
+}
+
+/** 장터 가판대 (2026-11-15): 0 잡화점(주황 차양, 상자), 1 오락실(보라 차양, 오락기). 원점이 가운데, 앞이 +z */
+export function stall(kind: number): Pieces {
+  const out: Pieces = [];
+  const W = 2.5;
+  const D = 1.3;
+  const awn = kind === 0 ? '#ff9a5c' : '#9f8cf0';
+  // 바닥판, 계산대
+  out.push(p(new RoundedBoxGeometry(W + 0.2, 0.12, D + 0.3, 1, 0.04).translate(0, 0.06, 0), '#d6cbbb'));
+  out.push(p(new RoundedBoxGeometry(W, 0.85, 0.55, 1, 0.06).translate(0, 0.5, D / 2 - 0.25), '#cb9a69'));
+  out.push(p(new RoundedBoxGeometry(W + 0.1, 0.08, 0.65, 1, 0.03).translate(0, 0.96, D / 2 - 0.25), '#f1dcc0'));
+  out.push(p(new THREE.BoxGeometry(W - 0.3, 0.3, 0.04).translate(0, 0.55, D / 2 + 0.03), awn, 0, 0.9));
+  // 기둥 넷
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) out.push(p(new THREE.CylinderGeometry(0.06, 0.07, 2.1, 6).translate(sx * (W / 2 - 0.05), 1.05, sz * (D / 2 - 0.05)), '#9c6f4b'));
+  // 뒤 선반
+  out.push(p(new RoundedBoxGeometry(W - 0.2, 1.2, 0.3, 1, 0.04).translate(0, 0.72, -D / 2 + 0.15), '#b8875c'));
+  // 줄무늬 차양
+  for (let i = 0; i < 7; i++) {
+    const seg = new THREE.BoxGeometry(W / 7 + 0.04, 0.06, D + 0.5);
+    seg.rotateX(0.22);
+    seg.translate(-W / 2 + (i + 0.5) * (W / 7), 2.2, 0.08);
+    out.push(p(seg, i % 2 ? '#ffffff' : awn));
+  }
+  for (let i = 0; i < 7; i++) out.push(p(new THREE.SphereGeometry(0.12, 6, 4).scale(1, 0.6, 1).translate(-W / 2 + (i + 0.5) * (W / 7), 2.02, D / 2 + 0.36), i % 2 ? '#ffffff' : awn));
+  // 간판
+  out.push(p(new RoundedBoxGeometry(1.2, 0.36, 0.08, 1, 0.06).translate(0, 2.55, D / 2 + 0.2), '#fffdf6'));
+  if (kind === 0) {
+    // 물건: 생선, 과일 바구니, 상자
+    out.push(p(new THREE.SphereGeometry(0.16, 8, 6).scale(1.4, 0.55, 0.6).translate(-0.7, 1.06, D / 2 - 0.25), '#5f8fa8'));
+    out.push(p(new THREE.CylinderGeometry(0.24, 0.18, 0.16, 10).translate(0.05, 1.08, D / 2 - 0.25), '#b8875c'));
+    for (let i = 0; i < 4; i++) out.push(p(new THREE.SphereGeometry(0.09, 6, 5).translate(-0.08 + (i % 2) * 0.16, 1.2 + Math.floor(i / 2) * 0.06, D / 2 - 0.3 + (i % 2) * 0.06), i % 2 ? '#ff6b5b' : '#ffcf3f'));
+    out.push(p(new RoundedBoxGeometry(0.4, 0.3, 0.3, 1, 0.04).translate(0.72, 1.15, D / 2 - 0.25), '#e9cfa3'));
+    out.push(p(new RoundedBoxGeometry(0.42, 0.28, 0.06, 1, 0.04).translate(-0.3, 2.55, D / 2 + 0.26), '#ff8f7a'));
+    for (let i = 0; i < 3; i++) out.push(p(new THREE.SphereGeometry(0.11, 7, 5).translate(-0.8 + i * 0.8, 1.55, -D / 2 + 0.28), ['#ffcf3f', '#7ac36a', '#ff9ec2'][i]));
+  } else {
+    // 작은 오락기 두 대
+    for (const sx of [-0.65, 0.65]) {
+      out.push(p(new RoundedBoxGeometry(0.62, 0.7, 0.4, 1, 0.06).translate(sx, 1.33, D / 2 - 0.3), '#4a4060'));
+      out.push(p(new THREE.BoxGeometry(0.44, 0.32, 0.02).translate(sx, 1.42, D / 2 - 0.09), '#8fe3ff', 1));
+      out.push(p(new THREE.SphereGeometry(0.05, 6, 5).translate(sx - 0.1, 1.12, D / 2 - 0.08), '#ff6b5b'));
+      out.push(p(new THREE.SphereGeometry(0.05, 6, 5).translate(sx + 0.1, 1.12, D / 2 - 0.08), '#ffcf3f'));
+    }
+    const s = new THREE.Shape();
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 + Math.PI / 2;
+      const r = i % 2 ? 0.07 : 0.15;
+      if (i === 0) s.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      else s.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    out.push(p(new THREE.ShapeGeometry(s).translate(-0.3, 2.55, D / 2 + 0.25), '#ffcf3f'));
+  }
+  for (let i = 0; i < 3; i++) out.push(p(new THREE.BoxGeometry(0.12, 0.05, 0.03).translate(0.05 + i * 0.2, 2.55, D / 2 + 0.25), '#7a5a44'));
+  return out;
+}
+
+// ───────────── 겨울 (2026-11-16, 크리스마스) ─────────────
+
+/** 마을 광장 가운데 큰 전나무의 층 [반지름, 높이, 바닥 y] */
+export const TOWN_TREE_TIERS: ReadonlyArray<[number, number, number]> = [
+  [2.5, 2.2, 0.9],
+  [2.1, 2.0, 2.2],
+  [1.7, 1.8, 3.4],
+  [1.25, 1.6, 4.5],
+  [0.8, 1.4, 5.5],
+];
+export const TOWN_TREE_TOP = 5.5 + 1.4;
+
+/** 마을 광장 가운데 큰 전나무 (겨울에는 장식과 전구가 붙는다) */
+export function townTree(): Pieces {
+  const out: Pieces = [];
+  // 화단 테두리
+  const ring = new THREE.TorusGeometry(1.55, 0.2, 8, 26).rotateX(Math.PI / 2);
+  ring.scale(1, 0.85, 1);
+  ring.translate(0, 0.12, 0);
+  out.push(p(ring, '#e4d9c6'));
+  for (const [r, h, y] of TOWN_TREE_TIERS) {
+    const c = new THREE.ConeGeometry(r, h, 14, 2);
+    c.translate(0, y + h / 2, 0);
+    out.push(pg(c, '#3f8f5c', '#7cc77e'));
+  }
+  return out;
+}
+
+/** 광장 큰 전나무 (겨울): 눈 모자를 쓴 같은 크기의 나무 */
+export function townFir(): Pieces {
+  const out: Pieces = [];
+  const ring = new THREE.TorusGeometry(1.55, 0.2, 8, 26).rotateX(Math.PI / 2);
+  ring.scale(1, 0.85, 1);
+  ring.translate(0, 0.12, 0);
+  out.push(p(ring, '#e4d9c6'));
+  out.push(p(new THREE.CylinderGeometry(1.55, 1.55, 0.14, 24).translate(0, 0.07, 0), '#f2f6fc'));
+  out.push(...frostedFir(TOWN_TREE_TIERS, 21, 1.2, 18));
+  return out;
+}
+
+/** 별 (꼭대기 장식). 밤에 빛난다 */
+export function star(size: number): THREE.BufferGeometry {
+  const s = new THREE.Shape();
+  for (let i = 0; i < 10; i++) {
+    const a = Math.PI / 2 + (i * Math.PI) / 5;
+    const r = i % 2 === 0 ? size : size * 0.45;
+    if (i === 0) s.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    else s.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, { depth: size * 0.3, bevelEnabled: true, bevelThickness: size * 0.08, bevelSize: size * 0.06, bevelSegments: 1 });
+  g.translate(0, 0, -size * 0.15);
+  return p(g, '#ffd65a', 1);
+}
+
+/** 반짝이 공 (장식 공). 색은 받은 것, 위에 작은 금색 고리 */
+export function bauble(x: number, y: number, z: number, r: number, color: string): Pieces {
+  const ball = new THREE.SphereGeometry(r, 8, 6).translate(x, y, z);
+  const cap = new THREE.CylinderGeometry(r * 0.3, r * 0.3, r * 0.35, 6).translate(x, y + r * 0.95, z);
+  return [p(ball, color), p(cap, '#f4c95d')];
+}
+
+/** 선물 상자 (리본 십자) */
+export function gift(w: number, h: number, d: number, box: string, ribbon: string): Pieces {
+  const out: Pieces = [];
+  out.push(p(new RoundedBoxGeometry(w, h, d, 1, 0.04).translate(0, h / 2, 0), box));
+  out.push(p(new THREE.BoxGeometry(w * 0.18, h + 0.02, d + 0.02).translate(0, h / 2, 0), ribbon));
+  out.push(p(new THREE.BoxGeometry(w + 0.02, h + 0.02, d * 0.18).translate(0, h / 2, 0), ribbon));
+  const bow = new THREE.TorusGeometry(w * 0.14, w * 0.05, 5, 10);
+  out.push(p(bow.clone().rotateY(Math.PI / 4).translate(0, h + w * 0.1, 0), ribbon));
+  out.push(p(bow.rotateY(-Math.PI / 4).translate(0, h + w * 0.1, 0), ribbon));
+  return out;
+}
+
+// ───────────── 겨울 나무 (2026-11-16 다시: 눈이 얼룩진 동글 나무 대신 눈 덮인 전나무) ─────────────
+
+/** 전나무 한 층 [반지름, 높이, 바닥 y] */
+export type FirTier = readonly [number, number, number];
+
+/** 전나무 층의 옆 모양: 바닥 높이에서의 비율 t(0~1) → 반지름 비율. 가운데가 오목해서 가지가 처진 것처럼 보인다 */
+const FIR_PROFILE: ReadonlyArray<readonly [number, number]> = [
+  [0, 1],
+  [0.3, 0.78],
+  [0.62, 0.45],
+  [1, 0],
+];
+/** 높이 y 에서 그 층 겉면까지의 반지름 (층 밖이면 -1) */
+export function firTierRadius(t: FirTier, y: number): number {
+  const [r, h, base] = t;
+  const u = (y - base) / h;
+  if (u < 0 || u > 1) return -1;
+  for (let i = 1; i < FIR_PROFILE.length; i++) {
+    const [u1, k1] = FIR_PROFILE[i];
+    if (u <= u1) {
+      const [u0, k0] = FIR_PROFILE[i - 1];
+      return r * (k0 + ((u - u0) / (u1 - u0)) * (k1 - k0));
+    }
+  }
+  return 0;
+}
+/** 여러 층 중 가장 넓은 겉면 */
+export const firRadius = (tiers: readonly FirTier[], y: number) => tiers.reduce((m, t) => Math.max(m, firTierRadius(t, y)), -1);
+
+/** 동네 큰 나무(겨울): 다섯 층 크리스마스 전나무 */
+export const BIG_FIR: readonly FirTier[] = [
+  [2.5, 2.0, 1.3],
+  [2.1, 1.9, 2.4],
+  [1.7, 1.7, 3.5],
+  [1.25, 1.5, 4.5],
+  [0.8, 1.3, 5.4],
+];
+/** 광장 귤나무 자리(겨울): 네 층 전나무 */
+export const PLAZA_FIR: readonly FirTier[] = [
+  [1.7, 1.6, 1.0],
+  [1.35, 1.4, 1.9],
+  [1.0, 1.2, 2.7],
+  [0.6, 1.0, 3.4],
+];
+export const firTop = (tiers: readonly FirTier[]) => tiers.reduce((m, [, h, b]) => Math.max(m, b + h), 0);
+
+/** 동글 나무 자리(겨울): 낮고 통통한 전나무 */
+export function roundFirTiers(seed: number): FirTier[] {
+  const { h, r } = roundTreeShape(seed);
+  const b = h * 0.5;
+  return [
+    [r * 1.12, r * 1.05, b],
+    [r * 0.86, r * 0.95, b + r * 0.62],
+    [r * 0.56, r * 0.8, b + r * 1.18],
+  ];
+}
+/** 뾰족 나무 자리(겨울): 조금 더 날씬하게 네 층 */
+export function coneFirTiers(seed: number): FirTier[] {
+  const [a, b, c] = coneTreeTiers(seed);
+  return [
+    [a[0] * 1.05, a[1] * 1.05, a[2]],
+    [b[0] * 1.02, b[1], b[2]],
+    [c[0], c[1], c[2]],
+    [c[0] * 0.55, c[1] * 0.7, c[2] + c[1] * 0.62],
+  ];
+}
+
+/**
+ * 눈 덮인 전나무. 층마다 초록 치마(위는 밝게) 위에 눈 모자를 씌우고, 모자 끝은 물결치게 흘러내린다.
+ * 눈은 모양으로 만들어서 낮에도 밤에도 같다 (재질의 얼룩 눈은 쓰지 않는다: aSnow = -1 은 World 가 붙인다).
+ */
+export function frostedFir(tiers: readonly FirTier[], seed: number, trunkH?: number, seg = 10): Pieces {
+  const rnd = mulberry32(seed * 7 + 3);
+  const out: Pieces = [];
+  const base0 = tiers[0][2];
+  const th = trunkH ?? base0 + tiers[0][1] * 0.25;
+  const tr = Math.max(0.09, tiers[0][0] * 0.11);
+  const trunk = new THREE.CylinderGeometry(tr * 0.75, tr, th, 7).translate(0, th / 2, 0);
+  out.push(pg(trunk, '#7c5235', '#a57a4f'));
+  tiers.forEach((t, i) => {
+    const [r, h, base] = t;
+    const prof = [new THREE.Vector2(r * 0.42, base + h * 0.1), ...FIR_PROFILE.map(([u, k]) => new THREE.Vector2(Math.max(0.001, r * k), base + u * h))];
+    const skirt = new THREE.LatheGeometry(prof, seg, rnd() * Math.PI);
+    skirt.computeVertexNormals();
+    out.push(pg(skirt, i === 0 ? '#2f7a52' : '#357f55', '#6cbf78'));
+    // 눈 모자: 층 위쪽 60% 를 덮고 아래 끝이 둥글게 말린다
+    const lip = 0.05 + r * 0.04;
+    // 작은 나무(seg < 10)는 말린 끝을 한 단 줄인다 (2026-11-17 최적화: 섬에 수백 그루라 삼각형이 많다)
+    const cap = [
+      new THREE.Vector2(r * 0.6, base + h * 0.33),
+      new THREE.Vector2(r * 0.7 + lip, base + h * (seg < 10 ? 0.37 : 0.35)),
+      ...(seg < 10 ? [] : [new THREE.Vector2(r * 0.69 + lip, base + h * 0.42)]),
+      new THREE.Vector2(r * 0.47 + lip * 0.8, base + h * 0.62 + 0.02),
+      new THREE.Vector2(r * 0.18 + 0.03, base + h * 0.88 + 0.03),
+      new THREE.Vector2(0.001, base + h + 0.05),
+    ];
+    const snow = new THREE.LatheGeometry(cap, seg + 4, rnd() * Math.PI);
+    // 아래 끝을 물결치게 (눈이 흘러내린 자국)
+    const pos = snow.attributes.position;
+    const phase = rnd() * 6.28;
+    const waves = 4 + Math.floor(rnd() * 3);
+    for (let k = 0; k < pos.count; k++) {
+      const y = pos.getY(k);
+      if (y > base + h * 0.46) continue;
+      const a = Math.atan2(pos.getZ(k), pos.getX(k));
+      pos.setY(k, y - h * 0.09 * (0.5 + 0.5 * Math.sin(a * waves + phase)));
+    }
+    snow.computeVertexNormals();
+    out.push(pg(snow, '#dfe8f6', '#ffffff'));
+  });
+  // 꼭대기 눈 한 덩이
+  const [r, h, base] = tiers[tiers.length - 1];
+  void r;
+  out.push(p(new THREE.SphereGeometry(0.06 + h * 0.06, seg < 10 ? 6 : 8, seg < 10 ? 4 : 6).translate(0, base + h + 0.02, 0), '#ffffff'));
+  return out;
+}
+
+/** 광장 귤나무 자리의 겨울 전나무 (화단 테두리 포함) */
+export function plazaFir(): Pieces {
+  const out: Pieces = [];
+  const ring = new THREE.TorusGeometry(1.05, 0.2, 8, 22).rotateX(Math.PI / 2);
+  ring.scale(1, 0.9, 1);
+  ring.translate(0, 0.12, 0);
+  out.push(p(ring, '#e4d9c6'));
+  out.push(p(new THREE.CylinderGeometry(1.05, 1.05, 0.14, 20).translate(0, 0.07, 0), '#f2f6fc'));
+  out.push(...frostedFir(PLAZA_FIR, 5, 1.2, 14));
+  return out;
+}
+/** 동네 큰 나무 자리의 겨울 전나무 (뿌리 쪽 눈 둔덕) */
+export function bigFir(): Pieces {
+  const out: Pieces = [];
+  const mound = new THREE.SphereGeometry(1.4, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.22, 1);
+  out.push(p(mound, '#f2f6fc'));
+  out.push(...frostedFir(BIG_FIR, 9, 1.6, 16));
   return out;
 }

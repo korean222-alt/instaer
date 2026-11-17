@@ -4,6 +4,7 @@ import { invalidate } from '../lib/cache';
 import { houseByNo, markZoneDirty } from '../lib/houses';
 import { allow } from '../lib/rateLimit';
 import { readToken } from '../lib/session';
+import { bumpDaily } from '../lib/wallet';
 import { VILLAGE_KEY } from './village';
 
 const VOTER_COOKIE = 'ci_v';
@@ -31,9 +32,12 @@ export async function like(houseNo: number, request: Request, env: Env): Promise
     const v = voterId(request) ?? (newVoter = crypto.randomUUID().replace(/-/g, ''));
     voter = `c:${v}`;
   }
+  /** 누른 사람의 집 (입주했으면). 오늘의 퀘스트 "예뻐요 2번" 에 센다 */
+  let voterHouse: number | null = null;
   if (token) {
-    const own = await env.DB.prepare('SELECT 1 FROM sessions WHERE token_hash = ? AND house_id = ?').bind(voter.slice(2), house.id).first();
-    if (own) return error(400, 'own_house', '내 집에는 예뻐요를 누를 수 없어요');
+    const s = await env.DB.prepare('SELECT house_id FROM sessions WHERE token_hash = ?').bind(voter.slice(2)).first<{ house_id: number }>();
+    if (s?.house_id === house.id) return error(400, 'own_house', '내 집에는 예뻐요를 누를 수 없어요');
+    voterHouse = s?.house_id ?? null;
   }
 
   const day = utcDay();
@@ -58,6 +62,7 @@ export async function like(houseNo: number, request: Request, env: Env): Promise
     markZoneDirty(env.DB, houseNo, 1),
   ]);
   invalidate(VILLAGE_KEY);
+  if (voterHouse !== null) await bumpDaily(env.DB, voterHouse, (w) => void (w.daily.like += 1));
   const likes = (updated.results[0] as { likes: number } | undefined)?.likes ?? house.likes + 1;
   return json({ ok: true, likes }, { headers });
 }

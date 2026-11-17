@@ -6,15 +6,21 @@ import { CatFlock } from '../cat/CatFlock';
 import type { CatModel } from '../cat/catModel';
 import { createGlowLambert, type GlowShared } from '../core/glowLambert';
 import { LABEL_CAPACITY, LabelLayer, regionIndex, type LabelEntry } from '../core/labelLayer';
+import { itemDef, type ItemGeometries } from '../free/catalog';
+import type { DrawingStore } from '../free/drawings';
+import { FreeItems, type FreeGroup } from '../free/FreeItems';
+import { blockersOf, pickItem, yardSpace, type Space } from '../free/space';
+import type { PlacedItem } from '../free/types';
 import { cellToLocal, ItemField } from '../items/ItemField';
-import { houseSlot, NEIGHBORHOODS, NEIGHBORHOODS_PER_ZONE, ZONE, zoneCenter } from '../layout';
+import { houseSlot, isBigYard, MAILBOX_LOCAL, NEIGHBORHOODS, NEIGHBORHOODS_PER_ZONE, YARD_HALF, YARD_HALF_BIG, yardHalfOf, ZONE, zoneCenter } from '../layout';
 import { hash01 } from '../util/rand';
-import { GROUND_Y, HOUSE_OFFSET_Z, YARD_WORLD } from '../world/constants';
+import { GROUND_Y, HOUSE_OFFSET_Z } from '../world/constants';
 import { GlowPools, type Pool } from '../world/nightFx';
 import {
   buildFarHouseGeometry,
   buildFlagGeometry,
   buildHouseGeometry,
+  buildRoofArtGeometry,
   buildYardGeometry,
   FLAG_DIM,
   HOUSE_DIM,
@@ -42,13 +48,15 @@ const LABEL_PX = 14;
 const CAT_HI_PX = 42;
 const CAT_SCALE = 1.12;
 /** 깃발 위치 (마당 가운데 기준): 입구 디딤돌 바로 왼쪽, 마당 앞 테두리 위 */
-const FLAG_LOCAL = { x: -1.55, z: YARD_WORLD / 2 - 0.02 };
+const FLAG_LOCAL = { x: -1.55, z: YARD_HALF - 0.02 };
 const FLAG_SCALE = 0.8;
 /** 걷기 모드에서 자세히 그리는 범위 (내 고양이 기준) */
 const WALK_NEAR_RADIUS = 40;
 const WALK_NEAR_MAX = 26;
 /** 고양이가 돌아다니는 범위 (마당 가운데 기준): 집 앞 잔디밭 */
 /** 걸어서 지나갈 수 없는 큰 아이템과 그 반지름 (나머지는 작아서 지나간다) */
+/** 지붕 그림은 가까운 집부터 이만큼까지만 그린다 (그림마다 텍스처가 달라서 하나씩 따로 그린다) */
+const ROOF_ART_MAX = 32;
 const BLOCKING_ITEMS: Partial<Record<YardItem['type'], number>> = { cat_tower: 0.42, bench: 0.48, hammock: 0.5, fish_rack: 0.42 };
 const CAT_AREA = { minX: -2.2, maxX: 2.2, minZ: 0.7, maxZ: 2.45 };
 
@@ -96,9 +104,11 @@ export class HouseLayer {
   readonly group = new THREE.Group();
   private readonly shared: GlowShared;
   private readonly material: THREE.MeshLambertMaterial;
+  /** 마당 재질 (겨울 밤에는 잔디와 울타리 위에 눈이 쌓인다) */
+  private readonly yardMaterial: THREE.MeshLambertMaterial;
   private readonly flagMaterial: THREE.MeshLambertMaterial;
   private readonly flagUniforms = { uTime: { value: 0 }, uFlagScale: { value: 1 } };
-  private readonly farGeometry = buildFarHouseGeometry(YARD_WORLD, -HOUSE_OFFSET_Z);
+  private readonly farGeometry = buildFarHouseGeometry(YARD_HALF * 2, -HOUSE_OFFSET_Z);
   private readonly flagGeometry = buildFlagGeometry();
   private readonly tintGeometry = new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2);
   private readonly tintMaterial: THREE.ShaderMaterial;
@@ -113,6 +123,9 @@ export class HouseLayer {
   private awayCat: number | null = null;
   private readonly nearHouses: THREE.InstancedMesh;
   private readonly nearYards: THREE.InstancedMesh;
+  /** 넓힌 마당 (마당 넓히기) */
+  private readonly nearYardsBig: THREE.InstancedMesh;
+  private readonly yardStateBig: THREE.InstancedBufferAttribute;
   private readonly nearTint: THREE.InstancedBufferAttribute;
   private readonly nearState: THREE.InstancedBufferAttribute;
   private readonly yardState: THREE.InstancedBufferAttribute;
@@ -128,6 +141,22 @@ export class HouseLayer {
   private readonly recs = new Map<number, Rec>();
   private readonly zones = new Map<number, ZoneBatch>();
   private readonly yardItems = new Map<number, YardItem[]>();
+  /** 자유 배치 아이템 (집 번호 → 목록) */
+  private readonly freeLists = new Map<number, PlacedItem[]>();
+  private readonly spaces = new Map<number, Space>();
+  readonly free: FreeItems;
+  /** 지금 손에 들고 있어서 따로 그리는 아이템 */
+  private freeSkip: string | null = null;
+  /** 지붕 그림 (집 번호 → 그림 id) */
+  private readonly roofArt = new Map<number, string>();
+  /** 지붕 뒷면 그림 (2026-11-16) */
+  private readonly roofArtBack = new Map<number, string>();
+  private readonly roofArtGeometry = buildRoofArtGeometry();
+  /** 뒷면: 앞면 판을 집 가운데 축으로 반 바퀴 돌린 것 (지붕이 앞뒤 대칭이라 그대로 맞는다) */
+  private readonly roofArtBackGeometry = buildRoofArtGeometry().rotateY(Math.PI);
+  private readonly roofArtMeshes: THREE.Mesh[] = [];
+  /** 확인용: 지금 그리는 지붕 그림 수 */
+  shownRoofArt = 0;
   private near: Rec[] = [];
   private readonly cats = new Map<number, NearCat>();
   private catOrder: NearCat[] = [];
@@ -141,9 +170,16 @@ export class HouseLayer {
   private readonly box = new THREE.Box3();
   private readonly v = new THREE.Vector3();
 
-  constructor(shared: GlowShared, catModel: CatModel) {
+  constructor(
+    shared: GlowShared,
+    catModel: CatModel,
+    geometries: ItemGeometries,
+    private readonly drawings: DrawingStore,
+  ) {
     this.shared = shared;
-    this.material = createGlowLambert(shared, { instanced: true });
+    this.free = new FreeItems(shared, geometries, drawings);
+    this.material = createGlowLambert(shared, { instanced: true, snow: 'house' });
+    this.yardMaterial = createGlowLambert(shared, { instanced: true, snow: 'night' });
 
     // 깃발 재질: 인스턴스 색은 천에만 입히고, 천은 바람에 펄럭인다
     this.flagUniforms.uTime = shared.uTime;
@@ -229,13 +265,19 @@ export class HouseLayer {
     houseGeo.setAttribute('iState', this.nearState);
     this.nearHouses = new THREE.InstancedMesh(houseGeo, this.material, NEAR_MAX);
 
-    const yardGeo = buildYardGeometry(YARD_WORLD, HOUSE_OFFSET_Z + HOUSE_DIM.depth / 2);
+    const front = HOUSE_OFFSET_Z + HOUSE_DIM.depth / 2;
+    const yardGeo = buildYardGeometry(YARD_HALF * 2, front, MAILBOX_LOCAL.z, YARD_HALF_BIG + 0.2);
     this.yardState = new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 4), 4);
     yardGeo.setAttribute('iTint', new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 3).fill(1), 3));
     yardGeo.setAttribute('iState', this.yardState);
-    this.nearYards = new THREE.InstancedMesh(yardGeo, this.material, NEAR_MAX);
+    this.nearYards = new THREE.InstancedMesh(yardGeo, this.yardMaterial, NEAR_MAX);
+    const bigGeo = buildYardGeometry(YARD_HALF_BIG * 2, front, MAILBOX_LOCAL.z);
+    this.yardStateBig = new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 4), 4);
+    bigGeo.setAttribute('iTint', new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 3).fill(1), 3));
+    bigGeo.setAttribute('iState', this.yardStateBig);
+    this.nearYardsBig = new THREE.InstancedMesh(bigGeo, this.yardMaterial, NEAR_MAX);
 
-    for (const mesh of [this.nearHouses, this.nearYards]) {
+    for (const mesh of [this.nearHouses, this.nearYards, this.nearYardsBig]) {
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;
       mesh.count = 0;
@@ -248,7 +290,7 @@ export class HouseLayer {
     this.flockHi.mesh.visible = false;
     this.items = new ItemField(shared);
     this.labels = new LabelLayer(shared);
-    this.group.add(this.flockLo.mesh, this.flockHi.mesh, this.items.group, this.pools.mesh, this.labels.mesh);
+    this.group.add(this.flockLo.mesh, this.flockHi.mesh, this.items.group, this.free.group, this.pools.mesh, this.labels.mesh);
   }
 
   // ───────────── 데이터 ─────────────
@@ -256,6 +298,7 @@ export class HouseLayer {
   setHouses(houses: House[]) {
     this.clearZones();
     this.recs.clear();
+    this.spaces.clear();
     const byZone = new Map<number, Rec[]>();
     for (const house of houses) {
       const slot = houseSlot(house.houseNo);
@@ -333,6 +376,110 @@ export class HouseLayer {
     if (this.near.some((r) => r.house.houseNo === houseNo)) this.dirty = true;
   }
 
+  /** 자유 배치 아이템 (기존 칸 방식 아이템과 같이 그린다) */
+  setYardItemsFree(houseNo: number, items: readonly PlacedItem[]) {
+    this.freeLists.set(
+      houseNo,
+      items.filter((it) => it && typeof it.id === 'string' && typeof it.type === 'string').map((it) => ({ ...it })),
+    );
+    if (this.near.some((r) => r.house.houseNo === houseNo)) this.redrawFree();
+  }
+
+  /** 지금 보여 줄 지붕 그림 전체. 목록에서 빠진 집은 그림을 뗀다 */
+  setRoofArt(items: ReadonlyArray<{ houseNo: number; drawingId: string; backId?: string | null }>) {
+    this.roofArt.clear();
+    this.roofArtBack.clear();
+    for (const it of items) {
+      if (!it || !Number.isFinite(it.houseNo)) continue;
+      if (typeof it.drawingId === 'string' && it.drawingId) this.roofArt.set(it.houseNo, it.drawingId);
+      if (typeof it.backId === 'string' && it.backId) this.roofArtBack.set(it.houseNo, it.backId);
+    }
+    this.redrawRoofArt();
+  }
+
+  /** 지붕 그림만 다시 붙인다 (가까운 집이 바뀌었거나 그림 목록이 바뀌었을 때) */
+  redrawRoofArt() {
+    let n = 0;
+    if (this.roofArt.size || this.roofArtBack.size) {
+      // near 는 가까운 순서라서 앞에서부터 채우면 가까운 집이 먼저다
+      for (const r of this.near) {
+        for (const back of [false, true]) {
+          if (n >= ROOF_ART_MAX) break;
+          const id = (back ? this.roofArtBack : this.roofArt).get(r.house.houseNo);
+          const mat = id === undefined ? null : this.drawings.roofMaterial(id);
+          // 그림이 아직 안 왔으면 지붕 색만 보인다
+          if (!mat) continue;
+          let mesh = this.roofArtMeshes[n];
+          if (!mesh) {
+            mesh = this.roofArtMeshes[n] = new THREE.Mesh(this.roofArtGeometry);
+            mesh.matrixAutoUpdate = false;
+            mesh.frustumCulled = false;
+            mesh.receiveShadow = true;
+            this.group.add(mesh);
+          }
+          mesh.geometry = back ? this.roofArtBackGeometry : this.roofArtGeometry;
+          mesh.material = mat;
+          mesh.matrix.copy(this.place(r, 0, HOUSE_OFFSET_Z, GROUND_Y));
+          mesh.visible = true;
+          n++;
+        }
+      }
+    }
+    for (let i = n; i < this.roofArtMeshes.length; i++) this.roofArtMeshes[i].visible = false;
+    this.shownRoofArt = n;
+  }
+
+  /** 그 집의 자유 배치 목록 (끌어 놓기가 이 배열을 직접 고친다) */
+  freeList(houseNo: number): PlacedItem[] {
+    let list = this.freeLists.get(houseNo);
+    if (!list) this.freeLists.set(houseNo, (list = []));
+    return list;
+  }
+
+  /** 그 집 마당 (자유 배치 좌표의 기준). 집이 없으면 null */
+  yardSpace(houseNo: number): Space | null {
+    const r = this.recs.get(houseNo);
+    if (!r) return null;
+    let s = this.spaces.get(houseNo);
+    if (!s) this.spaces.set(houseNo, (s = yardSpace(houseNo, r.x, r.z, r.rot, GROUND_Y, yardHalfOf(houseNo))));
+    return s;
+  }
+
+  /** 마당 넓히기 목록이 바뀌었다 (layout 의 목록은 이미 바뀌어 있다) */
+  bigYardsChanged() {
+    this.spaces.clear();
+    this.dirty = true;
+  }
+
+  /** 가까운 집 마당에서 광선이 처음 닿는 그림 붙은 아이템 (2026-11-16: 캔버스 누르면 크게 보기) */
+  pickArt(ray: THREE.Ray): PlacedItem | null {
+    let best: PlacedItem | null = null;
+    let bestD = Infinity;
+    for (const r of this.near) {
+      const items = this.freeLists.get(r.house.houseNo);
+      if (!items?.length) continue;
+      const hit = pickItem(this.yardSpace(r.house.houseNo)!, items.filter((it) => it.drawingId), ray);
+      if (!hit) continue;
+      const d = ray.origin.distanceToSquared(new THREE.Vector3(r.x, GROUND_Y, r.z));
+      if (d < bestD) {
+        bestD = d;
+        best = hit;
+      }
+    }
+    return best;
+  }
+
+  /** 자유 배치 아이템만 다시 그린다 (skipId: 손에 든 아이템) */
+  redrawFree(skipId: string | null = this.freeSkip) {
+    this.freeSkip = skipId;
+    const groups: FreeGroup[] = [];
+    for (const r of this.near) {
+      const items = this.freeLists.get(r.house.houseNo);
+      if (items?.length) groups.push({ space: this.yardSpace(r.house.houseNo)!, items });
+    }
+    this.free.set(groups, skipId);
+  }
+
   has(houseNo: number) {
     return this.recs.has(houseNo);
   }
@@ -378,6 +525,11 @@ export class HouseLayer {
         b.r = size;
         out.push(b);
       }
+    }
+    for (const r of this.near) {
+      if (Math.abs(r.x - x) > 5.5 || Math.abs(r.z - z) > 5.5) continue;
+      const free = this.freeLists.get(r.house.houseNo);
+      if (free?.length) n = blockersOf(this.yardSpace(r.house.houseNo)!, free, this.blockerPool, n, out);
     }
   }
   private readonly blockerPool: Array<{ x: number; z: number; r: number }> = [];
@@ -563,22 +715,32 @@ export class HouseLayer {
     for (const zb of touched) zb.state.needsUpdate = true;
     this.near = want;
 
-    // 자세한 집과 마당
+    // 자세한 집과 마당 (마당은 기본 / 넓힌 마당 두 가지)
+    let ys = 0;
+    let yb = 0;
     want.forEach((r, i) => {
       this.nearHouses.setMatrixAt(i, this.place(r, 0, HOUSE_OFFSET_Z, GROUND_Y));
-      this.nearYards.setMatrixAt(i, this.place(r, 0, 0, GROUND_Y));
+      if (isBigYard(r.house.houseNo)) {
+        this.nearYardsBig.setMatrixAt(yb, this.place(r, 0, 0, GROUND_Y));
+        this.yardStateBig.setXYZW(yb++, 0, 0, r.region, 0);
+      } else {
+        this.nearYards.setMatrixAt(ys, this.place(r, 0, 0, GROUND_Y));
+        this.yardState.setXYZW(ys++, 0, 0, r.region, 0);
+      }
       this.c.set(r.house.roofColor);
       this.nearTint.setXYZ(i, this.c.r, this.c.g, this.c.b);
       this.nearState.setXYZW(i, r.occupied ? 0 : 1, r.lit, r.region, 0);
-      this.yardState.setXYZW(i, 0, 0, r.region, 0);
     });
     this.nearHouses.count = want.length;
-    this.nearYards.count = want.length;
+    this.nearYards.count = ys;
+    this.nearYardsBig.count = yb;
     this.nearHouses.instanceMatrix.needsUpdate = true;
     this.nearYards.instanceMatrix.needsUpdate = true;
+    this.nearYardsBig.instanceMatrix.needsUpdate = true;
     this.nearTint.needsUpdate = true;
     this.nearState.needsUpdate = true;
     this.yardState.needsUpdate = true;
+    this.yardStateBig.needsUpdate = true;
 
     // 고양이: 계속 보이는 집의 고양이는 하던 행동을 이어간다
     for (const houseNo of [...this.cats.keys()]) {
@@ -601,6 +763,8 @@ export class HouseLayer {
 
     // 꾸미기 아이템
     this.items.set(want.map((r) => ({ x: r.x, z: r.z, rot: r.rot, items: this.yardItems.get(r.house.houseNo) })));
+    this.redrawFree();
+    this.redrawRoofArt();
 
     // 이름표: 사는 사람이 있는 집만, 화면 가운데에서 가까운 순서로
     const entries: LabelEntry[] = [];
@@ -630,7 +794,10 @@ export class HouseLayer {
   /** 고양이가 피해 다닐 칸 (아이템이 놓인 자리) */
   private blockedCells(houseNo: number): Array<[number, number]> {
     const items = this.yardItems.get(houseNo);
-    return items ? items.map((it) => [cellToLocal(it.x), cellToLocal(it.y)] as [number, number]) : [];
+    const out = items ? items.map((it) => [cellToLocal(it.x), cellToLocal(it.y)] as [number, number]) : [];
+    // 자유 배치 아이템 중 걸어서 못 지나가는 것
+    for (const it of this.freeLists.get(houseNo) ?? []) if (itemDef(it.type).block) out.push([it.x, it.z]);
+    return out;
   }
 
   // ───────────── 탭 ─────────────
@@ -680,11 +847,16 @@ export class HouseLayer {
     this.tintMaterial.dispose();
     this.nearHouses.geometry.dispose();
     this.nearYards.geometry.dispose();
+    this.nearYardsBig.geometry.dispose();
+    this.yardMaterial.dispose();
+    this.roofArtGeometry.dispose();
+    this.roofArtBackGeometry.dispose();
     this.material.dispose();
     this.flagMaterial.dispose();
     this.flockLo.dispose();
     this.flockHi.dispose();
     this.items.dispose();
+    this.free.dispose();
     this.labels.dispose();
     this.pools.dispose();
   }

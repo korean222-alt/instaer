@@ -31,5 +31,7 @@
     { "name": "RL_WRITE", "namespace_id": "4102", "simple": { "limit": 40, "period": 60 } },
     { "name": "RL_CONNECT", "namespace_id": "4103", "simple": { "limit": 20, "period": 60 } }
   ],
+  // 인스타 댓글 읽기 (api/lib/insta.ts). 무료 플랜도 Cron 을 쓸 수 있다
+  "triggers": { "crons": ["*/5 * * * *"] },
   "observability": { "enabled": true }
 }

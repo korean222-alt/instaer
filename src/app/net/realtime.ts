@@ -5,9 +5,12 @@
 // - 구역(섬)을 넘어가면 새 구역에 먼저 붙은 다음 이전 연결을 닫는다 (끊김 없이).
 // - 미니게임 방에 들어가면 방 안 사람은 거리와 상관없이 모두 보인다.
 import { houseSlot, neighborhoodArea, neighborhoodAt, type IslandScene } from '../../scene';
-import { MOVE_SEND_HZ } from '../../shared/config';
 import {
   ANIMS,
+  FISH_POSES,
+  SAMPLE_MS,
+  SEND_MS_MIN,
+  TRAIL_MAX,
   gameRoomName,
   POS_SCALE,
   ROOM_ID_RE,
@@ -17,8 +20,9 @@ import {
   type ClientMsg,
   type ServerMsg,
 } from '../../shared/realtime';
-import type { CatPattern, LocalState, RemotePlayer } from '../../shared/types';
+import type { CatPattern, FishingPose, LocalState, RemotePlayer } from '../../shared/types';
 import { loadToken } from './api';
+import { DANCES } from '../../shared/social';
 
 export interface RealtimeHooks {
   /** 단독 모드로 바뀌거나 돌아왔을 때 */
@@ -27,6 +31,16 @@ export interface RealtimeHooks {
   onRoomMessage?(from: string, data: unknown): void;
   /** 내 고양이가 움직일 때 (씬은 onLocalMove 를 하나만 받으므로 여기서 나눠 준다) */
   onLocalMove?(s: LocalState): void;
+  /** 주변 채팅이 왔을 때 (정보를 받은 유저 것만. 화면에 안 불러온 사람 말은 오지 않는다) */
+  onChat?(id: string, text: string): void;
+  /** 이모티콘이 왔을 때 */
+  onEmote?(id: string, emote: number): void;
+  /** 같은 계정이 다른 창(다른 앱/탭)에서 접속해서 이 창의 연결이 끊겼을 때 */
+  onReplaced?(): void;
+  /** 내 번지 (같은 번지의 고양이는 다른 창에 남은 내 연결이므로 그리지 않는다) */
+  myHouseNo?(): number | null;
+  /** 서버가 내 자동차 상태를 받아들인 결과 (뒷자리에 못 타면 0) */
+  onCar?(c: number): void;
 }
 
 export interface Realtime {
@@ -35,6 +49,19 @@ export interface Realtime {
   joinRoom(roomId: string): void;
   leaveRoom(): void;
   sendRoom(data: unknown): void;
+  /** 내 낚시 단계 (다른 유저에게 낚시하는 모습이 보이게). null 이면 낚시 끝 */
+  setFishing(pose: FishingPose | null): void;
+  /** 주변에 채팅 보내기. 연결이 없으면 false */
+  sendChat(text: string): boolean;
+  sendEmote(emote: number): boolean;
+  /** 내 춤 (DANCES id, null 이면 멈춤) */
+  setDance(id: string | null): void;
+  /** 고양이 자동차: 0 내림, 1 운전, 2 남의 차 뒷자리 (driverId: 운전자 연결 id) */
+  setCar(c: 0 | 1 | 2, driverId?: string): void;
+  /** 받은 유저 정보 (이름, 번지) */
+  playerInfo(id: string): { handle: string; houseNo: number | null } | null;
+  /** 지금 연결되어 있는지 */
+  connected(): boolean;
   /** 확인용 */
   debug(): { room: string | null; open: boolean; solo: boolean; players: number; sent: number; received: number };
 }
@@ -61,17 +88,45 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
   let pending: Conn | null = null;
   let gameRoom: string | null = null;
   let fails = 0;
+  /** 다른 창에 밀려남 (이 창에서는 다시 걷기를 켤 때까지 접속하지 않는다) */
+  let replaced = false;
   let solo = false;
   let retryTimer = 0;
-  let sendTimer = 0;
   let hiddenTimer = 0;
   let zoneTimer = 0;
   let latest: LocalState | null = null;
   let lastSent: LocalState | null = null;
+  /** 내 낚시 단계 번호 (FISH_POSES), 마지막으로 보낸 값 */
+  let fishPose = 0;
+  let sentPose = 0;
+  /** 내 춤 번호 */
+  let danceNo = 0;
+  /** 내 자동차 상태와 (뒷자리면) 운전자 */
+  let carNo = 0;
+  let carWith = '';
   let sent = 0;
   let received = 0;
   const info = new Map<string, { handle: string; houseNo: number | null; cat: RemotePlayer['cat'] }>();
   let players: RemotePlayer[] = [];
+  /** 서버가 정한 보내기 간격 (ms) */
+  let sendMs = SEND_MS_MIN;
+  /** 보내려고 찍어 둔 내 위치 (SAMPLE_MS 간격) */
+  let trail: Array<[number, number, number]> = [];
+  let lastFlush = 0;
+  let sampleTimer = 0;
+  let playTimer = 0;
+  /** 다른 유저마다 받은 위치 묶음 (시각, x, z, r) 과 마지막 순번, 동작, 낚시 */
+  interface Track {
+    q: number;
+    pts: Array<{ t: number; x: number; z: number; r: number }>;
+    a: number;
+    f: number;
+    d: number;
+    c: number;
+    w: string;
+  }
+  const tracks = new Map<string, Track>();
+  let visibleIds: string[] = [];
 
   const setSolo = (v: boolean) => {
     if (solo === v) return;
@@ -159,9 +214,13 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
         old?.ws.close(1000, 'moved');
       }
       sendNow(true);
+      if (danceNo) send({ t: 'd', d: danceNo });
+      if (carNo) send({ t: 'car', c: carNo, ...(carWith ? { w: carWith } : {}) });
       return;
     }
     if (c !== conn) return; // 옮기는 중인 연결의 위치는 아직 쓰지 않는다
+    // 집 안 ↔ 섬을 옮기는 중이면 이전 방의 위치는 좌표 기준이 달라서 그리지 않는다
+    if (msg.t === 's' && c.room !== currentRoomName()) return;
     if (msg.t === 'u') {
       for (const u of msg.u)
         info.set(u.id, {
@@ -170,19 +229,62 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
           cat: u.c ? { fur: u.c[0], pattern: u.c[1] as CatPattern, eyeColor: u.c[2] } : null,
         });
     } else if (msg.t === 's') {
-      players = [];
-      for (const [id, x, z, r, a] of msg.p) {
-        const meta = info.get(id);
-        if (!meta) continue;
-        players.push({ id, houseNo: meta.houseNo, handle: meta.handle, x: x / POS_SCALE, z: z / POS_SCALE, rotY: r / ROT_SCALE, anim: ANIMS[a] ?? 'idle', cat: meta.cat });
+      // 받은 위치 묶음을 유저마다 쌓아 두고, 화면에는 sendMs 만큼 늦게 되감아 보여 준다 (playback)
+      const now = performance.now();
+      visibleIds = [];
+      for (const tup of msg.p) {
+        const [id, x, z, r, a] = tup;
+        const f = (tup[5] as number | undefined) ?? 0;
+        const q = (tup[6] as number | undefined) ?? -1;
+        const step = (tup[7] as number | undefined) ?? 0;
+        const p = (tup[8] as number[] | undefined) ?? [];
+        const d = (tup[9] as number | undefined) ?? 0;
+        const cc = (tup[10] as number | undefined) ?? 0;
+        const cw = (tup[11] as string | undefined) ?? '';
+        if (!info.has(id)) continue;
+        visibleIds.push(id);
+        let tr = tracks.get(id);
+        if (!tr) tracks.set(id, (tr = { q: -2, pts: [], a, f, d, c: cc, w: cw }));
+        tr.a = a;
+        tr.f = f;
+        tr.d = d;
+        tr.c = cc;
+        tr.w = cw;
+        if (q === tr.q) continue;
+        tr.q = q;
+        const n = step ? Math.floor(p.length / 3) : 0;
+        // 처음 보는 유저는 지난 묶음 없이 지금 자리에서 시작
+        const fresh = tr.pts.length === 0;
+        for (let k = 0; k < n && !fresh; k++) tr.pts.push({ t: now - (n - k) * step, x: p[k * 3], z: p[k * 3 + 1], r: p[k * 3 + 2] });
+        tr.pts.push({ t: now, x, z, r });
+        tr.pts.sort((u, v) => u.t - v.t);
+        if (tr.pts.length > 40) tr.pts.splice(0, tr.pts.length - 40);
       }
-      scene.setRemotePlayers(players);
+      for (const id of [...tracks.keys()]) if (!visibleIds.includes(id)) tracks.delete(id);
+      playback();
+    } else if (msg.t === 'c') {
+      if (typeof msg.s === 'string' && info.has(msg.from)) hooks.onChat?.(msg.from, msg.s);
+    } else if (msg.t === 'e') {
+      if (Number.isInteger(msg.e) && info.has(msg.from)) hooks.onEmote?.(msg.from, msg.e);
     } else if (msg.t === 'room') {
       hooks.onRoomMessage?.(msg.from, msg.d);
+    } else if (msg.t === 'car') {
+      hooks.onCar?.(msg.c);
+    } else if (msg.t === 'cfg') {
+      if (Number.isFinite(msg.si)) sendMs = Math.max(500, Math.min(5000, msg.si));
     } else if (msg.t === 'bye') {
       if (msg.reason === 'full' || msg.reason === 'limit') fails = SOLO_AFTER_FAILS; // 바로 단독 모드
+      // 2026-11-16: 다른 창에서 같은 계정으로 들어와 밀려났으면 다시 붙지 않는다 (서로 밀어내며 내 고양이가 둘로 보이던 문제)
+      if (msg.reason === 'replaced') {
+        replaced = true;
+        hooks.onReplaced?.();
+      }
+    } else if (msg.t === 'fix') {
+      // 서버가 받아들이지 않은 위치(순간이동 등). 내 고양이를 서버가 아는 자리로 되돌린다.
+      // 방을 옮기는 중(집 안 ↔ 섬)에는 좌표 기준이 달라서 엉뚱한 곳으로 갈 수 있으니 무시한다.
+      if (pending || c.room !== currentRoomName() || !Number.isFinite(msg.x) || !Number.isFinite(msg.z)) return;
+      scene.setLocalPosition(msg.x / POS_SCALE, msg.z / POS_SCALE);
     }
-    // 'fix' 는 지금은 무시한다: 씬에 위치를 되돌리는 공개 함수가 없다. 서버는 그 위치를 다른 유저에게 보내지 않는다.
   }
 
   function onClose(c: Conn) {
@@ -194,8 +296,14 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     const wasOpen = c.open;
     conn = null;
     players = [];
+    tracks.clear();
+    visibleIds = [];
     scene.setRemotePlayers([]);
     if (!running) return;
+    if (replaced) {
+      setSolo(true);
+      return;
+    }
     if (!wasOpen) fails++;
     else fails = Math.max(0, fails - 1);
     if (fails >= SOLO_AFTER_FAILS) {
@@ -206,6 +314,15 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     // 1초, 2초, 4초 ... 최대 30초 (+ 조금씩 흩어서 한꺼번에 몰리지 않게)
     const delay = Math.min(30_000, 1000 * 2 ** fails) * (0.8 + Math.random() * 0.4);
     retryTimer = window.setTimeout(connect, delay);
+  }
+
+  /** 방을 옮길 때: 이전 방 유저는 좌표 기준이 다를 수 있으니 바로 지운다 */
+  function clearPlayers() {
+    tracks.clear();
+    visibleIds = [];
+    if (!players.length) return;
+    players = [];
+    scene.setRemotePlayers([]);
   }
 
   let lastWire = 0;
@@ -225,17 +342,93 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     }
   }
 
-  /** 움직임이 있을 때만 보낸다 */
+  /** 되감기: 지금보다 (보내기 간격 + 여유) 만큼 앞선 때의 자리를 계산해서 씬에 넘긴다 */
+  function playback() {
+    const at = performance.now() - (sendMs + 350);
+    const list: RemotePlayer[] = [];
+    const mine = hooks.myHouseNo?.() ?? null;
+    for (const id of visibleIds) {
+      const tr = tracks.get(id);
+      const meta = info.get(id);
+      if (!tr || !meta || !tr.pts.length) continue;
+      if (mine !== null && meta.houseNo === mine) continue;
+      const pts = tr.pts;
+      // 다 지난 점은 하나만 남기고 버린다
+      while (pts.length > 2 && pts[1].t < at) pts.shift();
+      let x = pts[0].x;
+      let z = pts[0].z;
+      let r = pts[0].r;
+      let moving = false;
+      if (pts.length > 1 && at > pts[0].t) {
+        const b = pts[1];
+        const k = Math.min(1, (at - pts[0].t) / Math.max(1, b.t - pts[0].t));
+        x = pts[0].x + (b.x - pts[0].x) * k;
+        z = pts[0].z + (b.z - pts[0].z) * k;
+        let dr = b.r - pts[0].r;
+        const full = Math.PI * 2 * ROT_SCALE;
+        dr -= full * Math.round(dr / full);
+        r = pts[0].r + dr * k;
+        moving = k < 1 && Math.hypot(b.x - pts[0].x, b.z - pts[0].z) > 0.5;
+      }
+      const last = pts[pts.length - 1];
+      const done = at >= last.t;
+      const fishing = (tr.f && FISH_POSES[tr.f]) || null;
+      list.push({
+        id,
+        houseNo: meta.houseNo,
+        handle: meta.handle,
+        x: x / POS_SCALE,
+        z: z / POS_SCALE,
+        rotY: r / ROT_SCALE,
+        anim: fishing ? 'sit' : moving ? 'walk' : done ? (ANIMS[tr.a] ?? 'idle') : 'idle',
+        cat: meta.cat,
+        fishing,
+        dance: tr.d > 0 ? (DANCES[tr.d - 1]?.id ?? null) : null,
+        car: tr.c === 1 ? 'drive' : tr.c === 2 ? 'ride' : null,
+        rideWith: tr.c === 2 ? tr.w : null,
+      });
+    }
+    players = list;
+    scene.setRemotePlayers(players);
+  }
+
+  /** SAMPLE_MS 마다 내 위치를 찍어 둔다 (움직이는 동안만) */
+  function sample() {
+    if (document.visibilityState === 'hidden') return;
+    const s = latest ?? scene.getLocalState();
+    const cur: [number, number, number] = [Math.round(s.x * POS_SCALE), Math.round(s.z * POS_SCALE), Math.round(s.rotY * ROT_SCALE)];
+    const prev = trail[trail.length - 1] ?? (lastSent ? [Math.round(lastSent.x * POS_SCALE), Math.round(lastSent.z * POS_SCALE), Math.round(lastSent.rotY * ROT_SCALE)] : null);
+    const moved = !prev || Math.abs(cur[0] - prev[0]) > 0 || Math.abs(cur[1] - prev[1]) > 0 || Math.abs(cur[2] - prev[2]) > 8;
+    if (moved || trail.length) trail.push(cur);
+    if (trail.length > TRAIL_MAX + 1) trail.shift();
+    const animChanged = lastSent !== null && s.anim !== lastSent.anim && (s.anim === 'sit' || lastSent.anim === 'jump');
+    if (fishPose !== sentPose || animChanged) sendNow(true);
+    else if (trail.length && performance.now() - lastFlush >= sendMs) sendNow();
+  }
+
+  /** 찍어 둔 위치를 한 번에 보낸다. force: 움직임이 없어도 지금 상태를 보낸다 */
   function sendNow(force = false) {
     if (document.visibilityState === 'hidden') return;
     const s = latest ?? scene.getLocalState();
-    if (!force && lastSent) {
-      const moved = Math.abs(s.x - lastSent.x) > 0.05 || Math.abs(s.z - lastSent.z) > 0.05;
-      const turned = Math.abs(s.rotY - lastSent.rotY) > 0.08;
-      if (!moved && !turned && s.anim === lastSent.anim) return;
+    if (!force && !trail.length) return;
+    const last: [number, number, number] = [Math.round(s.x * POS_SCALE), Math.round(s.z * POS_SCALE), Math.round(s.rotY * ROT_SCALE)];
+    // 마지막 찍은 점이 지금 자리와 같으면 빼고, 그 앞의 점들만 묶음으로 보낸다
+    const before = trail.slice(0, -1);
+    const ok = send({
+      t: 'm',
+      x: last[0],
+      z: last[1],
+      r: last[2],
+      a: Math.max(0, ANIMS.indexOf(s.anim)),
+      ...(fishPose ? { f: fishPose } : {}),
+      ...(before.length ? { p: before.flat(), i: SAMPLE_MS } : {}),
+    });
+    if (ok) {
+      lastSent = { ...s };
+      sentPose = fishPose;
+      trail = [];
+      lastFlush = performance.now();
     }
-    const ok = send({ t: 'm', x: Math.round(s.x * POS_SCALE), z: Math.round(s.z * POS_SCALE), r: Math.round(s.rotY * ROT_SCALE), a: Math.max(0, ANIMS.indexOf(s.anim)) });
-    if (ok) lastSent = { ...s };
   }
 
   function onVisibility() {
@@ -247,7 +440,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       }, HIDDEN_CLOSE_MS);
     } else {
       clearTimeout(hiddenTimer);
-      if (!conn) {
+      if (!conn && !replaced) {
         fails = 0;
         connect();
       }
@@ -260,17 +453,25 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       if (running) return;
       running = true;
       fails = 0;
+      replaced = false;
       latest = scene.getLocalState();
       lastSent = null;
       connect();
-      sendTimer = window.setInterval(() => {
-        sendNow();
+      sampleTimer = window.setInterval(() => {
+        sample();
         keepAlive();
-      }, Math.round(1000 / MOVE_SEND_HZ));
+      }, SAMPLE_MS);
+      playTimer = window.setInterval(() => {
+        if (visibleIds.length) playback();
+      }, 100);
     },
     stop() {
       running = false;
-      clearInterval(sendTimer);
+      clearInterval(sampleTimer);
+      clearInterval(playTimer);
+      tracks.clear();
+      visibleIds = [];
+      trail = [];
       clearTimeout(retryTimer);
       clearTimeout(hiddenTimer);
       clearTimeout(zoneTimer);
@@ -278,21 +479,55 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       pending?.ws.close(1000, 'stop');
       conn = pending = null;
       players = [];
+      fishPose = sentPose = 0;
+      danceNo = 0;
+      carNo = 0;
+      carWith = '';
       scene.setRemotePlayers([]);
       setSolo(false);
     },
     joinRoom(roomId) {
       if (!ROOM_ID_RE.test(roomId)) return;
       gameRoom = roomId;
+      clearPlayers();
       if (running) conn ? handoff(gameRoomName(roomId)) : connect();
     },
     leaveRoom() {
       gameRoom = null;
+      clearPlayers();
       if (running) conn ? handoff(currentRoomName()) : connect();
     },
     sendRoom(data) {
       if (gameRoom) send({ t: 'room', d: data });
     },
+    setFishing(pose) {
+      const n = pose ? Math.max(0, FISH_POSES.indexOf(pose)) : 0;
+      if (n === fishPose) return;
+      fishPose = n;
+      if (running) sendNow(true);
+    },
+    sendChat(text) {
+      return send({ t: 'c', s: text });
+    },
+    sendEmote(e) {
+      return send({ t: 'e', e });
+    },
+    setCar(c, driverId) {
+      carNo = c;
+      carWith = c === 2 ? (driverId ?? '') : '';
+      send({ t: 'car', c, ...(carWith ? { w: carWith } : {}) });
+    },
+    setDance(id) {
+      const n = id ? DANCES.findIndex((d) => d.id === id) + 1 : 0;
+      if (n === danceNo) return;
+      danceNo = n;
+      send({ t: 'd', d: n });
+    },
+    playerInfo(id) {
+      const m = info.get(id);
+      return m ? { handle: m.handle, houseNo: m.houseNo } : null;
+    },
+    connected: () => !!conn?.open,
     debug() {
       return { room: conn?.room ?? null, open: !!conn?.open, solo, players: players.length, sent, received };
     },

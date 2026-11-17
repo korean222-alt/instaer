@@ -1,29 +1,27 @@
-// 인스타 아이디 정리와 검사. 서버와 화면이 같은 규칙을 쓴다.
+// 닉네임 정리와 검사. 서버와 화면이 같은 규칙을 쓴다. (이름은 handle, DB 열은 ig_handle 로 남아 있지만 지금은 닉네임이다. 2026-11-15)
 
-export const HANDLE_MAX = 30;
+export const HANDLE_MAX = 12;
 
-/** 소문자, 앞의 @ 와 공백 제거 */
+/** 앞뒤 공백 제거, 한글 조합 통일, 영문은 소문자 (같은 닉네임은 대소문자 상관없이 한 명만) */
 export function normalizeHandle(raw: string): string {
-  return raw.trim().replace(/^@+/, '').toLowerCase();
+  return raw.trim().replace(/^@+/, '').normalize('NFC').toLowerCase();
 }
 
-export type HandleProblem = 'empty' | 'too_long' | 'bad_chars' | 'bad_dots' | 'blocked';
+export type HandleProblem = 'empty' | 'too_long' | 'bad_chars' | 'blocked';
 
-/** 문제가 없으면 null. 인스타 규칙: 영문 소문자, 숫자, 마침표, 밑줄, 30자 이하, 마침표로 시작/끝 불가, 연속 마침표 불가 */
+/** 문제가 없으면 null. 한글, 영문, 숫자, 밑줄(_) 만, 12자 이하 */
 export function handleProblem(handle: string): HandleProblem | null {
   if (!handle) return 'empty';
   if (handle.length > HANDLE_MAX) return 'too_long';
-  if (!/^[a-z0-9._]+$/.test(handle)) return 'bad_chars';
-  if (handle.startsWith('.') || handle.endsWith('.') || handle.includes('..')) return 'bad_dots';
+  if (!/^[a-z0-9_가-힣]+$/.test(handle)) return 'bad_chars';
   if (isBlockedText(handle)) return 'blocked';
   return null;
 }
 
 export const HANDLE_PROBLEM_TEXT: Record<HandleProblem, string> = {
-  empty: '인스타 아이디를 적어 주세요',
-  too_long: `아이디는 ${HANDLE_MAX}자까지예요`,
-  bad_chars: '영문, 숫자, 마침표(.), 밑줄(_)만 쓸 수 있어요',
-  bad_dots: '마침표는 처음과 끝, 두 번 연속으로 쓸 수 없어요',
+  empty: '닉네임을 적어 주세요',
+  too_long: `닉네임은 ${HANDLE_MAX}자까지예요`,
+  bad_chars: '한글, 영문, 숫자, 밑줄(_)만 쓸 수 있어요 (띄어쓰기는 안 돼요)',
   blocked: '쓸 수 없는 단어가 들어 있어요',
 };
 
@@ -48,7 +46,7 @@ export function isBlockedText(text: string): boolean {
   return BLOCKED.some((w) => flat.includes(w));
 }
 
-/** 아이디 숨기기: mochi_nyang → mo*******ng. 가린 아이디에는 항상 '*' 가 들어간다 */
+/** 닉네임 숨기기: mochi_nyang → mo*******ng. 가린 아이디에는 항상 '*' 가 들어간다 */
 export function maskHandle(handle: string): string {
   if (handle.length <= 3) return `${handle[0] ?? ''}**`;
   const keep = handle.length <= 5 ? 1 : 2;
@@ -56,3 +54,23 @@ export function maskHandle(handle: string): string {
 }
 /** 가린 아이디인지 (진짜 인스타 아이디에는 '*' 를 쓸 수 없다) */
 export const isMaskedHandle = (h: string | null | undefined) => !!h && h.includes('*');
+
+/**
+ * 채팅/방명록/게시판 글 정리: 줄바꿈과 보이지 않는 글자를 빼고, 길이를 자르고, 욕설은 별표로 가린다.
+ * 다 가려지거나 비면 빈 글자.
+ */
+export function cleanChat(raw: string, max: number): string {
+  let s = raw
+    .normalize('NFC')
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  s = [...s].slice(0, max).join('');
+  for (const w of BLOCKED) {
+    if (!w) continue;
+    const re = new RegExp(w.split('').map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s._\\-*~0-9]*'), 'gi');
+    s = s.replace(re, (m) => '*'.repeat(Math.min(4, [...m].length)));
+  }
+  if (isBlockedText(s)) return '';
+  return s.replace(/^\*+$/, '') ? s : '';
+}

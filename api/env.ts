@@ -12,4 +12,8 @@ export interface Env {
   RL_CONNECT?: RateLimit;
   /** 부하 시험용 (로컬 .dev.vars 에만 둔다. 배포 환경에는 두지 않는다) */
   LOADTEST_KEY?: string;
+  /** 관리자 화면 키 (secret). 없으면 관리자 API 가 꺼진다 */
+  ADMIN_KEY?: string;
+  /** 인스타 장기 토큰 (secret). 관리자 화면에서 넣으면 DB 값을 먼저 쓴다 */
+  IG_TOKEN?: string;
 }

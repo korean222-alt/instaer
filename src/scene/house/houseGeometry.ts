@@ -226,7 +226,7 @@ export function buildHouseGeometry(): THREE.BufferGeometry {
  * 마당 테두리: 낮은 흰 울타리(뒤와 양옆) + 문에서 길까지 이어지는 디딤돌.
  * 원점은 마당 한가운데. size 는 마당 한 변 길이.
  */
-export function buildYardGeometry(size: number, houseFrontZ: number): THREE.BufferGeometry {
+export function buildYardGeometry(size: number, houseFrontZ: number, mailboxZ = size / 2 - 0.3, pathZ = size / 2): THREE.BufferGeometry {
   const parts: Piece[] = [];
   const h = size / 2 - 0.12;
   const fenceColor = '#fffaf0';
@@ -284,6 +284,20 @@ export function buildYardGeometry(size: number, houseFrontZ: number): THREE.Buff
   post(-h, h, 0.5);
   post(h, h, 0.5);
 
+  // 우편함 (2026-11-16): 앞 오른쪽 대문 옆. 나무 기둥 위에 둥근 지붕 통, 옆에 빨간 깃발
+  {
+    const mx = 1.75;
+    const mz = mailboxZ;
+    parts.push(piece(new RoundedBoxGeometry(0.12, 0.78, 0.12, 1, 0.03).translate(mx, 0.39, mz), '#b98557'));
+    parts.push(piece(new RoundedBoxGeometry(0.34, 0.26, 0.48, 2, 0.06).translate(mx, 0.9, mz), '#7cc4f2'));
+    // 반원 지붕: 축이 앞뒤(z)로 눕고 둥근 쪽이 위
+    const lid = new THREE.CylinderGeometry(0.17, 0.17, 0.48, 12, 1, false, Math.PI / 2, Math.PI).rotateX(Math.PI / 2);
+    parts.push(piece(lid.translate(mx, 1.02, mz), '#7cc4f2'));
+    parts.push(piece(new THREE.BoxGeometry(0.2, 0.08, 0.012).translate(mx, 0.92, mz + 0.245), '#fffaf0'));
+    parts.push(piece(new THREE.BoxGeometry(0.025, 0.28, 0.025).translate(mx + 0.185, 1.02, mz - 0.05), '#5b4636'));
+    parts.push(piece(new THREE.BoxGeometry(0.02, 0.1, 0.14).translate(mx + 0.19, 1.12, mz + 0.02), '#ff6f61'));
+  }
+
   // 디딤돌
   const stones = 3;
   for (let i = 0; i < stones; i++) {
@@ -293,6 +307,13 @@ export function buildYardGeometry(size: number, houseFrontZ: number): THREE.Buff
     g.scale(1.15, 1, 0.85);
     g.rotateY(i * 0.7);
     g.translate((i % 2 ? 0.08 : -0.08), 0.03, z);
+    parts.push(piece(g, '#e9dfcf'));
+  }
+  // 기본 마당(6m)은 길이 조금 앞에서 시작하므로 마당 밖에 디딤돌 하나를 더 놓아 길까지 잇는다
+  if (pathZ > size / 2 + 0.35) {
+    const g = new THREE.CylinderGeometry(0.3, 0.33, 0.07, 16);
+    g.scale(1.15, 1, 0.85);
+    g.translate(0.05, 0.03, (size / 2 + pathZ) / 2 + 0.05);
     parts.push(piece(g, '#e9dfcf'));
   }
 
@@ -395,4 +416,65 @@ export function buildFlagGeometry(): THREE.BufferGeometry {
     parts.push(cloth);
   }
   return mergeParts(parts, GLOW_ATTRS);
+}
+
+/** 지붕 그림 한 변의 길이 (지붕 폭 3.4 중 가운데만 덮는다) */
+export const ROOF_ART_SIZE = 3.0;
+/** 지붕 그림이 덮는 앞쪽 지붕 면의 가로:세로 (그리기 화면의 도화지 비율과 같다. src/app 의 ROOF_ART_ASPECT) */
+export const ROOF_ART_ASPECT = 1.6;
+
+/**
+ * 지붕 그림을 붙이는 판: 지붕 앞면(대문 쪽 경사면)의 휜 모양을 그대로 따라가는 네모.
+ * 집과 같은 기준(원점은 집 바닥 한가운데, 앞은 +z)이라서 집과 같은 행렬로 놓으면 된다.
+ * uv 는 (0,0)=왼쪽 아래 ~ (1,1)=오른쪽 위 (앞에서 봤을 때).
+ */
+export function buildRoofArtGeometry(): THREE.BufferGeometry {
+  const D = HOUSE_DIM;
+  // 지붕 단면의 앞쪽 곡선 (buildHouseGeometry 의 지붕과 같은 점)
+  const p0 = { z: 0, y: D.ridge };
+  const p1 = { z: 0.88, y: 2.78 };
+  const p2 = { z: D.eaveZ, y: 1.74 };
+  const at = (t: number) => ({
+    z: (1 - t) * (1 - t) * p0.z + 2 * t * (1 - t) * p1.z + t * t * p2.z,
+    y: (1 - t) * (1 - t) * p0.y + 2 * t * (1 - t) * p1.y + t * t * p2.y,
+  });
+  // 고양이 귀 아래(t0)에서 처마 위(t1)까지. 지붕 겉면은 단면보다 0.07 바깥이라 그만큼 띄운다
+  // 2026-11-15: 앞쪽 지붕 면을 거의 다 덮게 키웠다 (그림이 너무 작다는 요청)
+  const t0 = 0.1;
+  const t1 = 0.95;
+  const lift = 0.07 + 0.016;
+  const rows = 14;
+  const half = ROOF_ART_SIZE / 2;
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i <= rows; i++) {
+    const t = t0 + ((t1 - t0) * i) / rows;
+    const a = at(t);
+    const b = at(t + 0.001);
+    // 곡선의 접선 (z, y) → 바깥쪽 법선
+    let tz = b.z - a.z;
+    let ty = b.y - a.y;
+    const tl = Math.hypot(tz, ty);
+    tz /= tl;
+    ty /= tl;
+    const nz = -ty;
+    const ny = tz;
+    for (const side of [-1, 1]) {
+      pos.push(side * half, a.y + ny * lift, a.z + nz * lift);
+      nor.push(0, ny, nz);
+      uv.push(side < 0 ? 0 : 1, 1 - i / rows);
+    }
+    if (i < rows) {
+      const k = i * 2;
+      idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
 }

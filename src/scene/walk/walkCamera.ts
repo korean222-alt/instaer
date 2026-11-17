@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import { collidersNear, zoneAt, zoneCenter, type Collider } from '../layout';
-import { ZONE_CAPACITY } from '../../shared/config';
+import { collidersNear, skipCollider, zoneAt, zoneCenter, type Collider } from '../layout';
 import { GROUND_Y } from '../world/constants';
 
 /**
@@ -35,7 +34,12 @@ export class WalkCamera {
   /** 따라가는 점 (고양이 조금 위) */
   readonly focus = new THREE.Vector3();
   dist = WALK_DIST;
+  /** 시야 넓히기 0~1 (setWalkZoom). 카메라가 멀고 조금 높아진다 */
+  zoom = 0;
   private pitch = PITCHES[0];
+  private get far() {
+    return WALK_DIST * (1 + 0.38 * this.zoom);
+  }
   hasHouse: (houseNo: number) => boolean = () => true;
   private readonly vx = { v: 0 };
   private readonly vy = { v: 0 };
@@ -60,15 +64,17 @@ export class WalkCamera {
     this.focus.y = smoothDamp(this.focus.y, groundY + FOCUS_UP + air * 0.3, this.vy, 0.3, dt);
 
     // 가려지지 않는 가장 낮은 각도를 고른다. 전부 가려지면 가장 멀리까지 트인 각도
-    let goal = PITCHES[0];
+    const lift = this.zoom * THREE.MathUtils.degToRad(7);
+    let goal = PITCHES[0] + lift;
     let bestFree = 0;
-    for (const p of PITCHES) {
+    for (const p0 of PITCHES) {
+      const p = p0 + lift;
       const f = this.freeDistance(p);
       if (f > bestFree + 0.01) {
         bestFree = f;
         goal = p;
       }
-      if (f >= WALK_DIST) break;
+      if (f >= this.far) break;
     }
     this.pitch += (goal - this.pitch) * (1 - Math.exp(-dt * (goal > this.pitch ? 7 : 2.5)));
 
@@ -92,16 +98,17 @@ export class WalkCamera {
     this.dir.set(Math.sin(this.yaw) * cp, Math.sin(pitch), Math.cos(this.yaw) * cp);
     const f = this.focus;
     const zone = zoneAt(f.x, f.z);
-    if (zone < 0) return WALK_DIST;
+    const far = this.far;
+    if (zone < 0) return far;
     const c = zoneCenter(zone);
     const step = STEP;
-    for (let t = 1; t <= WALK_DIST; t += step) {
+    for (let t = 1; t <= far; t += step) {
       const px = f.x + this.dir.x * t - c.x;
       const pz = f.z + this.dir.z * t - c.z;
       const h = f.y + this.dir.y * t - GROUND_Y;
       for (const col of collidersNear(px, pz, 0.5, this.near)) {
         if (col.occ <= 0 || h > col.h) continue;
-        if (col.lot >= 0 && !this.hasHouse(zone * ZONE_CAPACITY + col.lot + 1)) continue;
+        if (skipCollider(col, zone, this.hasHouse)) continue;
         const dx = px - col.x;
         const dz = pz - col.z;
         if (col.r > 0) {
@@ -115,6 +122,6 @@ export class WalkCamera {
         }
       }
     }
-    return WALK_DIST;
+    return far;
   }
 }

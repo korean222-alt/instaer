@@ -1,12 +1,16 @@
 import {
   BRIDGE,
   collidersNear,
+  DOCK_DECK_Y,
+  DOCK_HALF_W,
+  dockArea,
   landAt,
+  onDock,
+  skipCollider,
   zoneAt,
   zoneCenter,
   type Collider,
 } from '../layout';
-import { ZONE_CAPACITY } from '../../shared/config';
 import { GROUND_Y } from '../world/constants';
 import { heightFromLand } from '../world/mapField';
 
@@ -26,6 +30,8 @@ export const SPEED_FAST = 4.7;
 export const STRIDE = 0.66;
 export const JUMP_V = 4.7;
 export const GRAVITY = 17;
+/** 이 높이 이하인 막힌 것은 점프로 넘을 수 있다 (울타리 0.5) */
+const LOW_OBSTACLE = 0.55;
 /** 이보다 바다 쪽으로는 못 간다 (모래사장까지는 내려갈 수 있다) */
 const MIN_LAND = 1.0;
 
@@ -71,6 +77,15 @@ export class Walker {
   /** 그때그때 달라지는 막힌 곳 (큰 꾸미기 아이템) */
   blockers: (x: number, z: number, out: Blocker[]) => void = () => {};
   bridges: Bridge[] = [];
+  /**
+   * 집 안에 있을 때의 방 크기. null 이 아니면 섬의 땅/막힌 곳 대신 이 네모 안에서만 움직인다.
+   * 앞쪽 가운데(문, 절반 폭 doorHalf)로는 doorZ 까지 더 나갈 수 있다. 가구는 blockers 로 막는다
+   */
+  room: { minX: number; maxX: number; minZ: number; maxZ: number; y: number; doorHalf: number; doorZ: number } | null = null;
+  /** true 인 동안에는 가만히 있으면 바로 앉는다 (낚시할 때) */
+  holdSit = false;
+  /** 빠르기 배수 (고양이 자동차를 타면 1보다 크다. 2026-11-16) */
+  speedMul = 1;
 
   private vx = 0;
   private vz = 0;
@@ -111,7 +126,7 @@ export class Walker {
       const dx = (mx * c - my * s) / m;
       const dz = (-mx * s - my * c) / m;
       const e = m * m * (3 - 2 * m);
-      const sp = SPEED_SLOW + (SPEED_FAST - SPEED_SLOW) * e;
+      const sp = (SPEED_SLOW + (SPEED_FAST - SPEED_SLOW) * e) * this.speedMul;
       tx = dx * sp;
       tz = dz * sp;
       // 가는 방향으로 부드럽게 몸을 돌린다
@@ -153,6 +168,7 @@ export class Walker {
       this.idle = 0;
       this.yawnAt = 8 + (this.phase % 5);
     } else this.idle += dt;
+    if (this.holdSit && this.idle > 0) this.idle = Math.max(this.idle, 5.01);
     this.sit += ((this.idle > 5 ? 1 : 0) - this.sit) * (1 - Math.exp(-dt * 4));
     if (this.idle > this.yawnAt && this.yawnT >= 1) {
       this.yawnT = 0;
@@ -168,6 +184,34 @@ export class Walker {
 
   /** (nx, nz) 로 가려고 할 때 막힌 곳을 피해 실제로 설 자리를 정한다 */
   private resolve(nx: number, nz: number) {
+    const room = this.room;
+    if (room) {
+      for (let iter = 0; iter < 3; iter++) {
+        this.extra.length = 0;
+        this.blockers(nx, nz, this.extra);
+        for (const b of this.extra) {
+          const dx = nx - b.x;
+          const dz = nz - b.z;
+          const d = Math.hypot(dx, dz);
+          const min = b.r + RADIUS;
+          if (d < min && d > 1e-4) {
+            nx = b.x + (dx / d) * min;
+            nz = b.z + (dz / d) * min;
+          }
+        }
+        // 문턱 위에서는 문 폭 안에만 설 수 있다
+        const inDoor = Math.abs(nx) < room.doorHalf - RADIUS;
+        if (nz > room.maxZ - RADIUS && (inDoor || this.z > room.maxZ - RADIUS + 0.01)) {
+          nx = Math.max(-room.doorHalf + RADIUS, Math.min(room.doorHalf - RADIUS, nx));
+          nz = Math.min(room.doorZ - RADIUS, nz);
+        } else nz = Math.min(room.maxZ - RADIUS, nz);
+        nx = Math.max(room.minX + RADIUS, Math.min(room.maxX - RADIUS, nx));
+        nz = Math.max(room.minZ + RADIUS, nz);
+      }
+      this.x = nx;
+      this.z = nz;
+      return;
+    }
     const ox = this.x;
     const oz = this.z;
     for (let iter = 0; iter < 3; iter++) {
@@ -179,7 +223,9 @@ export class Walker {
         let px = lx;
         let pz = lz;
         for (const col of collidersNear(lx, lz, RADIUS + 0.2, this.near)) {
-          if (col.lot >= 0 && !this.hasHouse(zone * ZONE_CAPACITY + col.lot + 1)) continue;
+          if (skipCollider(col, zone, this.hasHouse)) continue;
+          // 2026-11-16: 점프로 높이 뜨면 낮은 것(울타리, 벤치, 바위)은 넘어간다
+          if (col.h > 0 && col.h <= LOW_OBSTACLE && this.air > col.h * 0.55) continue;
           const dx = px - col.x;
           const dz = pz - col.z;
           if (col.r > 0) {
@@ -242,7 +288,15 @@ export class Walker {
       }
       // 바다: 해안 쪽으로 넘어간 만큼 땅 쪽으로 되민다 (해안선을 따라 미끄러진다)
       const br = this.bridgeAt(nx, nz);
-      if (br) {
+      if (onDock(nx, nz)) {
+        // 부두 위: 물 위로 나온 곳에서는 옆과 끝으로 못 나간다 (섬에 걸친 쪽은 옆으로 내려설 수 있다)
+        if (landAt(nx, nz) < MIN_LAND + 0.4) {
+          const d = dockArea();
+          const lim = DOCK_HALF_W - 0.45;
+          nx = d.x + Math.max(-lim, Math.min(lim, nx - d.x));
+          nz = Math.min(d.z1 - 0.4, nz);
+        }
+      } else if (br) {
         // 다리 위에서는 난간 밖으로 못 나간다 (섬에 걸친 양 끝은 옆으로 내려설 수 있다)
         if (landAt(nx, nz) < MIN_LAND + 0.4) {
           const lim = BRIDGE.width / 2 - 0.42;
@@ -267,7 +321,7 @@ export class Walker {
       }
     }
     // 그래도 바다나 막힌 곳이면 움직이지 않는다
-    if (!this.bridgeAt(nx, nz) && landAt(nx, nz) < MIN_LAND - 0.15 && landAt(ox, oz) >= MIN_LAND - 0.15) {
+    if (!this.bridgeAt(nx, nz) && !onDock(nx, nz) && landAt(nx, nz) < MIN_LAND - 0.15 && landAt(ox, oz) >= MIN_LAND - 0.15) {
       nx = ox;
       nz = oz;
     }
@@ -280,6 +334,7 @@ export class Walker {
   }
 
   private heightAt(x: number, z: number): number {
+    if (this.room) return this.room.y;
     return groundHeightAt(this.bridges, x, z);
   }
 }
@@ -297,7 +352,8 @@ function bridgeAt(bridges: readonly Bridge[], x: number, z: number): Bridge | nu
 
 /** 그 자리의 땅 높이 (다리 위면 다리 바닥). 내 고양이와 다른 유저 고양이가 같이 쓴다 */
 export function groundHeightAt(bridges: readonly Bridge[], x: number, z: number): number {
-  const ground = heightFromLand(landAt(x, z));
+  let ground = heightFromLand(landAt(x, z));
+  if (onDock(x, z)) ground = Math.max(ground, DOCK_DECK_Y);
   const b = bridgeAt(bridges, x, z);
   if (!b) return ground;
   const along = b.axis === 'x' ? x - b.x : z - b.z;
