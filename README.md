@@ -37,7 +37,7 @@
    | Git branch (배포 기준 브랜치) | 합친 코드가 있는 브랜치 (아래 "브랜치" 참고) |
    | Build command | `npm run build` |
    | Deploy command | `npx wrangler deploy` |
-4. **Save and Deploy** → 끝나면 `https://cat-island.<내계정>.workers.dev` 주소가 생겨요.
+4. **Save and Deploy** → 끝나면 `https://cat-island.<내계정>.workers.dev` 주소가 생겨요. (이 프로젝트의 실제 주소: `https://cat-island.goyangi-seom.workers.dev`, 2026-11-15 계정 서브도메인을 `goyangi-seom` 으로 변경)
 5. 그 주소 뒤에 `/api/health` 를 붙여 열었을 때 `"db":"ok"` 가 보이면 성공이에요.
 
 - 배포하면 실시간용 Durable Object(`RealtimeRoom`)도 같이 만들어져요. 따로 할 일은 없어요.
