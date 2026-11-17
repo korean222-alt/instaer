@@ -2,6 +2,7 @@
 // 씬은 src/scene 의 공개 함수(createIslandScene 등)로만 쓴다. 씬 내부 파일은 import 하지 않는다.
 import './style.css';
 import { createIslandScene } from '../scene';
+import { getGraphicsMode, rememberAutoLow, rememberedAutoLow } from './graphics';
 import { isWinter } from '../shared/config';
 import { kstDay } from '../shared/economy';
 import { fetchMe } from './net/api';
@@ -114,7 +115,12 @@ window.addEventListener('resize', setVh);
 
 // ── 씬 ──
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
-const scene = createIslandScene(canvas);
+// 화면 품질 (2026-11-17): 설정에서 고른 값. '자동'이면 약한 폰이나 버거워하는 폰은 저사양으로 바뀐다
+const scene = createIslandScene(canvas, { graphics: getGraphicsMode(), rememberLow: rememberedAutoLow() });
+scene.onAutoLowSpec(() => {
+  rememberAutoLow(true);
+  toast('화면이 끊겨서 저사양 모드로 바꿨어요. 설정에서 바꿀 수 있어요');
+});
 initState(scene);
 pushHousesToScene(true);
 const hour = new Date().getHours();

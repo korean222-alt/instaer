@@ -3,6 +3,8 @@ import { handleProblem, HANDLE_PROBLEM_TEXT, normalizeHandle } from '../../share
 import { getSoundSettings, play, setSoundSettings } from '../audio/sound';
 import { ApiError, renameMe } from '../net/api';
 import { pushHousesToScene, setMe, state } from '../state';
+import { GRAPHICS_LABEL, getGraphicsMode, setGraphicsMode } from '../graphics';
+import type { GraphicsMode } from '../../scene';
 import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
 import { applyWallet, coins } from '../wallet';
@@ -44,7 +46,36 @@ export const settingsScreen: Screen = {
         </label>
         <p class="note">아이폰은 옆면 무음 스위치를 켜 두면 소리가 나지 않아요.</p>
       </div>
+      <div class="set-group">
+        <div class="set-row toggle"><span>화면 품질<small id="gfx-now"></small></span></div>
+        <div class="seg" role="radiogroup" aria-label="화면 품질">
+          ${(['auto', 'normal', 'low'] as GraphicsMode[])
+            .map((m) => `<button class="seg-btn${getGraphicsMode() === m ? ' on' : ''}" data-gfx="${m}" role="radio" aria-checked="${getGraphicsMode() === m}">${GRAPHICS_LABEL[m]}${m === 'auto' ? ' (추천)' : ''}</button>`)
+            .join('')}
+        </div>
+        <p class="note">폰이 느리거나 뜨거워지면, 저전력 모드에서 끊기면 <b>저사양</b>을 골라 보세요. 그림자를 끄고 해상도를 낮추고 1초에 30번만 그려요. 계단 현상까지 줄이려면 앱을 한 번 다시 열어 주세요.</p>
+      </div>
     `;
+
+    const gfxNow = root.querySelector<HTMLElement>('#gfx-now');
+    const showGfx = () => {
+      const g = state.scene.getGraphicsState();
+      if (gfxNow) gfxNow.textContent = g.mode === 'auto' ? `지금: ${g.low ? '저사양' : '보통'}${g.weakDevice ? ' (가벼운 폰으로 보여요)' : ''}` : '';
+    };
+    showGfx();
+    root.querySelectorAll<HTMLButtonElement>('[data-gfx]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.gfx as GraphicsMode;
+        setGraphicsMode(state.scene, mode);
+        root.querySelectorAll<HTMLButtonElement>('[data-gfx]').forEach((b) => {
+          const on = b === btn;
+          b.classList.toggle('on', on);
+          b.setAttribute('aria-checked', String(on));
+        });
+        showGfx();
+        play('tap');
+      });
+    });
 
     root.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach((input) => {
       const out = input.nextElementSibling as HTMLOutputElement;

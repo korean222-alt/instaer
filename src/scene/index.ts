@@ -246,9 +246,56 @@ export interface IslandScene {
    */
   setWinter(on: boolean): void;
 
+  /**
+   * 화면 품질 (2026-11-17). 'auto': 보통으로 시작해 폰이 버거워하면 스스로 저사양으로 바꾼다(약한 폰은 처음부터 저사양),
+   * 'normal': 저사양으로 바꾸지 않는다(자동 품질 단계는 그대로 동작), 'low': 늘 저사양.
+   * 저사양: 해상도 낮춤, 그림자 끔, 30fps 고정(배터리, 발열), 눈송이/전구 빛 줄임, 반딧불 끔, 자세히 그리는 집 16채.
+   */
+  setGraphicsMode(mode: GraphicsMode): void;
+  /** 지금 화면 품질 상태 */
+  getGraphicsState(): GraphicsState;
+  /** 'auto' 에서 폰이 버거워해서 저사양으로 바꿨을 때 한 번 부른다 (앱이 안내하거나 다음 실행 때 기억하라고) */
+  onAutoLowSpec(cb: () => void): void;
+
   /** 캔버스 크기가 바뀌면 부른다 */
   resize(): void;
   dispose(): void;
+}
+
+export type GraphicsMode = 'auto' | 'normal' | 'low';
+export interface GraphicsState {
+  mode: GraphicsMode;
+  /** 지금 저사양으로 그리는지 */
+  low: boolean;
+  /** 처음 볼 때 약한 폰으로 보였는지 (메모리, 코어 수, 그래픽 칩 이름) */
+  weakDevice: boolean;
+  /** 자동 품질 단계 (0=최고, 4=최저) */
+  quality: number;
+}
+export interface IslandSceneOptions {
+  /** 처음 화면 품질 (기본 'auto') */
+  graphics?: GraphicsMode;
+  /** 'auto' 일 때 지난번에 저사양으로 바뀌었으면 true: 처음부터 저사양 */
+  rememberLow?: boolean;
+}
+
+/** 약한 폰인지 짐작 (메모리 3GB 이하, 코어 4개 이하, 오래된 그래픽 칩) */
+function guessWeakDevice(gl: WebGLRenderingContext | WebGL2RenderingContext | null): boolean {
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  if (typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 3) return true;
+  if (typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency > 0 && nav.hardwareConcurrency <= 4) return true;
+  if (!gl) return false;
+  try {
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)).toLowerCase();
+    // Adreno 3xx~5xx, Mali-4xx/T/G31~G57, PowerVR, 소프트웨어 렌더링
+    if (/adreno[^0-9]*[345]\d\d\b/.test(name)) return true;
+    if (/mali-(4\d\d|t\d+|g(31|51|52|57|71|72))\b/.test(name)) return true;
+    if (/powervr|swiftshader|llvmpipe|software/.test(name)) return true;
+  } catch {
+    // 이름을 못 읽으면 보통 폰으로 본다
+  }
+  return false;
 }
 
 /** 확인용 수치 (그리기 횟수, 삼각형 수 등). 앱에서는 쓰지 않는다 */
@@ -317,11 +364,23 @@ const DOOR_STAND_Z = 0.62;
 /** 자동 품질 단계별 해상도 비율 (기기 비율, 최대 2 에 곱한다) */
 const QUALITY_SCALE = [1, 0.82, 0.68, 0.56, 0.48];
 
-export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+export function createIslandScene(canvas: HTMLCanvasElement, options: IslandSceneOptions = {}): IslandScene {
+  let graphicsMode: GraphicsMode = options.graphics === 'low' || options.graphics === 'normal' ? options.graphics : 'auto';
+  // 계단 현상 지우기(antialias)는 만들 때만 정할 수 있다. 저사양으로 시작하면 끈다 (기기 비율 2 이상이면 거의 티가 안 난다)
+  const preWeak = guessWeakDevice(null);
+  const startLow = graphicsMode === 'low' || (graphicsMode === 'auto' && (preWeak || !!options.rememberLow));
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !startLow, powerPreference: startLow ? 'default' : 'high-performance' });
+  const weakDevice = preWeak || guessWeakDevice(renderer.getContext());
+  /** 'auto' 에서 저사양으로 바뀌었는지 */
+  let autoLow = graphicsMode === 'auto' && (weakDevice || !!options.rememberLow);
+  const lowOn = () => graphicsMode === 'low' || (graphicsMode === 'auto' && autoLow);
+  let autoLowCb: (() => void) | null = null;
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  // 그림자 지도는 필요할 때만 다시 그린다 (아래 frame 에서 정한다). 그림자 그리기는 장면을 한 번 더 그리는 것과 같다
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(VIEW_FOV, 1, 2, 4000);
@@ -500,6 +559,12 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   let fpsTime = 0;
   let goodWindows = 0;
   let lastDrop = 0;
+  /** 1.5초 동안 50ms 넘게 걸린 프레임 수 (평균 fps 는 괜찮아도 뚝뚝 끊기는 것을 잡는다) */
+  let longFrames = 0;
+  /** 최저 단계에서도 버거운 구간이 이어진 횟수 ('auto' 가 저사양으로 바꾸는 기준) */
+  let strainWindows = 0;
+  let shadowTick = 0;
+  let lastDraw = 0;
   let contextLost = false;
 
   let requestedZones = 1;
@@ -536,24 +601,44 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    world.resize(h * renderer.getPixelRatio(), camera.fov);
-    snowfall.resize(h * renderer.getPixelRatio(), camera.fov);
+    const pr = renderer.getPixelRatio();
+    world.resize(h * pr, camera.fov);
+    world.setDetail(pr, lowOn());
+    snowfall.resize(h * pr, camera.fov);
+    snowfall.setMaxSize(7 * Math.min(1, pr / 2) * (lowOn() ? 0.8 : 1));
     controls.layout();
   };
 
-  const applyQuality = (level: number) => {
-    level = Math.max(0, Math.min(QUALITY_SCALE.length - 1, level));
-    if (level === quality) return;
+  /** 저사양이면 단계 3(그림자 끔, 해상도 0.56) 아래로는 올리지 않는다 */
+  const LOW_FLOOR = 3;
+  const applyQuality = (level: number, force = false) => {
+    level = Math.max(lowOn() ? LOW_FLOOR : 0, Math.min(QUALITY_SCALE.length - 1, level));
+    if (level === quality && !force) return;
     quality = level;
+    const low = lowOn();
     atmosphere.sun.castShadow = level < 3;
-    houses.setNearLimit(level >= 4 ? 16 : level >= 2 ? 24 : 64);
+    // 그림자 지도 크기: 단계 2부터 1024 (그림자 그리는 비용과 메모리가 1/4)
+    const mapSize = level >= 2 ? 1024 : 2048;
+    if (atmosphere.sun.shadow.mapSize.x !== mapSize) {
+      atmosphere.sun.shadow.mapSize.set(mapSize, mapSize);
+      atmosphere.sun.shadow.map?.dispose();
+      atmosphere.sun.shadow.map = null;
+    }
+    renderer.shadowMap.needsUpdate = true;
+    houses.setNearLimit(low || level >= 4 ? 16 : level >= 2 ? 24 : 64);
     interior?.setShadows(level < 3);
-    snowfall.setDensity(level >= 3 ? 0.4 : level >= 1 ? 0.7 : 1);
+    snowfall.setDensity(low ? 0.3 : level >= 3 ? 0.4 : level >= 1 ? 0.7 : 1);
     resize();
+  };
+  const refreshGraphics = () => {
+    goodWindows = 0;
+    strainWindows = 0;
+    applyQuality(lowOn() ? Math.max(quality, LOW_FLOOR) : quality, true);
   };
 
   syncWorld();
   resize();
+  if (lowOn()) applyQuality(LOW_FLOOR, true);
   // 처음 화면: 첫 동네(1~10번지)를 동네 시점으로
   const n0 = neighborhoodArea(0);
   rig.jumpTo(n0.x, n0.z - 1, camera.aspect < 0.8 ? NEIGHBORHOOD_DIST : 60);
@@ -782,26 +867,49 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
   const frame = (now: number) => {
     if (disposed || contextLost) return;
     raf = requestAnimationFrame(frame);
+    // 저사양: 30fps 로 고정한다. 들쭉날쭉한 40~60fps 보다 고른 30fps 가 덜 끊겨 보이고, 폰이 덜 뜨거워져서
+    // 발열로 느려지는 일도 줄어든다 (화면 주사율이 60이면 한 번 건너 한 번 그린다)
+    const low = lowOn();
+    if (low && now - lastDraw < 1000 / 30 - 3) return;
+    lastDraw = now;
     // 첫 프레임은 시간이 거꾸로 잡힐 수 있어서 0 아래로 내려가지 않게 한다
     const rawDt = Math.max(0, (now - last) / 1000);
     const dt = Math.min(0.05, rawDt);
     last = now;
     const t0 = performance.now();
+    // 그림자 지도: 최고 단계는 매 프레임, 그 밖에는 두 번에 한 번 (집과 나무는 가만히 있고 고양이만 움직인다)
+    renderer.shadowMap.needsUpdate = quality === 0 || (++shadowTick & 1) === 0;
 
-    // 자동 품질: 1.5초씩 평균 fps 를 보고 단계를 정한다 (탭이 가려졌다 돌아온 직후는 빼고)
+    // 자동 품질: 1.5초씩 평균 fps 와 끊긴 프레임 수를 보고 단계를 정한다 (탭이 가려졌다 돌아온 직후는 빼고)
     if (rawDt > 0 && rawDt < 0.5) {
       fpsFrames++;
       fpsTime += rawDt;
+      if (rawDt > 0.05) longFrames++;
       if (fpsTime >= 1.5) {
         const fps = fpsFrames / fpsTime;
+        // 10% 넘는 프레임이 50ms 를 넘으면 평균이 괜찮아도 끊겨 보인다 (아이폰 저전력 모드는 30fps 로 묶여서 평균만 보면 못 잡는다)
+        const janky = longFrames >= Math.max(3, fpsFrames * 0.1);
         fpsFrames = 0;
         fpsTime = 0;
+        longFrames = 0;
+        // 저사양은 30fps 가 목표라서 기준을 낮춘다
+        const slow = fps < (low ? 22 : 27) || janky;
+        if (qualityAuto && graphicsMode === 'auto' && !autoLow) {
+          // 최저 단계에서도 버거운 것이 3번(약 4.5초) 이어지면 저사양으로 바꾼다
+          if (slow && quality >= QUALITY_SCALE.length - 1) {
+            if (++strainWindows >= 3) {
+              autoLow = true;
+              refreshGraphics();
+              autoLowCb?.();
+            }
+          } else if (!slow) strainWindows = 0;
+        }
         if (qualityAuto) {
-          if (fps < 27) {
+          if (slow) {
             goodWindows = 0;
             lastDrop = now;
             applyQuality(quality + 1);
-          } else if (fps > 54 && quality > 0 && now - lastDrop > 20000) {
+          } else if (!low && fps > 54 && quality > 0 && now - lastDrop > 20000) {
             // 여유가 충분히 오래 이어질 때만 다시 올린다 (오르내리기를 되풀이하지 않게)
             if (++goodWindows >= 4) {
               goodWindows = 0;
@@ -1300,6 +1408,26 @@ export function createIslandScene(canvas: HTMLCanvasElement): IslandScene {
     },
     setWinter(on) {
       setWinterOn(!!on);
+    },
+    setGraphicsMode(mode) {
+      const next: GraphicsMode = mode === 'low' || mode === 'normal' ? mode : 'auto';
+      if (next === graphicsMode) return;
+      const wasLow = lowOn();
+      graphicsMode = next;
+      // 자동으로 돌아오면 약한 폰 짐작부터 다시 (지난번 기억은 앱이 정한다)
+      if (next === 'auto') autoLow = weakDevice;
+      if (wasLow && !lowOn()) {
+        // 저사양을 풀면 한 단계씩 다시 올라갈 수 있게 단계 1부터
+        quality = Math.min(quality, 1);
+        lastDrop = performance.now() - 20000;
+      }
+      refreshGraphics();
+    },
+    getGraphicsState() {
+      return { mode: graphicsMode, low: lowOn(), weakDevice, quality };
+    },
+    onAutoLowSpec(cb) {
+      autoLowCb = cb;
     },
     setNpcs(list) {
       npcs.set(Array.isArray(list) ? list : []);

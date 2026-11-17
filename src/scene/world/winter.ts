@@ -185,9 +185,13 @@ export function buildWinterTemplate(): WinterTemplate {
 }
 
 /** LED 전구 재질 (모든 구역이 같이 쓴다). 낮에는 작은 색 구슬, 밤에는 반짝이며 빛난다 */
-export function createLedMaterial(shared: { uTime: { value: number }; uNight: { value: number } }, uScale: { value: number }) {
+export function createLedMaterial(
+  shared: { uTime: { value: number }; uNight: { value: number } },
+  uScale: { value: number },
+  uMaxNight: { value: number } = { value: 16 },
+) {
   return new THREE.ShaderMaterial({
-    uniforms: { uTime: shared.uTime, uNight: shared.uNight, uScale },
+    uniforms: { uTime: shared.uTime, uNight: shared.uNight, uScale, uMaxNight },
     transparent: true,
     depthWrite: false,
     vertexShader: /* glsl */ `
@@ -196,6 +200,7 @@ export function createLedMaterial(shared: { uTime: { value: number }; uNight: { 
       uniform float uTime;
       uniform float uNight;
       uniform float uScale;
+      uniform float uMaxNight;
       varying vec3 vColor;
       varying float vGlow;
       void main() {
@@ -206,7 +211,8 @@ export function createLedMaterial(shared: { uTime: { value: number }; uNight: { 
         vGlow = uNight * tw;
         vColor = aColor;
         float size = mix(0.2, 0.5, uNight) * uScale / -mv.z;
-        gl_PointSize = clamp(size, mix(1.2, 2.2, uNight), mix(6.0, 16.0, uNight));
+        // 밤에는 점이 커져서 화면을 많이 덮는다(그리는 픽셀 수가 낮의 약 7배). 품질이 낮으면 상한을 줄인다 (2026-11-17)
+        gl_PointSize = clamp(size, mix(1.2, 2.2, uNight), mix(6.0, uMaxNight, uNight));
       }`,
     fragmentShader: /* glsl */ `
       varying vec3 vColor;
@@ -237,6 +243,7 @@ export class Snowfall {
     uBox: { value: new THREE.Vector3(80, 30, 80) },
     uScale: { value: 600 },
     uOpacity: { value: 0.7 },
+    uMaxPx: { value: 7 },
   };
   private readonly max: number;
 
@@ -264,6 +271,7 @@ export class Snowfall {
         uniform vec3 uCenter;
         uniform vec3 uBox;
         uniform float uScale;
+        uniform float uMaxPx;
         varying float vA;
         void main() {
           float fall = 0.9 + aSeed * 0.8;
@@ -282,7 +290,7 @@ export class Snowfall {
           // 카메라 바로 앞은 지우고(화면을 가리지 않게), 너무 먼 것도 옅게
           vA = smoothstep(2.5, 7.0, d) * (1.0 - smoothstep(uBox.x * 0.36, uBox.x * 0.5, length(p.xz - uCenter.xz)));
           vA *= 0.55 + 0.45 * aSeed;
-          gl_PointSize = clamp((0.09 + aSeed * 0.07) * uScale / d, 1.0, 7.0);
+          gl_PointSize = clamp((0.09 + aSeed * 0.07) * uScale / d, 1.0, uMaxPx);
         }`,
       fragmentShader: /* glsl */ `
         uniform float uOpacity;
@@ -307,6 +315,11 @@ export class Snowfall {
   /** 품질이 낮으면 눈송이 수를 줄인다 (0~1) */
   setDensity(f: number) {
     this.points.geometry.setDrawRange(0, Math.max(60, Math.floor(this.max * f)));
+  }
+
+  /** 눈송이 최대 크기 (기기 픽셀). 해상도를 낮추면 같이 줄인다 */
+  setMaxSize(px: number) {
+    this.uniforms.uMaxPx.value = Math.max(2, px);
   }
 
   /** target: 카메라가 보는 곳, dist: 카메라 거리, night: 0~1 */

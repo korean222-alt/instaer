@@ -888,10 +888,11 @@ export function frostedFir(tiers: readonly FirTier[], seed: number, trunkH?: num
     out.push(pg(skirt, i === 0 ? '#2f7a52' : '#357f55', '#6cbf78'));
     // 눈 모자: 층 위쪽 60% 를 덮고 아래 끝이 둥글게 말린다
     const lip = 0.05 + r * 0.04;
+    // 작은 나무(seg < 10)는 말린 끝을 한 단 줄인다 (2026-11-17 최적화: 섬에 수백 그루라 삼각형이 많다)
     const cap = [
       new THREE.Vector2(r * 0.6, base + h * 0.33),
-      new THREE.Vector2(r * 0.7 + lip, base + h * 0.35),
-      new THREE.Vector2(r * 0.69 + lip, base + h * 0.42),
+      new THREE.Vector2(r * 0.7 + lip, base + h * (seg < 10 ? 0.37 : 0.35)),
+      ...(seg < 10 ? [] : [new THREE.Vector2(r * 0.69 + lip, base + h * 0.42)]),
       new THREE.Vector2(r * 0.47 + lip * 0.8, base + h * 0.62 + 0.02),
       new THREE.Vector2(r * 0.18 + 0.03, base + h * 0.88 + 0.03),
       new THREE.Vector2(0.001, base + h + 0.05),
@@ -913,7 +914,7 @@ export function frostedFir(tiers: readonly FirTier[], seed: number, trunkH?: num
   // 꼭대기 눈 한 덩이
   const [r, h, base] = tiers[tiers.length - 1];
   void r;
-  out.push(p(new THREE.SphereGeometry(0.06 + h * 0.06, 8, 6).translate(0, base + h + 0.02, 0), '#ffffff'));
+  out.push(p(new THREE.SphereGeometry(0.06 + h * 0.06, seg < 10 ? 6 : 8, seg < 10 ? 4 : 6).translate(0, base + h + 0.02, 0), '#ffffff'));
   return out;
 }
 

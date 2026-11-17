@@ -69,10 +69,10 @@ function buildDecorTemplate(withHarbor: boolean, winter = false): DecorTemplate 
         pieces = winter ? props.bigFir() : props.bigTree();
         break;
       case 'roundTree':
-        pieces = winter ? props.frostedFir(props.roundFirTiers(s.seed), s.seed) : props.roundTree(s.seed);
+        pieces = winter ? props.frostedFir(props.roundFirTiers(s.seed), s.seed, undefined, 8) : props.roundTree(s.seed);
         break;
       case 'coneTree':
-        pieces = winter ? props.frostedFir(props.coneFirTiers(s.seed), s.seed) : props.coneTree(s.seed);
+        pieces = winter ? props.frostedFir(props.coneFirTiers(s.seed), s.seed, undefined, 8) : props.coneTree(s.seed);
         break;
       case 'bench':
         pieces = props.plazaBench();
@@ -184,13 +184,16 @@ export class World {
   private readonly winterLeds: THREE.Points[] = [];
   private readonly ledMaterial: THREE.ShaderMaterial;
   private readonly ledScale = { value: 600 };
+  private readonly ledMaxNight = { value: 16 };
+  /** 저사양 모드: 반딧불 끔, 전구 빛 작게 (2026-11-17) */
+  private low = false;
   private winter = false;
 
   constructor(atmosphere: Atmosphere) {
     this.atmosphere = atmosphere;
     this.terrainMaterial = createTerrainMaterial(this.mapUniforms, this.noise, atmosphere);
     this.decorMaterial = createGlowLambert(atmosphere.shared, { instanced: false, snow: 'decor' });
-    this.ledMaterial = createLedMaterial(atmosphere.shared, this.ledScale);
+    this.ledMaterial = createLedMaterial(atmosphere.shared, this.ledScale, this.ledMaxNight);
     this.cloudMaterial = new THREE.MeshLambertMaterial({ color: '#ffffff', emissive: '#9fb4c8', emissiveIntensity: 0.35 });
     const sea = createSea(this.mapUniforms, this.noise, atmosphere);
     this.sea = sea.mesh;
@@ -381,6 +384,15 @@ export class World {
     for (const f of this.fireflyLayers) f.resize(viewportHpx, fovDeg);
   }
 
+  /**
+   * 그리는 양 조절 (2026-11-17). pixelRatio: 지금 해상도 비율, low: 저사양 모드.
+   * 밤 전구는 기기 픽셀 기준 최대 크기를 해상도에 맞춰 줄인다 (해상도가 낮은데 점만 크면 화면을 덮는다).
+   */
+  setDetail(pixelRatio: number, low: boolean) {
+    this.low = low;
+    this.ledMaxNight.value = (low ? 9 : 16) * Math.min(1, pixelRatio / 2);
+  }
+
   update(focusX: number, focusZ: number, dist: number, frustum: THREE.Frustum) {
     this.visibleZones = 0;
     for (const z of this.zoneGroups) {
@@ -393,7 +405,7 @@ export class World {
     this.seaUniforms.uFade.value.set(80 + dist * 1.6, 420 + dist * 4);
     this.pools.update(night);
     // 겨울에는 반딧불 대신 전구
-    for (const f of this.fireflyLayers) f.points.visible = !this.winter && night > 0.02 && dist < 150;
+    for (const f of this.fireflyLayers) f.points.visible = !this.low && !this.winter && night > 0.02 && dist < 150;
     for (const d of this.winterDecor) d.visible = this.winter && dist < 620;
     for (const p of this.winterLeds) p.visible = this.winter && dist < 900;
     // 멀리서는 꽃/덤불을 숨기고, 나무 그림자도 끈다 (그 거리에서는 거의 안 보인다)

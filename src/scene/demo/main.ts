@@ -27,7 +27,9 @@ import { startFakePlayers, type FakePlayers } from './fakePlayers';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
-const island = createIslandScene(canvas);
+// ?gfx=normal|low|auto : 화면 품질 (2026-11-17)
+const gfxParam = new URLSearchParams(location.search).get('gfx');
+const island = createIslandScene(canvas, { graphics: gfxParam === 'low' || gfxParam === 'normal' ? gfxParam : 'auto' });
 const $ = (id: string) => document.getElementById(id);
 
 let houses: House[] = [];
