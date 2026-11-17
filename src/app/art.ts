@@ -72,19 +72,21 @@ export function syncArt() {
   timer = window.setTimeout(run, 120);
 }
 
+/** 기준점에서 멀어도 가까운 순으로 이만큼은 그림을 보여 준다 (지도 화면에서 다른 동네 집도 보이게) */
+const MIN_HOUSES = 40;
+
 function nearHouses(): number[] {
-  const out: number[] = [];
   const consider = new Set<number>([...state.yards.keys(), ...state.roofArt.keys(), ...state.roofArtBack.keys()]);
   if (state.me) consider.add(state.me.houseNo);
-  for (const no of consider) {
-    if (!center) {
-      if (no === state.me?.houseNo) out.push(no);
-      continue;
-    }
-    const s = houseSlot(no);
-    if (Math.hypot(s.x - center.x, s.z - center.z) <= RADIUS) out.push(no);
-  }
-  return out;
+  // 2026-11-17: 기준점이 없으면(입주 전 구경, 방금 입주) 아무 그림도 안 보이던 문제 → 내 집, 없으면 1번지 둘레를 기준으로
+  const c = center ?? (state.me ? houseSlot(state.me.houseNo) : houseSlot(1));
+  const byDist = [...consider]
+    .map((no) => {
+      const s = houseSlot(no);
+      return { no, d: Math.hypot(s.x - c.x, s.z - c.z) };
+    })
+    .sort((a, b) => a.d - b.d);
+  return byDist.filter((h, i) => h.d <= RADIUS || i < MIN_HOUSES).map((h) => h.no);
 }
 
 async function run() {

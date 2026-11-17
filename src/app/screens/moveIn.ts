@@ -96,7 +96,7 @@ function renderSteps(root: HTMLElement, ctx: { setTitle(t: string): void }) {
       <ol class="auth-steps">
         <li><span><b>@${h}</b> 팔로우</span></li>
         <li><span>고양이섬 릴스에 <b>"입주"</b> 댓글 달기</span></li>
-        <li><span>DM 으로 온 <b>암호</b> 확인하기<br /><small>DM 버튼을 눌렀는데 팔로우하라고 나오면, 팔로우하고 버튼을 다시 눌러 주세요</small></span></li>
+        <li><span>DM 으로 온 <b>암호</b> 확인하기</span></li>
         <li><span>여기서 <b>인스타 아이디 + 암호</b> 넣고 입주!</span></li>
       </ol>
       <a class="btn" href="${followUrl()}" target="_blank" rel="noopener noreferrer">@${h} 인스타 열기</a>
