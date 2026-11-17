@@ -28,6 +28,7 @@ import {
 import { pushHousesToScene } from './state';
 import { esc } from './ui/dom';
 import { toast } from './ui/toast';
+import { showTutorial, tutorialSeen } from './ui/tutorial';
 
 const ICON: Record<string, string> = {
   map: '<path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z"/><path d="M9 4v13.5M15 6.5V20"/>',
@@ -264,6 +265,12 @@ async function boot() {
   else if (state.me && route.id === 'map') scene.focusHouse(state.me.houseNo);
   show(route);
   refreshRegions();
+  // 처음 온 사람(아직 입주 안 함)은 안내를 보고 바로 입주하기 창으로 간다
+  const first = !state.me && !state.offline && !testRoom && route.id === 'map';
+  if (first) {
+    if (tutorialSeen()) go('move-in');
+    else showTutorial(() => go('move-in'));
+  }
 }
 boot();
 
