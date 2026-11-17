@@ -230,3 +230,90 @@ export function initSound() {
     }
   });
 }
+
+// ── 촬영 모드 효과음 (2026-11-17) ──
+// 영상용이라 효과음 크기 설정이 0 이어도 조금은 들리게 한다 (촬영할 때 소리를 끄고 찍지 않도록).
+
+/** 바람 가르는 소리: 잡음이 높아졌다 낮아진다 */
+function whoosh(out: AudioNode, at: number, dur: number, vol: number, from: number, to: number) {
+  const c = ctx!;
+  const buf = c.createBuffer(1, Math.ceil(c.sampleRate * dur), c.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const f = c.createBiquadFilter();
+  f.type = 'bandpass';
+  f.Q.value = 1.4;
+  f.frequency.setValueAtTime(from, at);
+  f.frequency.exponentialRampToValueAtTime(to, at + dur);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(vol, at + dur * 0.55);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  src.connect(f).connect(g).connect(out);
+  src.start(at);
+  src.stop(at + dur + 0.05);
+}
+
+export type CineSfx = 'whoosh' | 'whooshDown' | 'pop' | 'riser' | 'chime' | 'boom' | 'sparkle' | 'tick';
+
+let cineOut: GainNode | null = null;
+function cineGain(): GainNode | null {
+  const c = ensure();
+  if (!c) return null;
+  if (!cineOut) {
+    cineOut = c.createGain();
+    cineOut.connect(master);
+  }
+  cineOut.gain.value = Math.max(0.35, settings.sfx) ** 2 * 0.9;
+  return cineOut;
+}
+
+/** 촬영 모드 효과음. pitch 는 0~1 (팝 소리를 점점 높게 낼 때) */
+export function playCine(name: CineSfx, pitch = 0) {
+  const out = cineGain();
+  if (!ctx || !out || ctx.state !== 'running') return;
+  const t = ctx.currentTime + 0.01;
+  switch (name) {
+    case 'whoosh':
+      whoosh(out, t, 0.9, 0.5, 300, 2600);
+      break;
+    case 'whooshDown':
+      whoosh(out, t, 1.1, 0.45, 2400, 220);
+      break;
+    case 'pop': {
+      // 동글동글한 "뽁": 짧은 사인파가 위로 튄다
+      const base = 420 * 2 ** (pitch * 1.6);
+      tone(out, base, t, 0.11, 0.16, 'sine', 0.002, base * 1.9);
+      tone(out, base * 2, t, 0.05, 0.04, 'triangle', 0.002);
+      break;
+    }
+    case 'riser': {
+      whoosh(out, t, 2.4, 0.28, 200, 5200);
+      tone(out, 220, t, 2.4, 0.05, 'triangle', 1.6, 660);
+      break;
+    }
+    case 'chime':
+      [76, 79, 84, 88, 91].forEach((n, i) => tone(out, midi(n), t + i * 0.085, 1.2, 0.09, 'sine', 0.004));
+      [64, 72].forEach((n) => tone(out, midi(n), t, 1.8, 0.07, 'triangle', 0.02));
+      break;
+    case 'boom':
+      tone(out, 110, t, 0.9, 0.35, 'sine', 0.004, 42);
+      noise(out, t, 0.25, 0.25, 180);
+      break;
+    case 'sparkle':
+      [96, 100, 103].forEach((n, i) => tone(out, midi(n), t + i * 0.045, 0.35, 0.03, 'sine', 0.002));
+      break;
+    case 'tick':
+      tone(out, 1800, t, 0.03, 0.05, 'square', 0.001);
+      break;
+  }
+}
+
+/** 촬영 모드: 소리를 확실히 켠다 (화면을 누른 직후에 부른다) */
+export function unlockSound(): Promise<void> {
+  const c = ensure();
+  if (!c) return Promise.resolve();
+  return c.resume().then(() => startMusic());
+}

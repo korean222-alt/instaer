@@ -63,6 +63,7 @@ export { ROOM_SIZE } from './free/space';
 export { ROOM_STYLES } from './interior/Interior';
 export { dockArea, fishingSpotAt, POND_FISH_REACH, POND_R } from './layout';
 export type { FishingSpot } from './layout';
+export { GROUND_Y } from './world/constants';
 export type { FishingState } from './fishing/FishingRig';
 export type { SceneNpc } from './npc/Npcs';
 export type { CatPreviewOptions } from './cat/catPreview';
@@ -257,9 +258,28 @@ export interface IslandScene {
   /** 'auto' 에서 폰이 버거워해서 저사양으로 바꿨을 때 한 번 부른다 (앱이 안내하거나 다음 실행 때 기억하라고) */
   onAutoLowSpec(cb: () => void): void;
 
+  /**
+   * 촬영 모드 (2026-11-17): 카메라를 앱이 직접 놓는다. null 이면 원래 카메라(손가락 조작)로 돌아간다.
+   * 켜 있는 동안에는 손가락으로 지도를 움직이거나 집을 누를 수 없다. 걷기/집 안에서는 무시한다.
+   */
+  setCinemaCamera(cam: CinemaCamera | null): void;
+  /** 집 이름표를 보일지 (기본 true). 촬영 모드에서 가까이 찍을 때 끈다 */
+  setNameTags(on: boolean): void;
+
   /** 캔버스 크기가 바뀌면 부른다 */
   resize(): void;
   dispose(): void;
+}
+
+/** 촬영 모드 카메라: 카메라 자리(x, y, z)와 바라보는 곳(lookX, lookY, lookZ), 화각(도) */
+export interface CinemaCamera {
+  x: number;
+  y: number;
+  z: number;
+  lookX: number;
+  lookY: number;
+  lookZ: number;
+  fov?: number;
 }
 
 export type GraphicsMode = 'auto' | 'normal' | 'low';
@@ -384,6 +404,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(VIEW_FOV, 1, 2, 4000);
+  let cinema: CinemaCamera | null = null;
   const atmosphere = new Atmosphere(scene, 2048);
   scene.background = atmosphere.horizon;
 
@@ -863,6 +884,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
   let shadowR = 0;
   let cpuMs = 0;
   let last = performance.now();
+  const cineLook = new THREE.Vector3();
 
   const frame = (now: number) => {
     if (disposed || contextLost) return;
@@ -1025,6 +1047,20 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
       target.dist = WALK_DIST;
       checkNearHouse();
       notifyMove(now);
+    } else if (cinema) {
+      // 촬영 모드: 앱이 준 자리에 그대로 둔다 (부드러운 움직임은 앱이 매 프레임 계산한다)
+      camera.position.set(cinema.x, cinema.y, cinema.z);
+      camera.lookAt(cinema.lookX, cinema.lookY, cinema.lookZ);
+      const d = camera.position.distanceTo(cineLook.set(cinema.lookX, cinema.lookY, cinema.lookZ));
+      const near = THREE.MathUtils.clamp(d * 0.06, 0.25, 12);
+      if (Math.abs(near - camera.near) > 0.01) {
+        camera.near = near;
+        camera.updateProjectionMatrix();
+      }
+      camera.updateMatrixWorld();
+      target.x = cinema.lookX;
+      target.z = cinema.lookZ;
+      target.dist = d;
     } else {
       rig.update(dt);
       const t = rig.target;
@@ -1033,7 +1069,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
       target.dist = t.dist;
     }
     // 시점이 바뀌는 동안에는 이전 카메라 자리에서 새 자리로 부드럽게 옮긴다
-    const fovGoal = walking ? WALK_FOV + walkCam.zoom * 8 : VIEW_FOV;
+    const fovGoal = walking ? WALK_FOV + walkCam.zoom * 8 : cinema ? (cinema.fov ?? VIEW_FOV) : VIEW_FOV;
     if (blend < 1) {
       blend = Math.min(1, blend + dt / 0.9);
       const e = blend * blend * (3 - 2 * blend);
@@ -1408,6 +1444,23 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     },
     setWinter(on) {
       setWinterOn(!!on);
+    },
+    setCinemaCamera(cam) {
+      const was = cinema !== null;
+      cinema = cam ? { ...cam } : null;
+      if (cinema && !was) {
+        blend = 1;
+        rig.enabled = false;
+      } else if (!cinema && was) {
+        if (!walking) {
+          rig.enabled = true;
+          startBlend();
+          rig.jumpTo(target.x, target.z, camera.aspect < 0.8 ? NEIGHBORHOOD_DIST : 60);
+        }
+      }
+    },
+    setNameTags(on) {
+      houses.setNameTags(on);
     },
     setGraphicsMode(mode) {
       const next: GraphicsMode = mode === 'low' || mode === 'normal' ? mode : 'auto';

@@ -30,6 +30,7 @@ export const settingsScreen: Screen = {
           : ''
       }
       <div class="set-group">
+        <a class="btn" href="./?cinema">🎬 촬영 모드 <small>릴스용 영상 찍기 (화면 기록으로)</small></a>
         <a class="btn" href="#/wish">⭐ 소원 비는 곳 <small>생겼으면 하는 것 적기</small></a>
         <a class="btn" href="#/report">신고하기 <small>내 인스타 아이디를 누가 썼어요 등</small></a>
       </div>

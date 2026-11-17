@@ -295,6 +295,12 @@ export class HouseLayer {
 
   // ───────────── 데이터 ─────────────
 
+  /** 이름표 보이기/숨기기 (촬영 모드) */
+  setNameTags(on: boolean) {
+    this.tagsOn = on;
+  }
+  private tagsOn = true;
+
   setHouses(houses: House[]) {
     this.clearZones();
     this.recs.clear();
@@ -652,7 +658,7 @@ export class HouseLayer {
     this.pools.update(this.shared.uNight.value);
     const labelOpacity = THREE.MathUtils.smoothstep(px, LABEL_PX, LABEL_PX + 3.5);
     const labelScale = THREE.MathUtils.lerp(0.78, 1, THREE.MathUtils.smoothstep(px, LABEL_PX, 40));
-    this.labels.update(viewport.w, viewport.h, this.walkAt ? 1 : labelScale, labelOpacity);
+    this.labels.update(viewport.w, viewport.h, this.walkAt ? 1 : labelScale, this.tagsOn ? labelOpacity : 0);
   }
 
   /** 화면에 가까이 보이는 집을 골라서 자세한 모델/고양이/이름표/아이템을 붙인다 */

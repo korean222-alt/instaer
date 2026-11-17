@@ -36,6 +36,7 @@ import { createMinimap } from './play/minimap';
 import { createSocial, type Social } from './play/social';
 import { claimableCount, coins, refreshWallet } from './wallet';
 import { initSound, play, setMusicMood } from './audio/sound';
+import { cinemaRequested, startCinema } from './cinema';
 import type { Screen } from './screens/types';
 import {
   initState,
@@ -441,6 +442,11 @@ async function boot() {
   show(route);
   refreshRegions();
   // 맨 처음 온 사람: 바로 고양이 고르기(입주 화면)를 연다. 닫으면 섬을 그냥 둘러볼 수 있다 (한 번만)
+  // 촬영 모드: 화면을 비우고 영상용 장면을 튼다 (입주 안내는 띄우지 않는다)
+  if (cinemaRequested()) {
+    startCinema(scene);
+    return;
+  }
   if (!state.me && !state.offline && route.id === 'map' && !welcomed()) go('move-in');
 }
 boot();
