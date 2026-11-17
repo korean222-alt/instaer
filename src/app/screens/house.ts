@@ -75,7 +75,7 @@ export const houseScreen: Screen = {
         btn.disabled = false;
       }
     });
-    root.querySelector('[data-act="report"]')?.addEventListener('click', () => toast('신고 기능은 곧 열려요. 급하면 고양이섬 인스타 계정으로 DM 을 보내 주세요', 3000));
+    root.querySelector('[data-act="report"]')?.addEventListener('click', () => go('report', no));
     return () => state.scene.highlightHouse(state.todayTop?.houseNo ?? null);
   },
 };

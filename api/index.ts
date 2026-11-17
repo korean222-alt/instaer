@@ -9,6 +9,8 @@ import { regions } from './routes/regions';
 import { village } from './routes/village';
 import { realtimeConnect, realtimeUsage } from './routes/realtime';
 import { deleteDrawing, getDecor, getDrawings, getWallet, myDrawings, postDrawing, putDecor } from './routes/decor';
+import { adminAction, adminState, authInfo, getWishes, postWish, reclaimPoll, reclaimStart, report } from './routes/auth';
+import { cron } from './lib/insta';
 import { accept, arcade, buy, claim, fish, mine, openMail, sell, visit } from './routes/game';
 import { deleteBoard, deleteGuestbook, friendAction, getBoard, getFriends, houseSocial, postBoard, postGuestbook } from './routes/social';
 
@@ -35,6 +37,17 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (method === 'GET' && path === '/api/regions') return regions(env, ctx);
   if (method === 'GET' && path === '/api/me') return me(request, env);
   if (method === 'POST' && path === '/api/move-in') return moveIn(request, env);
+  if (method === 'GET' && path === '/api/auth-info') return authInfo(env);
+  if (method === 'POST' && path === '/api/reclaim') return reclaimStart(request, env);
+  if (method === 'POST' && path === '/api/report') return report(request, env);
+  if (method === 'GET' && path === '/api/wishes') return getWishes(env, ctx);
+  if (method === 'POST' && path === '/api/wishes') return postWish(request, env);
+  if (method === 'GET' && path === '/api/admin') return adminState(request, env);
+  if (method === 'POST' && path === '/api/admin') return adminAction(request, env);
+  {
+    const rc = path.match(/^\/api\/reclaim\/([A-Z0-9]{4,10})$/);
+    if (rc && method === 'GET') return reclaimPoll(rc[1], request, env);
+  }
   if (method === 'PUT' && path === '/api/me/privacy') return setPrivacy(request, env);
 
   if (method === 'GET' && path === '/api/wallet') return getWallet(request, env);
@@ -106,5 +119,9 @@ export default {
       if (/exceeded.*(limit|free tier)/i.test(message)) return error(503, 'quota', '오늘은 사람이 너무 많아요. 내일 다시 만나요');
       return error(500, 'server_error', '잠시 문제가 생겼어요');
     }
+  },
+  // 5분마다 (wrangler.jsonc triggers): 인스타 댓글 읽기, 토큰 갱신
+  async scheduled(_controller, env, ctx): Promise<void> {
+    ctx.waitUntil(cron(env).catch((e) => console.error('[cron]', e instanceof Error ? e.message : e)));
   },
 } satisfies ExportedHandler<Env>;

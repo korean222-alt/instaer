@@ -661,3 +661,38 @@ body.decorating .quest-peek, body.playing .quest-peek, body:has(.sheet.open) .qu
 /* 2026-11-16 겨울 선물 편지 */
 .mail-gift { display: flex; justify-content: center; margin: 6px 0 2px; }
 .mail-gift .item-pic { filter: drop-shadow(0 3px 4px rgba(90, 60, 30, 0.18)); }
+
+/* ── 인스타 인증, 되찾기, 신고, 소원 (2026-11-17) ── */
+.code-big {
+  margin: 12px auto;
+  padding: 14px 18px;
+  max-width: 280px;
+  border-radius: 16px;
+  background: #fff;
+  color: #2b2140;
+  font: 800 34px/1.1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.18em;
+  text-align: center;
+  user-select: all;
+  -webkit-user-select: all;
+}
+.posts li.done { opacity: 0.5; }
+.note.bad, .bad { color: #e0605a; }
+.wish-link, .set-group > a.btn { display: block; text-align: center; margin-bottom: 8px; }
+.wish-link small, .set-group > a.btn small { display: block; font-weight: 400; opacity: 0.7; font-size: 12px; }
+.wishes li p { font-weight: 600; }
+.auth-steps { margin: 8px 0 14px; padding-left: 0; list-style: none; counter-reset: s; }
+.auth-steps li { counter-increment: s; text-align: left; display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; line-height: 1.45; }
+.auth-steps li::before {
+  content: counter(s);
+  flex: 0 0 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #f28fb8;
+  color: #fff;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+}
+.auth-box { margin-top: 10px; padding: 12px; border-radius: 14px; background: rgba(240, 96, 90, 0.1); }
+.auth-box .row { margin-top: 8px; }

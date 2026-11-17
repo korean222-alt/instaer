@@ -1,4 +1,5 @@
 // 서버 호출은 전부 여기서 한다. 씬은 서버를 모른다.
+import type { AuthMode, ReportKind } from '../../shared/auth';
 import type { WalletData } from '../../shared/economy';
 import type { CatLook, Drawing, House, HouseDecor, PlacedItem, RegionId } from '../../shared/types';
 
@@ -77,10 +78,14 @@ export function loadToken(): string | null {
   }
 }
 
-async function call<T>(method: string, path: string, body?: unknown, timeoutMs = 8000): Promise<T> {
+function call<T>(method: string, path: string, body?: unknown, timeoutMs = 8000): Promise<T> {
+  return callWith<T>(method, path, body, {}, timeoutMs);
+}
+
+async function callWith<T>(method: string, path: string, body: unknown, extraHeaders: Record<string, string>, timeoutMs = 8000): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  const headers: Record<string, string> = { accept: 'application/json' };
+  const headers: Record<string, string> = { accept: 'application/json', ...extraHeaders };
   if (body !== undefined) headers['content-type'] = 'application/json';
   const token = loadToken();
   if (token) headers.authorization = `Bearer ${token}`;
@@ -121,8 +126,46 @@ export const fetchVillage = () => call<Village>('GET', '/api/village');
 export const fetchRegions = () => call<Regions>('GET', '/api/regions');
 export const fetchMe = () => call<{ house: House | null; founder?: boolean; hideHandle?: boolean; friendRequests?: number }>('GET', '/api/me');
 /** cat: 고른 고양이 (CAT_CHOICES / EYE_CHOICES 안의 값). houseNo: 고른 빈 집 (null 이면 빈 집 중 앞 번호) */
-export const moveIn = (handle: string, region: RegionId, hideHandle: boolean, cat: CatLook, houseNo: number | null = null) =>
-  call<MoveInResult>('POST', '/api/move-in', { handle, region, hideHandle, cat, houseNo });
+export const moveIn = (
+  handle: string,
+  region: RegionId,
+  hideHandle: boolean,
+  cat: CatLook,
+  houseNo: number | null = null,
+  auth: { igId: string; password: string } | null = null,
+) => call<MoveInResult>('POST', '/api/move-in', { handle, region, hideHandle, cat, houseNo, ...(auth ?? {}), device: deviceId() }, 15000);
+
+/** 이 폰의 표시 (기기 하나에 집 하나). 저장이 막힌 브라우저면 보내지 않는다 */
+export function deviceId(): string | undefined {
+  try {
+    let d = localStorage.getItem('ci_dev');
+    if (!d) {
+      d = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
+      localStorage.setItem('ci_dev', d);
+    }
+    return d;
+  } catch {
+    return undefined;
+  }
+}
+
+// ── 인스타 인증, 되찾기, 신고, 소원 (2026-11-17) ──
+export const fetchAuthInfo = () => call<{ mode: AuthMode; followHandle: string }>('GET', '/api/auth-info');
+export const reclaimStart = (igId: string) => call<{ ok: true; code: string; igId: string; houseNo: number; expiresIn: number }>('POST', '/api/reclaim', { igId });
+export const reclaimPoll = (code: string) =>
+  call<{ ok: true; pending: boolean; token?: string; house?: House; hideHandle?: boolean }>('GET', `/api/reclaim/${encodeURIComponent(code)}`, undefined, 15000);
+export const sendReport = (r: { kind: ReportKind; houseNo?: number | null; igId?: string; contact?: string; text: string }) =>
+  call<{ ok: true }>('POST', '/api/report', r);
+export interface Wish {
+  id: number;
+  text: string;
+  at: number;
+  houseNo: number | null;
+  handle: string | null;
+}
+export const fetchWishes = () => call<{ wishes: Wish[] }>('GET', '/api/wishes');
+export const postWish = (text: string) => call<{ ok: true }>('POST', '/api/wishes', { text });
+export const adminCall = <T>(key: string, body?: Record<string, unknown>) => callWith<T>(body ? 'POST' : 'GET', '/api/admin', body, { 'x-admin-key': key });
 export const setPrivacy = (hideHandle: boolean) => call<{ ok: true; hideHandle: boolean }>('PUT', '/api/me/privacy', { hideHandle });
 
 /** 지갑 (츄르, 가진 아이템, 퀘스트 진행) */

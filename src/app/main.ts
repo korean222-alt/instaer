@@ -13,6 +13,7 @@ import { moveInScreen } from './screens/moveIn';
 import { rankScreen } from './screens/rank';
 import { searchScreen } from './screens/search';
 import { settingsScreen } from './screens/settings';
+import { adminScreen, reclaimScreen, reportScreen, wishScreen } from './screens/auth';
 import { drawScreen } from './screens/draw';
 import { npcScreen } from './screens/npc';
 import { questsScreen } from './screens/quests';
@@ -92,6 +93,10 @@ const SCREENS: Record<Exclude<ScreenId, 'map'>, Screen> = {
   board: boardScreen,
   friends: friendsScreen,
   mail: mailScreen,
+  wish: wishScreen,
+  report: reportScreen,
+  reclaim: reclaimScreen,
+  admin: adminScreen,
 };
 // 2026-11-15: 입주 탭은 뺐다 (입주 전에는 위쪽 "입주하기" 버튼, 내 고양이 카드는 설정에서)
 const TABS: Array<{ id: ScreenId; label: string }> = [
@@ -161,7 +166,7 @@ const sheetBody = $('sheet-body');
 let cleanup: (() => void) | void;
 let ready = false;
 
-const TAB_OF: Partial<Record<ScreenId, ScreenId>> = { house: 'map', search: 'map', settings: 'map', npc: 'map', board: 'map', mail: 'map', shop: 'decorate', draw: 'decorate', 'move-in': 'map' };
+const TAB_OF: Partial<Record<ScreenId, ScreenId>> = { house: 'map', search: 'map', settings: 'map', npc: 'map', board: 'map', mail: 'map', wish: 'map', report: 'map', reclaim: 'map', admin: 'map', shop: 'decorate', draw: 'decorate', 'move-in': 'map' };
 function show(route: Route) {
   const tabId = TAB_OF[route.id] ?? route.id;
   for (const a of app.querySelectorAll<HTMLAnchorElement>('[data-tab]')) {

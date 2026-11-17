@@ -28,6 +28,10 @@ export const settingsScreen: Screen = {
           : ''
       }
       <div class="set-group">
+        <a class="btn" href="#/wish">⭐ 소원 비는 곳 <small>생겼으면 하는 것 적기</small></a>
+        <a class="btn" href="#/report">신고하기 <small>내 인스타 아이디를 누가 썼어요 등</small></a>
+      </div>
+      <div class="set-group">
         <label class="set-row">
           <span>배경 음악</span>
           <input type="range" min="0" max="100" step="5" value="${Math.round(s.bgm * 100)}" data-k="bgm" aria-label="배경 음악 크기" />

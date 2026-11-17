@@ -3,7 +3,8 @@ import { FOLLOW_HANDLE, NEIGHBORHOOD_SIZE, REGIONS } from '../../shared/config';
 import { handleProblem, HANDLE_MAX, HANDLE_PROBLEM_TEXT, normalizeHandle } from '../../shared/handle';
 import type { CatLook, RegionId } from '../../shared/types';
 import { play } from '../audio/sound';
-import { ApiError, moveIn, saveToken } from '../net/api';
+import { ApiError, fetchAuthInfo, moveIn, saveToken } from '../net/api';
+import { igIdProblem, IG_ID_MAX, normalizeIgId, type AuthMode } from '../../shared/auth';
 import { go, onRoute } from '../router';
 import { isFounder, refreshRegions, regionLabel, setMe, state } from '../state';
 import { mountCard } from '../ui/adoptCard';
@@ -73,8 +74,40 @@ interface Draft {
   touched: boolean;
   /** 고른 빈 집. null 이면 빈 집 중 앞 번호 */
   houseNo: number | null;
+  igId: string;
+  password: string;
 }
-const draft: Draft = { handle: '', region: '', cat: null, touched: false, houseNo: null };
+const draft: Draft = { handle: '', region: '', cat: null, touched: false, houseNo: null, igId: '', password: '' };
+
+// ── 인스타 인증 (2026-11-17): 서버 설정(off/password/comment)에 따라 입주 화면이 바뀐다 ──
+let authMode: AuthMode | null = null;
+const needsAuth = () => authMode === 'password' || authMode === 'comment';
+/** 가입 방법 안내를 이번에 봤는지 (예전 팔로우 부탁과 따로) */
+let stepsSeen = false;
+
+/** 인증 방식일 때 첫 화면: 팔로우 → 릴스 댓글 → DM 암호 */
+function renderSteps(root: HTMLElement, ctx: { setTitle(t: string): void }) {
+  ctx.setTitle('입주하기');
+  const h = esc(FOLLOW_HANDLE);
+  root.innerHTML = `
+    <div class="follow-card">
+      <div class="follow-cat">${catPic({ pattern: 'cheese', fur: CAT_CHOICES[0].furs[0], eyeColor: EYE_CHOICES[0] }, 96, 'follow')}</div>
+      <p class="lead"><b>입주는 이렇게 해요</b></p>
+      <ol class="auth-steps">
+        <li><span><b>@${h}</b> 팔로우</span></li>
+        <li><span>고양이섬 릴스에 <b>"입주"</b> 댓글 달기</span></li>
+        <li><span>DM 으로 온 <b>암호</b> 확인하기<br /><small>DM 버튼을 눌렀는데 팔로우하라고 나오면, 팔로우하고 버튼을 다시 눌러 주세요</small></span></li>
+        <li><span>여기서 <b>인스타 아이디 + 암호</b> 넣고 입주!</span></li>
+      </ol>
+      <a class="btn" href="${followUrl()}" target="_blank" rel="noopener noreferrer">@${h} 인스타 열기</a>
+      <button class="btn primary" data-act="next">암호를 받았어요</button>
+    </div>`;
+  root.querySelector('[data-act="next"]')!.addEventListener('click', () => {
+    play('tap');
+    stepsSeen = true;
+    renderForm(root, ctx);
+  });
+}
 
 // ── 팔로우 부탁 (soft): 팔로우 여부는 확인하지 않는다. 인스타 메시지 API 는 사업자 인증이 있어야 써서 못 쓴다 ──
 const FOLLOW_KEY = 'ci_follow_asked';
@@ -233,6 +266,18 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
           ${options}
         </select>
       </label>
+      ${
+        needsAuth()
+          ? `<label class="field">
+        <span>내 인스타 아이디 <small>댓글을 단 그 아이디 · 다른 사람에게는 닉네임만 보여요</small></span>
+        <input name="ig" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="${IG_ID_MAX + 1}" placeholder="mochi_nyang" />
+      </label>
+      <label class="field">
+        <span>암호 <small>키티챗 DM 으로 받은 암호</small></span>
+        <input name="pw" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="30" />
+      </label>`
+          : ''
+      }
       <div class="field">
         <span>내 집 <small>섬에서 빈 집을 직접 고를 수 있어요</small></span>
         <div class="house-pick">
@@ -242,7 +287,8 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
       </div>
       <button class="btn primary" type="submit" disabled>입주하기</button>
     </form>
-    <p class="note">닉네임은 한 고양이만 쓸 수 있어요. 다른 사람이 이미 쓰는 닉네임이면 다른 이름을 써 주세요.</p>`;
+    <p class="note">닉네임은 한 고양이만 쓸 수 있어요. 다른 사람이 이미 쓰는 닉네임이면 다른 이름을 써 주세요.</p>
+    <div data-auth-box></div>`;
 
   const form = root.querySelector('form')!;
   const input = form.querySelector<HTMLInputElement>('input[name="handle"]')!;
@@ -252,11 +298,18 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
   const stage = root.querySelector<HTMLElement>('[data-stage]')!;
   const furs = root.querySelector<HTMLElement>('[data-furs]')!;
   const houseInfoEl = root.querySelector<HTMLElement>('[data-house-info]')!;
+  const igInput = form.querySelector<HTMLInputElement>('input[name="ig"]');
+  const pwInput = form.querySelector<HTMLInputElement>('input[name="pw"]');
+  const authBox = root.querySelector<HTMLElement>('[data-auth-box]')!;
   input.value = draft.handle;
   select.value = draft.region;
+  if (igInput) igInput.value = draft.igId;
+  if (pwInput) pwInput.value = draft.password;
   const saveDraft = () => {
     draft.handle = input.value;
     draft.region = select.value;
+    draft.igId = igInput?.value ?? '';
+    draft.password = pwInput?.value ?? '';
     draft.cat = cat;
     draft.touched = touched;
   };
@@ -318,9 +371,12 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
       cat = snapCatChoice({ pattern: look.pattern, fur: look.fur, eyeColor: look.eyeColor });
     }
     drawCat();
-    button.disabled = !!problem || !select.value;
+    const authBad = !!igInput && (!!igIdProblem(normalizeIgId(igInput.value)) || !pwInput?.value.trim());
+    button.disabled = !!problem || !select.value || authBad;
     saveDraft();
   };
+  igInput?.addEventListener('input', check);
+  pwInput?.addEventListener('input', check);
   input.addEventListener('input', check);
   select.addEventListener('change', check);
   if (input.value) check();
@@ -330,11 +386,14 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
     e.preventDefault();
     const handle = normalizeHandle(input.value);
     if (handleProblem(handle) || !select.value) return;
+    const auth = igInput ? { igId: normalizeIgId(igInput.value), password: pwInput?.value.trim() ?? '' } : null;
+    if (auth && igIdProblem(auth.igId)) return toast(igIdProblem(auth.igId)!);
     button.disabled = true;
-    button.textContent = '입주하는 중...';
+    button.textContent = authMode === 'comment' ? '댓글 확인하는 중...' : '입주하는 중...';
+    authBox.innerHTML = '';
     try {
-      const res = await moveIn(handle, select.value as RegionId, false, cat, draft.houseNo);
-      Object.assign(draft, { handle: '', region: '', cat: null, touched: false, houseNo: null });
+      const res = await moveIn(handle, select.value as RegionId, false, cat, draft.houseNo, auth);
+      Object.assign(draft, { handle: '', region: '', cat: null, touched: false, houseNo: null, igId: '', password: '' });
       endPicking();
       saveToken(res.token);
       state.hideHandle = res.hideHandle;
@@ -350,6 +409,15 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
       toast(msg, 3000);
       play('error');
       button.textContent = '입주하기';
+      // 내 아이디로 누가 먼저 가입했거나, 이 폰에서 이미 입주했으면 되찾기/신고를 보여 준다
+      if (err instanceof ApiError && (err.code === 'ig_taken' || err.code === 'device_used')) {
+        const ig = auth?.igId ?? '';
+        authBox.innerHTML = `<div class="auth-box"><b>${esc(msg)}</b>
+          <p class="note">${err.code === 'ig_taken' ? '내 아이디가 맞다면, 내 아이디로 댓글 하나만 달아서 집을 되찾을 수 있어요.' : '쿠키가 지워져서 내 집을 잃어버렸다면 되찾기를 해 주세요.'}</p>
+          <div class="row two"><a class="btn primary" href="#/reclaim/${encodeURIComponent(ig)}">내 집 되찾기</a><a class="btn" href="#/report">신고하기</a></div></div>`;
+        check();
+        return;
+      }
       if (err instanceof ApiError && (err.code === 'house_taken' || err.code === 'house_locked')) {
         draft.houseNo = null;
         drawHouse();
@@ -377,7 +445,18 @@ export const moveInScreen: Screen = {
       root.innerHTML = '<p class="empty">지금은 서버에 연결할 수 없어서 입주할 수 없어요.<br />잠시 후에 다시 열어 주세요.</p>';
       return;
     }
-    if (FOLLOW_HANDLE && !followAsked()) renderFollow(root, ctx);
+    if (authMode === null) {
+      root.innerHTML = '<p class="empty">불러오는 중...</p>';
+      fetchAuthInfo()
+        .then((r) => (authMode = r.mode))
+        .catch(() => (authMode = 'off'))
+        .finally(() => root.isConnected && !state.me && moveInScreen.render(root, _param, ctx));
+      return;
+    }
+    if (needsAuth()) {
+      if (!stepsSeen && !draft.igId) renderSteps(root, ctx);
+      else renderForm(root, ctx);
+    } else if (FOLLOW_HANDLE && !followAsked()) renderFollow(root, ctx);
     else renderForm(root, ctx);
   },
 };

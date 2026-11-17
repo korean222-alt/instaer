@@ -112,6 +112,11 @@ tasks/              작업 지시문
 | `GET /api/regions` | 지역별 전체/이번 주 입주 수와 순위. 60초 캐시 |
 | `POST /api/move-in` `{handle, region, hideHandle?, cat?, houseNo?}` | 입주 (soft: 팔로우/본인 확인 없음). `houseNo` 는 고른 빈 집(열린 구역 안), 없으면 빈 번지 중 앞 번호. 로그인 쿠키를 남김. IP 당 1분 5번 |
 | `GET /api/me` | 이 브라우저의 내 집 |
+| `GET /api/auth-info` | 지금 입주 방식 (`off`/`password`/`comment`). 입주 API 는 이 방식이면 `{igId, password, device}` 도 받아요 (2026-11-17) |
+| `POST /api/reclaim` `{igId}`, `GET /api/reclaim/:code` | 되찾기: 코드를 내 아이디로 댓글 → 확인되면 그 집으로 로그인 (다른 로그인 끊김) |
+| `POST /api/report` `{kind, houseNo?, igId?, contact?, text}` | 신고 (입주 안 해도 됨, IP 하루 10번) |
+| `GET/POST /api/wishes` | 소원 비는 곳 (누구나, 하루 3번, 60초 캐시) |
+| `GET/POST /api/admin` | 관리자 (헤더 `x-admin-key` = secret `ADMIN_KEY`). 화면은 `#/admin` |
 | `GET /api/house/:houseNo` | 그 집 꾸미기 전체: 마당/집 안 자유 배치, 벽지, 바닥, 지붕 그림, 지붕 색. 빈 집(주민 집)은 404 |
 | `PUT /api/house/:houseNo` `{yard?, room?, wallpaper?, floor?, roofColor?, roofArt?}` | 내 집만. 보낸 것만 바꿈. 가진 아이템과 내 그림만, 마당 20개/집 안 30개, 벽걸이는 집 안만 |
 | `POST /api/drawings` `{pixels, palette}` | 그림 저장 (32x32, 16색, base64 512바이트). 집마다 12장 |
@@ -135,6 +140,8 @@ tasks/              작업 지시문
 - 쓰기 요청은 같은 주소에서 온 것만 받아요(Origin 검사).
 
 ## 현재 상태 (앱, 서버)
+
+**인스타 인증, 되찾기, 신고, 소원 비는 곳 (2026-11-17)**: `tasks/opus-5-인스타인증-키티챗.md`. 원격 DB 에 `0007` 적용, secret `ADMIN_KEY` 추가가 필요해요. 기본은 `off`(예전 방식)라 배포해도 바로 바뀌지 않아요. 5분 Cron(`wrangler.jsonc` triggers)이 댓글을 읽어요.
 
 **단계 0, A, B, C 완료 (2026-11-14)**. 단계 D(보류 목록)는 구조만 열어 뒀어요.
 
@@ -335,6 +342,8 @@ Cloudflare 공식 문서(2026-11) 기준 무료 한도: Durable Objects 요청 *
 - 이 수치는 계산한 추정이에요. 실제 사용량은 Cloudflare 대시보드(D1 → Metrics, Workers → Metrics)에서 확인해요.
 
 ## Fable 에게 요청 (씬)
+
+7. **(새 요청, 2026-11-17) 소원 비는 장소.** 마을 광장 근처에 소원 나무나 소원 우물 하나. 걷다가 가까이 가서 누르면 앱이 `#/wish`(소원 비는 곳)를 열 수 있게 탭/가까이 감지 콜백만 있으면 돼요. 닌텐도 것과 닮지 않게.
 
 0. **작업 5: 지붕 그림(`setRoofArt`), 주민 고양이(`setNpcs`), 낚시 모습** → `tasks/페이블-5-지붕그림-주민-낚시.md`. `PlacedItem`/`InteriorItem`/`Drawing` 이 `src/shared/types.ts` 에 생겼으니 씬 임시 타입도 shared 로 바꿔 주세요.
 1. (했음) `src/shared/types.ts` 에 `RemotePlayer`, `LocalState`, `PlayerAnim` 이, `src/shared/config.ts` 에 `NEIGHBORHOOD_SIZE`, `NEARBY_MAX`, `NEARBY_RADIUS`, `MOVE_SEND_HZ`, `ROOM_MAX` 가 생겼어요. 모양과 값은 씬 임시 파일과 같아요(`id` 는 string). 씬의 `src/scene/remote/types.ts` 와 `layout.ts` 의 임시 `NEIGHBORHOOD_SIZE` 를 shared 에서 가져오도록 바꿔 주세요.
