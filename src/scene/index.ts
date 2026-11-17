@@ -265,6 +265,11 @@ export interface IslandScene {
   setCinemaCamera(cam: CinemaCamera | null): void;
   /** 집 이름표를 보일지 (기본 true). 촬영 모드에서 가까이 찍을 때 끈다 */
   setNameTags(on: boolean): void;
+  /**
+   * 촬영 화질 (2026-11-17). 'high': 최고 품질 단계로 고정(자동으로 낮추지 않음, 그림자 2048, 해상도 기기 비율 최대 2),
+   * 'max': 같은데 해상도를 기기 비율 최대 3 까지 (화면 기록이 선명해지지만 폰이 더 버거워한다). 'off': 원래대로.
+   */
+  setCinemaQuality(mode: 'off' | 'high' | 'max'): void;
 
   /** 캔버스 크기가 바뀌면 부른다 */
   resize(): void;
@@ -393,7 +398,9 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
   const weakDevice = preWeak || guessWeakDevice(renderer.getContext());
   /** 'auto' 에서 저사양으로 바뀌었는지 */
   let autoLow = graphicsMode === 'auto' && (weakDevice || !!options.rememberLow);
-  const lowOn = () => graphicsMode === 'low' || (graphicsMode === 'auto' && autoLow);
+  let cineQuality: 'off' | 'high' | 'max' = 'off';
+  // 촬영 화질을 켜 두면 저사양을 잠깐 끈다
+  const lowOn = () => cineQuality === 'off' && (graphicsMode === 'low' || (graphicsMode === 'auto' && autoLow));
   let autoLowCb: (() => void) | null = null;
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.shadowMap.enabled = true;
@@ -618,7 +625,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     viewportW = w;
     viewportH = h;
     // 해상도는 기기 비율 최대 2 까지만, 품질 단계가 내려가면 더 낮춘다
-    renderer.setPixelRatio(Math.max(0.6, Math.min(window.devicePixelRatio || 1, 2) * QUALITY_SCALE[quality]));
+    renderer.setPixelRatio(Math.max(0.6, Math.min(window.devicePixelRatio || 1, cineQuality === 'max' ? 3 : 2) * QUALITY_SCALE[quality]));
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -1461,6 +1468,18 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     },
     setNameTags(on) {
       houses.setNameTags(on);
+    },
+    setCinemaQuality(mode) {
+      if (mode === cineQuality) return;
+      cineQuality = mode;
+      if (mode === 'off') {
+        qualityAuto = true;
+        refreshGraphics();
+      } else {
+        // 저사양 바닥(LOW_FLOOR)을 피하려고 잠깐 'normal' 처럼 다룬다
+        qualityAuto = false;
+        applyQuality(0, true);
+      }
     },
     setGraphicsMode(mode) {
       const next: GraphicsMode = mode === 'low' || mode === 'normal' ? mode : 'auto';

@@ -1,18 +1,19 @@
-// 촬영 모드 (2026-11-17): 인스타 릴스용 영상을 폰 화면 녹화로 바로 찍을 수 있게 한다.
+// 촬영 모드 (2026-11-17, 2차): 인스타 릴스용 영상을 폰 화면 기록으로 바로 찍게 한다.
 // - 주소에 ?cinema 를 붙이면 켜진다 (설정 화면의 "촬영 모드" 버튼).
-// - 화면의 버튼과 글자를 모두 숨기고, 카메라가 정해 둔 길을 부드럽게 움직인다.
-// - 자막, 집 수 세기, 반짝임, 화면 효과(어둡게 시작, 가장자리 그늘, 번쩍임), 효과음까지 앱이 직접 낸다.
-// 씬은 setCinemaCamera / setNameTags / setHouses 로만 다룬다.
-import { debugProject, GROUND_Y, houseSlot, neighborhoodArea, type CinemaCamera, type IslandScene } from '../scene';
-import { FOLLOW_HANDLE, ZONE_CAPACITY } from '../shared/config';
+// - 진짜 게임 화면 그대로: 버튼/글자/자막을 모두 숨기고 카메라만 영화처럼 움직인다.
+//   자막과 목소리는 편집 앱에서 넣는다 (사용자 2026-11-17: "실제 게임 화면에서 UI 없애고 카메라 무빙만").
+// - 촬영 중에는 화질을 최고 단계로 고정한다 (자동으로 낮추지 않음, 선택하면 해상도 3배).
+// - 장면(컷)을 하나씩 찍거나 전체를 이어서 찍을 수 있다. 컷 사이에는 짧게 검게 넘어간다.
+// 씬은 setCinemaCamera / setNameTags / setCinemaQuality / setTimeOfDay 로만 다룬다.
+import { dockArea, GROUND_Y, houseSlot, neighborhoodArea, townSquares, type CinemaCamera, type IslandScene } from '../scene';
+import { NEIGHBORHOOD_SIZE } from '../shared/config';
 import type { House } from '../shared/types';
-import { playCine, unlockSound } from './audio/sound';
-import { pushHousesToScene, state } from './state';
-import { withEmptyLots } from './village';
+import { unlockSound } from './audio/sound';
+import { state } from './state';
 
 export const cinemaRequested = () => new URLSearchParams(location.search).has('cinema');
 
-// ── 카메라 자세: 바라보는 곳 + 방향(yaw) + 내려다보는 각(pitch) + 거리 + 화각 ──
+/** 카메라 자세: 바라보는 곳 + 방향(yaw) + 내려다보는 각(pitch) + 거리 + 화각 */
 interface Pose {
   x: number;
   y: number;
@@ -23,35 +24,32 @@ interface Pose {
   fov: number;
 }
 
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-/** 천천히 출발해서 천천히 멈춘다 */
-const smoother = (t: number) => {
-  const x = clamp01(t);
-  return x * x * x * (x * (x * 6 - 15) + 10);
-};
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
-
-function mix(a: Pose, b: Pose, t: number, swing = 0): Pose {
-  return {
-    x: lerp(a.x, b.x, t),
-    y: lerp(a.y, b.y, t),
-    z: lerp(a.z, b.z, t),
-    // 가까운 쪽으로 돌고, swing 만큼 크게 돌아 들어간다 (가운데에서 가장 많이)
-    yaw: a.yaw + wrap(b.yaw - a.yaw) * t + swing * Math.sin(Math.PI * t),
-    pitch: lerp(a.pitch, b.pitch, t),
-    // 거리는 비율로 바꿔야 멀어질 때와 가까워질 때 속도가 고르다
-    dist: a.dist * Math.pow(b.dist / a.dist, t),
-    fov: lerp(a.fov, b.fov, t),
-  };
+interface Shot {
+  id: string;
+  label: string;
+  dur: number;
+  night?: boolean;
+  /** u: 0~1 (이 컷 안에서 얼마나 지났는지, 부드럽게 굴린 값) */
+  pose: (u: number) => Pose;
 }
 
-function toCamera(p: Pose, shake: number, time: number): CinemaCamera {
-  // 손으로 든 카메라처럼 아주 살짝 흔들린다 (거리에 비례)
-  const s = p.dist * 0.0035 * shake;
-  const lx = p.x + Math.sin(time * 0.71) * s + Math.sin(time * 1.93) * s * 0.4;
-  const ly = p.y + Math.sin(time * 0.83 + 1.3) * s * 0.6;
-  const lz = p.z + Math.cos(time * 0.61 + 0.4) * s;
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+/** 천천히 출발해서 천천히 멈춘다. 영화 카메라처럼 끝까지 아주 조금은 움직이게 직선과 섞는다 */
+const glide = (t: number) => {
+  const x = clamp01(t);
+  const s = x * x * x * (x * (x * 6 - 15) + 10);
+  return s * 0.75 + x * 0.25;
+};
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+/** 거리는 비율로 바꿔야 멀어질 때와 가까워질 때 속도가 고르다 */
+const lerpDist = (a: number, b: number, t: number) => a * Math.pow(b / a, t);
+
+function toCamera(p: Pose, time: number): CinemaCamera {
+  // 손으로 든 카메라처럼 아주 살짝 흔들린다 (거리에 비례, 아주 느리게)
+  const s = p.dist * 0.0025;
+  const lx = p.x + Math.sin(time * 0.53) * s + Math.sin(time * 1.31) * s * 0.35;
+  const ly = p.y + Math.sin(time * 0.67 + 1.3) * s * 0.5;
+  const lz = p.z + Math.cos(time * 0.47 + 0.4) * s;
   const cp = Math.cos(p.pitch);
   return {
     x: lx + Math.sin(p.yaw) * cp * p.dist,
@@ -64,54 +62,180 @@ function toCamera(p: Pose, shake: number, time: number): CinemaCamera {
   };
 }
 
-// ── 시간표 (초) ──
-const T = {
-  heroEnd: 5.2, // 첫 집 가까이
-  riseEnd: 8.8, // 위로 올라가며 섬 전체로
-  growStart: 9.3, // 집이 하나씩 생기기 시작
-  growEnd: 15.4,
-  overviewEnd: 17.6,
-  swoopEnd: 22.0, // 동네로 휙 내려간다
-  endCard: 24.6,
-};
+/** 이 섬에 맞는 컷들을 만든다 (주인공 집 = 내 집, 없으면 예뻐요를 가장 많이 받은 고양이 집) */
+function buildShots(): Shot[] {
+  const G = GROUND_Y;
+  const lived = [...state.houses.values()].filter((h) => !h.isNpc && h.igHandle);
+  const mine = state.me ? lived.find((h) => h.houseNo === state.me!.houseNo) : undefined;
+  const hero: House | undefined = mine ?? [...lived].sort((a, b) => (b.cat ? 1 : 0) - (a.cat ? 1 : 0) || b.likes - a.likes || a.houseNo - b.houseNo)[0];
+  const heroNo = hero?.houseNo ?? 1;
+  const hs = houseSlot(heroNo);
+  const nb = neighborhoodArea(hs.neighborhood);
+  const fx = Math.sin(hs.rot);
+  const fz = Math.cos(hs.rot);
 
-interface Opts {
-  tags: boolean;
-  night: boolean;
+  // 옆집: 같은 동네에서 번호가 이웃한 집
+  const base = Math.floor((heroNo - 1) / NEIGHBORHOOD_SIZE) * NEIGHBORHOOD_SIZE;
+  const nextNo = base + (((heroNo - base) % NEIGHBORHOOD_SIZE) + 1);
+  const prevNo = base + (((heroNo - base - 2 + NEIGHBORHOOD_SIZE) % NEIGHBORHOOD_SIZE) + 1);
+  const a = houseSlot(prevNo);
+  const b = houseSlot(nextNo);
+  // 골목 컷: 동네 바깥쪽에서 안쪽(연못/광장)을 보며 옆으로 미끄러진다
+  const mx = (a.x + b.x) / 2;
+  const mz = (a.z + b.z) / 2;
+  const outYaw = Math.atan2(mx - nb.x, mz - nb.z);
+  const heroAng = Math.atan2(hs.x - nb.x, hs.z - nb.z);
+  const ringR = Math.hypot(hs.x - nb.x, hs.z - nb.z);
+
+  // 섬 전체: 입주한 집이 있는 곳 가운데
+  let cx = 0;
+  let cz = 0;
+  const spread = lived.length ? lived : [{ houseNo: 1 } as House];
+  for (const h of spread) {
+    const s = houseSlot(h.houseNo);
+    cx += s.x / spread.length;
+    cz += s.z / spread.length;
+  }
+
+  const square = townSquares(state.unlockedZones).find((t) => t.zone === hs.zone) ?? townSquares(1)[0];
+  const dock = dockArea();
+  const dockDir = Math.sign(dock.z1 - dock.z0) || 1;
+
+  return [
+    {
+      id: 'cat',
+      label: '🐱 우리 집 고양이',
+      dur: 6,
+      // 마당 문 앞에서 낮게 다가가며 살짝 돈다
+      pose: (u) => ({
+        x: hs.x + fx * 0.6,
+        y: G + 0.55,
+        z: hs.z + fz * 0.6,
+        yaw: hs.rot - 0.6 + 0.5 * u,
+        pitch: lerp(0.2, 0.32, u),
+        dist: lerpDist(19, 12.5, u),
+        fov: 36,
+      }),
+    },
+    {
+      id: 'alley',
+      label: '🏡 골목 지나가기',
+      dur: 5.5,
+      // 고양이 눈높이에서 집들 앞을 옆으로 미끄러진다. 집들이 둥글게 놓여 있어서 동네 가운데를 중심으로 호를 그리고,
+      // 카메라는 안쪽(연못/광장 쪽)에서 집 문을 본다
+      pose: (u) => {
+        const th = heroAng + lerp(-0.42, 0.42, u);
+        const r = ringR - 4.5;
+        return {
+          x: nb.x + Math.sin(th) * r,
+          y: G + 1.6,
+          z: nb.z + Math.cos(th) * r,
+          yaw: th + Math.PI,
+          pitch: 0.1,
+          dist: Math.max(6, Math.min(10, ringR - 7)),
+          fov: 40,
+        };
+      },
+    },
+    {
+      id: 'crane',
+      label: '🎈 동네 위로 올라가기',
+      dur: 6,
+      // 동네 가운데(연못/광장/큰 나무) 앞 땅에서 하늘로
+      pose: (u) => ({
+        x: nb.x,
+        y: lerp(G + 1.2, G, u),
+        z: nb.z,
+        yaw: outYaw + 0.5 + 0.8 * u,
+        pitch: lerp(0.1, 0.78, u),
+        dist: lerpDist(17, 72, u),
+        fov: 36,
+      }),
+    },
+    {
+      id: 'square',
+      label: '🎄 마을 광장',
+      dur: 6,
+      pose: (u) => ({
+        x: square.x,
+        y: G + 1.6,
+        z: square.z,
+        yaw: 0.2 + 1.2 * u,
+        pitch: lerp(0.26, 0.36, u),
+        dist: lerpDist(30, 22, u),
+        fov: 36,
+      }),
+    },
+    {
+      id: 'pier',
+      label: '🎣 바닷가 부두',
+      dur: 5,
+      // 땅 쪽 뒤에서 부두 끝을 향해 따라간다
+      pose: (u) => ({
+        x: dock.x,
+        y: G + 0.6,
+        z: lerp(dock.z0, dock.z1, lerp(0.15, 0.75, u)),
+        yaw: (dockDir > 0 ? Math.PI : 0) + lerp(0.7, 0.35, u),
+        pitch: lerp(0.3, 0.22, u),
+        dist: 20,
+        fov: 36,
+      }),
+    },
+    {
+      id: 'night',
+      label: '🌙 밤이 오는 동네',
+      dur: 7,
+      night: true,
+      pose: (u) => ({
+        x: nb.x,
+        y: G,
+        z: nb.z,
+        yaw: outYaw + 2.1 + 0.45 * u,
+        pitch: lerp(0.5, 0.42, u),
+        dist: lerpDist(60, 38, u),
+        fov: 36,
+      }),
+    },
+    {
+      id: 'island',
+      label: '🏝️ 섬 전체',
+      dur: 7,
+      // 230 보다 멀면 집이 동네 색 동그라미로 합쳐진다. 그 안에서 멈춘다
+      pose: (u) => ({
+        x: lerp(nb.x, cx, u),
+        y: G,
+        z: lerp(nb.z, cz, u),
+        yaw: outYaw + 2.55 + 0.5 * u,
+        pitch: lerp(0.5, 0.9, u),
+        dist: lerpDist(45, 215, u),
+        fov: 38,
+      }),
+    },
+  ];
 }
+
+const FADE = 0.45;
 
 export function startCinema(scene: IslandScene) {
   document.body.classList.add('cinema-mode');
+  scene.highlightHouse(null);
+  scene.highlightRegion(null);
+  const shots = buildShots();
+
   const root = document.createElement('div');
   root.id = 'cinema';
   root.innerHTML = `
-    <div class="cine-vignette"></div>
-    <div class="cine-sparks"></div>
-    <div class="cine-counter" hidden>
-      <div class="cine-count"><b>1</b><span>채</span></div>
-      <div class="cine-bar"><i></i></div>
-      <div class="cine-bar-label"><span class="cine-from">1</span><span class="cine-goal"></span></div>
-    </div>
-    <div class="cine-caption"></div>
-    <div class="cine-end" hidden>
-      <div class="cine-end-title">고양이섬</div>
-      <div class="cine-end-sub">팔로우하면 내 고양이와 집 한 채</div>
-      <div class="cine-end-handle"></div>
-    </div>
-    <div class="cine-flash"></div>
     <div class="cine-black"></div>
     <div class="cine-panel">
       <h2>🎬 촬영 모드</h2>
-      <ol>
-        <li>폰의 <b>화면 기록</b>을 먼저 켜 주세요</li>
-        <li>아래 <b>시작</b>을 누르면 화면이 깨끗해지고 약 25초짜리 장면이 나와요</li>
-        <li>앞뒤 검은 부분만 잘라서 올리면 끝!</li>
-      </ol>
-      <label class="cine-opt"><input type="checkbox" data-o="tags" checked /> 집 이름표(인스타 아이디) 보이기</label>
-      <label class="cine-opt"><input type="checkbox" data-o="night" /> 밤 장면으로 찍기</label>
-      <p class="cine-note">소리도 같이 녹화돼요. 아이폰은 무음 스위치를 꺼 주세요.</p>
+      <p class="cine-lead">진짜 게임 화면에 카메라만 움직여요. 폰의 <b>화면 기록</b>을 켜고 고르세요.</p>
+      <button class="cine-go cine-all">▶ 전체 이어서 찍기 <small>약 ${Math.round(shots.reduce((s, x) => s + x.dur, 0))}초</small></button>
+      <div class="cine-shots">
+        ${shots.map((s, i) => `<button class="cine-shot" data-i="${i}">${s.label}</button>`).join('')}
+      </div>
+      <label class="cine-opt"><input type="checkbox" data-o="tags" checked /> 집 이름표 보이기</label>
+      <label class="cine-opt"><input type="checkbox" data-o="max" checked /> 아주 선명하게 <small>(끊기면 끄세요)</small></label>
       <div class="cine-btns">
-        <button class="cine-go">시작</button>
         <a class="cine-exit" href="./">나가기</a>
       </div>
     </div>
@@ -120,298 +244,83 @@ export function startCinema(scene: IslandScene) {
   const $ = <T extends HTMLElement>(sel: string) => root.querySelector(sel) as T;
   const panel = $('.cine-panel');
   const black = $('.cine-black');
-  const flash = $('.cine-flash');
-  const caption = $('.cine-caption');
-  const counter = $('.cine-counter');
-  const countNum = $('.cine-count b');
-  const bar = $('.cine-bar i');
-  const goalLabel = $('.cine-goal');
-  const endCard = $('.cine-end');
-  const sparks = $('.cine-sparks');
-  $('.cine-end-handle').textContent = FOLLOW_HANDLE ? `@${FOLLOW_HANDLE}` : '';
 
-  // 대기 화면: 섬 위를 천천히 돈다 (패널 뒤로 보인다)
-  let running = false;
-  let raf = 0;
+  let playlist: Shot[] = [];
   let t0 = 0;
-  scene.setNameTags(false);
+  let playing = false;
+  let shotIndex = -1;
+  let idleAt = performance.now();
 
-  // ── 등장인물: 첫 집(주인공)과 나머지 집 ──
-  const lived = [...state.houses.values()].filter((h) => !h.isNpc && h.igHandle);
-  const withCat = lived.filter((h) => h.cat);
-  const mine = state.me && lived.find((h) => h.houseNo === state.me!.houseNo && h.cat);
-  const hero: House | undefined = mine ?? [...withCat].sort((a, b) => b.likes - a.likes || a.houseNo - b.houseNo)[0] ?? lived[0];
-  const order = lived.filter((h) => h !== hero).sort((a, b) => a.houseNo - b.houseNo);
-  if (hero) order.unshift(hero);
-  const total = order.length;
-  const goal = Math.max(ZONE_CAPACITY, Math.ceil(Math.max(1, total) / ZONE_CAPACITY) * ZONE_CAPACITY);
-  goalLabel.textContent = `${goal.toLocaleString()} · 다음 섬`;
-
-  const heroNo = hero?.houseNo ?? 1;
-  const hs = houseSlot(heroNo);
-  const nb = neighborhoodArea(hs.neighborhood);
-  const G = GROUND_Y;
-
-  // 섬 전체(집이 있는 곳)를 한 화면에 담는 거리
-  // 입주한 집이 있는 곳만 (없으면 1번 동네 둘레)
-  const spread = lived.length ? lived.map((h) => h.houseNo) : [1, 10];
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minZ = Infinity;
-  let maxZ = -Infinity;
-  for (const no of spread) {
-    const s = houseSlot(no);
-    minX = Math.min(minX, s.x);
-    maxX = Math.max(maxX, s.x);
-    minZ = Math.min(minZ, s.z);
-    maxZ = Math.max(maxZ, s.z);
-  }
-  const cx = (minX + maxX) / 2;
-  const cz = (minZ + maxZ) / 2;
-  const overviewDist = () => {
-    const aspect = innerWidth / Math.max(1, innerHeight);
-    const fov = 40;
-    const v = Math.tan(((fov / 2) * Math.PI) / 180);
-    const halfX = (maxX - minX) / 2 + 8;
-    const halfZ = (maxZ - minZ) / 2 + 8;
-    const d = Math.max(halfX / (v * aspect), (halfZ * Math.sin(0.95)) / v);
-    // 230 보다 멀면 집이 동네 색 동그라미로 합쳐져서 하나씩 생기는 모습이 안 보인다
-    return Math.min(212, Math.max(90, d));
+  const setBlack = (v: number) => {
+    black.style.opacity = String(clamp01(v));
   };
-
-  // 주인공 집 앞에서 보는 방향 (마당 문 쪽)
-  const front = hs.rot;
-  // 마지막에 동네를 보는 방향: 섬 가운데에서 동네 쪽으로 바라보게
-  const endYaw = Math.atan2(nb.x - cx, nb.z - cz) || front;
-
-  const heroPose = (t: number): Pose => ({
-    x: hs.x,
-    y: G + 0.6,
-    z: hs.z,
-    yaw: front - 0.7 + 0.5 * smoother(t / T.heroEnd),
-    pitch: lerp(0.42, 0.5, t / T.heroEnd),
-    dist: lerp(22, 18, smoother(t / T.heroEnd)),
-    fov: 38,
-  });
-  const overviewPose = (t: number): Pose => ({
-    x: cx,
-    y: G,
-    z: cz,
-    yaw: front - 0.2 + (t - T.riseEnd) * 0.022,
-    pitch: 0.95,
-    dist: overviewDist() * (1 - (t - T.riseEnd) * 0.008),
-    fov: 40,
-  });
-  const neighborhoodPose = (t: number): Pose => ({
-    x: nb.x,
-    y: G,
-    z: nb.z,
-    yaw: endYaw + (t - T.swoopEnd) * 0.05,
-    pitch: 0.6,
-    dist: Math.max(46, Math.max(nb.rx, nb.rz) * 2.3),
-    fov: 36,
-  });
-
-  const poseAt = (t: number): Pose => {
-    if (t < T.heroEnd) return heroPose(t);
-    if (t < T.riseEnd) return mix(heroPose(t), overviewPose(t), smoother((t - T.heroEnd) / (T.riseEnd - T.heroEnd)), 0.5);
-    if (t < T.overviewEnd) return overviewPose(t);
-    if (t < T.swoopEnd) return mix(overviewPose(t), neighborhoodPose(t), smoother((t - T.overviewEnd) / (T.swoopEnd - T.overviewEnd)), -1.1);
-    return neighborhoodPose(t);
-  };
-
-  // ── 집이 하나씩 생긴다 ──
-  let shown = -1;
-  let lastPush = 0;
-  const showHouses = (n: number) => {
-    if (n === shown) return;
-    const prev = Math.max(0, shown);
-    shown = n;
-    scene.setHouses(withEmptyLots(order.slice(0, n), state.unlockedZones));
-    const added = order.slice(prev, n);
-    // 반짝임은 한 번에 몇 개만 (너무 많으면 폰이 버거워한다)
-    added.slice(-4).forEach((h) => spark(h.houseNo));
-  };
-
-  const spark = (houseNo: number) => {
-    if (sparks.childElementCount > 14) return;
-    const s = houseSlot(houseNo);
-    const p = debugProject(scene, s.x, G + 2.2, s.z);
-    if (!p || p.x < -20 || p.y < -20 || p.x > innerWidth + 20 || p.y > innerHeight + 20) return;
-    const el = document.createElement('i');
-    el.className = 'cine-spark';
-    el.style.left = `${p.x}px`;
-    el.style.top = `${p.y}px`;
-    sparks.appendChild(el);
-    setTimeout(() => el.remove(), 900);
-  };
-
-  // ── 자막 ──
-  interface Cue {
-    at: number;
-    dur: number;
-    html: string;
-    sfx?: Parameters<typeof playCine>[0];
-  }
-  const em = (s: string) => `<em>${s}</em>`;
-  const cues = (o: Opts): Cue[] => [
-    { at: 0.8, dur: 2.0, html: `팔로우 ${em('한 번')}이면` },
-    { at: 2.95, dur: 2.2, html: `내 ${em('고양이')}랑 ${em('집')}이 생겨요` },
-    { at: T.growStart + 0.2, dur: 2.6, html: '하나, 둘…' },
-    { at: T.growStart + 3.0, dur: 2.6, html: `이웃이 ${em('계속')} 늘어나요` },
-    { at: T.growEnd + 0.15, dur: 2.4, html: `지금 ${em(`${total.toLocaleString()}마리`)}가 함께 살아요` },
-    ...(o.tags ? [{ at: T.overviewEnd + 1.4, dur: 2.6, html: `집마다 ${em('인스타 아이디')} 이름표` }] : []),
-    { at: T.swoopEnd + 0.1, dur: 2.2, html: `다음 집은 ${em('당신')} 차례` },
-  ];
-  let cueList: Cue[] = [];
-  let cueOn = -1;
-  const setCaption = (i: number) => {
-    if (i === cueOn) return;
-    cueOn = i;
-    caption.classList.remove('on');
-    if (i < 0) return;
-    // 다시 넣어야 애니메이션이 처음부터 돈다
-    void caption.offsetWidth;
-    caption.innerHTML = cueList[i].html;
-    caption.classList.add('on');
-  };
-
-  // ── 소리 신호 (한 번씩) ──
-  const fired = new Set<string>();
-  const once = (key: string, at: number, t: number, fn: () => void) => {
-    if (t >= at && !fired.has(key)) {
-      fired.add(key);
-      fn();
-    }
-  };
-
-  let lastPop = 0;
-  let countShown = 0;
 
   const frame = (now: number) => {
-    raf = requestAnimationFrame(frame);
-    if (!running) {
-      // 대기 화면: 동네 위를 천천히 돈다
-      scene.setCinemaCamera(toCamera(neighborhoodPose(T.swoopEnd + now / 1000), 1, now / 1000));
+    requestAnimationFrame(frame);
+    if (!playing) {
+      // 기다리는 동안: 섬 전체 컷을 아주 천천히 돌려 둔다 (패널 뒤로 보인다)
+      const idle = shots[shots.length - 1];
+      scene.setCinemaCamera(toCamera(idle.pose(0.35 + Math.sin((now - idleAt) / 9000) * 0.1), now / 1000));
       return;
     }
-    const t = (now - t0) / 1000;
-    scene.setCinemaCamera(toCamera(poseAt(Math.max(0, t)), 1, t));
-
-    // 화면 효과
-    black.style.opacity = String(t < 0 ? 1 : 1 - smoother(t / 0.9));
-    once('in', 0.05, t, () => playCine('whooshDown'));
-    once('rise', T.heroEnd - 0.3, t, () => playCine('whoosh'));
-    once('tagsOff', T.heroEnd + 0.6, t, () => scene.setNameTags(false));
-    once('counter', T.riseEnd - 0.4, t, () => {
-      counter.hidden = false;
-      counter.classList.add('on');
-    });
-    once('swoop', T.overviewEnd - 0.2, t, () => playCine('whooshDown'));
-    once('tagsOn', T.overviewEnd + 1.2, t, () => scene.setNameTags(opts.tags));
-    once('counterOff', T.overviewEnd + 0.4, t, () => counter.classList.remove('on'));
-    once('riser', T.endCard - 2.4, t, () => playCine('riser'));
-    once('end', T.endCard, t, () => {
-      endCard.hidden = false;
-      endCard.classList.add('on');
-      playCine('chime');
-    });
-    once('done', T.endCard + 5, t, () => {
-      ended = true;
-    });
-
-    // 집 생기기: 처음엔 느리게, 갈수록 빠르게
-    if (total > 0) {
-      const g = clamp01((t - T.growStart) / (T.growEnd - T.growStart));
-      const n = t < T.growStart ? 1 : Math.max(1, Math.round(1 + (total - 1) * g * g * g));
-      // 집 다시 그리기는 1초에 8번까지만
-      if (n !== shown && (now - lastPush > 125 || n === total)) {
-        lastPush = now;
-        showHouses(n);
-      }
-      if (t >= T.riseEnd - 0.4) {
-        // 숫자는 매 프레임 올라가고, "뽁" 소리는 1초에 14번까지만
-        const shownCount = Math.max(1, Math.round(1 + (total - 1) * g * g * g));
-        if (shownCount !== countShown) {
-          countShown = shownCount;
-          countNum.textContent = shownCount.toLocaleString();
-          bar.style.transform = `scaleX(${Math.min(1, shownCount / goal)})`;
-          if (t >= T.growStart && now - lastPop > 70) {
-            lastPop = now;
-            playCine('pop', shownCount / Math.max(1, total));
-            countNum.parentElement!.classList.remove('bump');
-            void countNum.offsetWidth;
-            countNum.parentElement!.classList.add('bump');
-          }
-        }
-      }
-      once('full', T.growEnd + 0.1, t, () => {
-        playCine('boom');
-        playCine('sparkle');
-        flash.classList.remove('on');
-        void flash.offsetWidth;
-        flash.classList.add('on');
-      });
+    // 검은 화면으로 시작 (녹화 앞부분을 잘라 내기 쉽게)
+    let t = (now - t0) / 1000;
+    if (t < 0) {
+      setBlack(1);
+      return;
     }
-
-    // 자막
-    let idx = -1;
-    cueList.forEach((c, i) => {
-      if (t >= c.at && t < c.at + c.dur) idx = i;
-    });
-    setCaption(idx);
+    let i = 0;
+    while (i < playlist.length && t >= playlist[i].dur) {
+      t -= playlist[i].dur;
+      i++;
+    }
+    if (i >= playlist.length) {
+      // 끝: 검게 두었다가 패널을 다시 보인다
+      setBlack(1);
+      if (t > 0.9) stop();
+      return;
+    }
+    const shot = playlist[i];
+    if (i !== shotIndex) {
+      shotIndex = i;
+      // 밤 컷이 시작되면 해가 진다 (1.4초 동안). 낮 컷은 낮으로 (컷 사이 검은 동안 바뀐다)
+      scene.setTimeOfDay(shot.night || (i > 0 && playlist[i - 1].night && shot.id === 'island') ? 'night' : 'day');
+    }
+    scene.setCinemaCamera(toCamera(shot.pose(glide(t / shot.dur)), now / 1000));
+    // 컷 사이: 앞뒤로 살짝 검게
+    const fadeIn = clamp01(t / FADE);
+    const fadeOut = clamp01((shot.dur - t) / FADE);
+    setBlack(1 - Math.min(fadeIn, fadeOut));
   };
 
-  let opts: Opts = { tags: true, night: false };
-  let ended = false;
-
-  const begin = () => {
-    opts = {
-      tags: ($('[data-o="tags"]') as HTMLInputElement).checked,
-      night: ($('[data-o="night"]') as HTMLInputElement).checked,
-    };
-    scene.setTimeOfDay(opts.night ? 'night' : 'day');
-    cueList = cues(opts);
-    fired.clear();
-    shown = -1;
-    countShown = 0;
-    ended = false;
-    panel.hidden = true;
-    endCard.hidden = true;
-    endCard.classList.remove('on');
-    counter.hidden = true;
-    counter.classList.remove('on');
-    countNum.textContent = '1';
-    bar.style.transform = `scaleX(${1 / goal})`;
-    black.style.opacity = '1';
-    scene.setNameTags(opts.tags);
-    showHouses(Math.min(1, total));
-    // 검은 화면 1.2초 뒤에 시작 (녹화 앞부분을 잘라 내기 쉽게)
-    t0 = performance.now() + 1200;
-    running = true;
-  };
-
-  $('.cine-go').addEventListener('click', () => {
+  const play = (list: Shot[]) => {
     void unlockSound();
-    begin();
-  });
-  // 끝난 뒤 화면을 누르면 다시 준비 화면
-  root.addEventListener('click', (e) => {
-    if (!running || !ended || (e.target as HTMLElement).closest('.cine-panel')) return;
-    running = false;
+    const max = ($('[data-o="max"]') as HTMLInputElement).checked;
+    scene.setCinemaQuality(max ? 'max' : 'high');
+    scene.setNameTags(($('[data-o="tags"]') as HTMLInputElement).checked);
+    scene.setTimeOfDay(list[0].night ? 'night' : 'day');
+    playlist = list;
+    shotIndex = -1;
+    panel.hidden = true;
+    setBlack(1);
+    // 검은 화면 1.5초 (해 지는 중이던 하늘이 돌아오고, 고화질 그림자가 준비될 시간)
+    t0 = performance.now() + 1500;
+    playing = true;
+  };
+
+  const stop = () => {
+    playing = false;
+    idleAt = performance.now();
     panel.hidden = false;
-    endCard.hidden = true;
-    caption.classList.remove('on');
-    black.style.opacity = '0';
-    pushHousesToScene(true);
+    setBlack(0);
+    scene.setTimeOfDay('day');
+  };
+
+  $('.cine-all').addEventListener('click', () => play(shots));
+  root.querySelectorAll<HTMLButtonElement>('.cine-shot').forEach((btn) => {
+    btn.addEventListener('click', () => play([shots[Number(btn.dataset.i)]]));
   });
 
-  raf = requestAnimationFrame(frame);
-  return () => {
-    cancelAnimationFrame(raf);
-    scene.setCinemaCamera(null);
-    scene.setNameTags(true);
-    root.remove();
-    document.body.classList.remove('cinema-mode');
-  };
+  scene.setNameTags(true);
+  requestAnimationFrame(frame);
 }
