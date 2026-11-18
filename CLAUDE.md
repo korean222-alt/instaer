@@ -10,6 +10,7 @@
   2. 작업 브랜치에 커밋하고 push
   3. 같은 커밋을 배포 브랜치에도 push: `git push origin HEAD:claude/zen-mendel-t7b5sp` (이미 앞서 가 있으면 fast-forward 라 그냥 된다. 거절되면 `git fetch origin claude/zen-mendel-t7b5sp` 후 `git rebase`/merge 해서 다시 push. force push 는 하지 않는다)
   4. 배포 확인: `curl https://api.cloudflare.com/client/v4/accounts/90803ea7738d89a9cb2ad9a14333183f/builds/workers/4aca8f0441074d948625db0ac32eefc5/builds?per_page=1` 의 `build_outcome` 이 `success` 가 될 때까지 본다(보통 1~2분, 인증은 프록시가 붙인다. 실패하면 `.../builds/<build_uuid>/logs` 로 원인을 보고 고쳐서 다시 push).
+- Cloudflare Builds 트리거의 브랜치(`branch_includes`)는 `claude/zen-mendel-t7b5sp` 로 고정한다. 바꾸지 않는다(2026-11-17 에 다른 브랜치로 바뀌어 배포가 멈춘 일이 있었다). push 했는데 빌드가 안 생기면 `.../builds/triggers` 로 확인하고, `POST .../builds/triggers/<trigger_uuid>/builds` `{"branch":"claude/zen-mendel-t7b5sp"}` 로 직접 빌드할 수 있다.
 - DB 스키마(`db/migrations`)를 바꿨으면 배포 전에 원격 D1(`cat-island-db`)에 먼저 적용한다. 이 세션 환경에서는 `wrangler deploy` 직접 실행이 401 로 막히니 쓰지 않는다.
 - 끝에 사용자에게는 "배포 완료/실패" 와 주소만 짧게 알린다.
 
