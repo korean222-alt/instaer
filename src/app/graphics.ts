@@ -1,4 +1,5 @@
 // 화면 품질 설정 (2026-11-17): 자동 / 보통 / 저사양. 폰에만 저장한다.
+// 기본은 '보통' (2026-11-18 사용자: 자동이 기본이면 화질이 너무 떨어진다). 자동은 직접 고른 사람만.
 import type { GraphicsMode, IslandScene } from '../scene';
 
 const KEY = 'ci_gfx';
@@ -10,9 +11,9 @@ export const GRAPHICS_LABEL: Record<GraphicsMode, string> = { auto: '자동', no
 export function getGraphicsMode(): GraphicsMode {
   try {
     const v = localStorage.getItem(KEY);
-    return v === 'low' || v === 'normal' ? v : 'auto';
+    return v === 'low' || v === 'auto' ? v : 'normal';
   } catch {
-    return 'auto';
+    return 'normal';
   }
 }
 

@@ -640,7 +640,9 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
   /** 저사양이면 단계 3(그림자 끔, 해상도 0.56) 아래로는 올리지 않는다 */
   const LOW_FLOOR = 3;
   const applyQuality = (level: number, force = false) => {
-    level = Math.max(lowOn() ? LOW_FLOOR : 0, Math.min(QUALITY_SCALE.length - 1, level));
+    // '보통'은 화질을 지킨다: 해상도는 한 단계(0.82)까지만 낮춘다. 더 크게 낮추는 것은 '자동'과 '저사양'만
+    const maxLevel = graphicsMode === 'normal' && cineQuality === 'off' ? 1 : QUALITY_SCALE.length - 1;
+    level = Math.max(lowOn() ? LOW_FLOOR : 0, Math.min(maxLevel, level));
     if (level === quality && !force) return;
     quality = level;
     const low = lowOn();

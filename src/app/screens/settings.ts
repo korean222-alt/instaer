@@ -51,7 +51,7 @@ export const settingsScreen: Screen = {
         <div class="set-row toggle"><span>화면 품질<small id="gfx-now"></small></span></div>
         <div class="seg" role="radiogroup" aria-label="화면 품질">
           ${(['auto', 'normal', 'low'] as GraphicsMode[])
-            .map((m) => `<button class="seg-btn${getGraphicsMode() === m ? ' on' : ''}" data-gfx="${m}" role="radio" aria-checked="${getGraphicsMode() === m}">${GRAPHICS_LABEL[m]}${m === 'auto' ? ' (추천)' : ''}</button>`)
+            .map((m) => `<button class="seg-btn${getGraphicsMode() === m ? ' on' : ''}" data-gfx="${m}" role="radio" aria-checked="${getGraphicsMode() === m}">${GRAPHICS_LABEL[m]}${m === 'normal' ? ' (기본)' : ''}</button>`)
             .join('')}
         </div>
         <p class="note">폰이 느리거나 뜨거워지면, 저전력 모드에서 끊기면 <b>저사양</b>을 골라 보세요. 그림자를 끄고 해상도를 낮추고 1초에 30번만 그려요. 계단 현상까지 줄이려면 앱을 한 번 다시 열어 주세요.</p>
