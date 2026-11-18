@@ -719,6 +719,23 @@ body.cinema-mode > *:not(#scene):not(#cinema) { display: none !important; }
 /* 새 주민 릴스 (2026-11-18): 이름 카드, 자막, 마지막 "댓글에 입주" 카드. 릴스 화면 위/아래 글자와 오른쪽 버튼을 피해 가운데 위쪽에 둔다 */
 .cine-go-sub { margin-top: 10px; height: 44px; background: #e9dccb; color: #4a3424; font-size: 15px; }
 .cine-go:disabled { opacity: .55; }
+.cine-go-sub2 { margin-top: 8px; height: 46px; font-size: 16px; background: #f4a48c; }
+.cine-ovl { inset: 0; }
+.cine-ovl > * { position: absolute; }
+/* 첫 1초 릴스: 큰 글자 카드 (첫 프레임부터) */
+.cine-hook { top: calc(env(safe-area-inset-top, 0px) + 11%); left: 24px; right: 24px; padding: 16px 14px 18px; border-radius: 26px; background: rgba(255, 250, 240, .97); color: #4a3424; font-size: 30px; font-weight: 900; line-height: 1.28; text-align: center; transform: rotate(-2deg); box-shadow: 0 10px 30px rgba(0, 0, 0, .22); }
+.cine-hook b { color: #f0775a; font-size: 36px; }
+.cine-flash { inset: 0; background: #fff; animation: cine-flash .5s ease-out both; }
+@keyframes cine-flash { from { opacity: .95; } to { opacity: 0; } }
+.cine-chips { top: 64%; left: 12px; right: 12px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.cine-chips span { padding: 10px 14px; border-radius: 999px; background: rgba(255, 250, 240, .97); color: #4a3424; font-size: 19px; font-weight: 900; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); animation: cine-pop .45s cubic-bezier(.2, 1.5, .4, 1) both; }
+.cine-chips span:nth-child(2) { animation-delay: .25s; }
+.cine-chips span:nth-child(3) { animation-delay: .5s; }
+.cine-founder { top: calc(env(safe-area-inset-top, 0px) + 11%); left: 50%; --tx: -50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; min-width: 230px; padding: 12px 24px 16px; border-radius: 26px; background: #fff7e0; color: #4a3424; text-align: center; box-shadow: 0 10px 30px rgba(120, 80, 0, .25); animation: cine-pop .5s cubic-bezier(.2, 1.5, .4, 1) both; }
+.cine-founder i { font-style: normal; font-size: 44px; line-height: 1; color: #ffc21a; text-shadow: 0 2px 0 #d9900a; }
+.cine-founder b { font-size: 30px; font-weight: 900; }
+.cine-founder span { font-size: 17px; font-weight: 800; color: #8a705c; }
+.cine-founder em { margin-top: 6px; padding: 5px 14px; border-radius: 999px; background: #f0775a; color: #fff; font-style: normal; font-size: 20px; font-weight: 900; }
 .cine-reel-note { margin: 6px 2px 0; font-size: 12.5px; color: #8a705c; }
 .cine-card { top: calc(env(safe-area-inset-top, 0px) + 13%); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 170px; padding: 12px 22px 14px; border-radius: 22px; background: rgba(255, 250, 240, .97); color: #4a3424; box-shadow: 0 8px 26px rgba(0, 0, 0, .22); text-align: center; animation: cine-pop .5s cubic-bezier(.2, 1.5, .4, 1) both; }
 .cine-card small { font-size: 13px; font-weight: 900; color: #f08a6c; letter-spacing: .02em; }
@@ -726,6 +743,8 @@ body.cinema-mode > *:not(#scene):not(#cinema) { display: none !important; }
 .cine-card em { font-style: normal; font-size: 13px; font-weight: 800; color: #8a705c; }
 .cine-cta { top: 24%; left: 22px; right: 22px; padding: 20px 16px 22px; border-radius: 26px; background: #f08a6c; color: #fff; font-size: 27px; font-weight: 900; line-height: 1.35; text-align: center; box-shadow: 0 10px 30px rgba(120, 50, 20, .3); text-shadow: 0 2px 0 rgba(120, 50, 20, .25); animation: cine-pop .55s cubic-bezier(.2, 1.5, .4, 1) both; }
 .cine-cta b { color: #fff3a8; font-size: 33px; }
+.cine-cta span { font-size: 27px; }
+.cine-cta i { display: block; margin-bottom: 4px; font-style: normal; font-size: 21px; white-space: nowrap; }
 .cine-cap { top: 60%; left: 18px; right: 18px; text-align: center; }
 .cine-cap span { display: inline-block; padding: 9px 15px 10px; border-radius: 14px; background: rgba(45, 30, 20, .62); color: #fff; font-size: 20px; font-weight: 800; line-height: 1.4; white-space: pre-line; animation: cine-fade .2s ease-out both; }
 @keyframes cine-pop { from { opacity: 0; transform: translateX(var(--tx, 0)) scale(.6); } to { opacity: 1; transform: translateX(var(--tx, 0)) scale(1); } }

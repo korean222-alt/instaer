@@ -6,11 +6,13 @@
 // - 장면(컷)을 하나씩 찍거나 전체를 이어서 찍을 수 있다. 컷 사이에는 짧게 검게 넘어간다.
 // 씬은 setCinemaCamera / setNameTags / setCinemaQuality / setTimeOfDay 로만 다룬다.
 import { dockArea, GROUND_Y, houseSlot, neighborhoodArea, townSquares, type CinemaCamera, type IslandScene } from '../scene';
-import { NEIGHBORHOOD_SIZE, REGIONS } from '../shared/config';
-import type { House } from '../shared/types';
-import { loadCineVoice, playCine, playCineVoice, unlockSound } from './audio/sound';
+import { FOUNDER_MAX, NEIGHBORHOOD_SIZE, REGIONS } from '../shared/config';
+import type { House, RegionId } from '../shared/types';
+import { loadCineVoice, playCine, playCineVoice, unlockSound, type CineSfx } from './audio/sound';
+import hookVoiceUrl from './reels/hook-voice.mp3?url';
 import newcomerVoiceUrl from './reels/newcomer-voice.mp3?url';
-import { state } from './state';
+import { pushHousesToScene, state } from './state';
+import { withEmptyLots } from './village';
 
 export const cinemaRequested = () => new URLSearchParams(location.search).has('cinema');
 
@@ -228,19 +230,28 @@ interface Cap {
   text: string;
 }
 
+/** 릴스 위에 뜨는 글자 카드: at~end 동안 보이고, 처음 뜰 때 효과음/동작을 한 번 한다 */
+interface Overlay {
+  at: number;
+  end: number;
+  cls: string;
+  html: string;
+  sfx?: CineSfx;
+  /** 처음 뜰 때 할 일 (빈 집을 내 집으로 바꾸기 같은 것) */
+  run?: () => void;
+}
+
 interface Reel {
   shots: Shot[];
-  heroNo: number;
-  name: string;
-  region: string;
+  /** 하이라이트(별 표시)할 집 */
+  heroNo: number | null;
+  voice: string;
   /** 영상 시작(검은 화면 뒤 첫 컷)에서 나레이션이 시작하는 때(초) */
   voiceAt: number;
   caps: Cap[];
-  /** 새 주민 이름 카드가 떠 있는 때 */
-  cardAt: number;
-  cardEnd: number;
-  /** 마지막 "댓글에 입주" 카드가 뜨는 때 (끝까지 남는다) */
-  ctaAt: number;
+  overlays: Overlay[];
+  /** 끝날 때 되돌릴 일 */
+  cleanup?: () => void;
 }
 
 const VOICE_AT = 0.6;
@@ -329,16 +340,23 @@ function buildNewcomerReel(heroNo: number, name: string, region: string): Reel {
       }),
     },
   ];
+  const area = regionLabel(region);
   return {
     shots,
     heroNo,
-    name,
-    region,
+    voice: newcomerVoiceUrl,
     voiceAt: VOICE_AT,
     caps: VOICE_LINES.map(([a, b, text]) => ({ at: VOICE_AT + a, end: VOICE_AT + b + 0.25, text })),
-    cardAt: VOICE_AT + 3.0,
-    cardEnd: 7.6 - 0.3,
-    ctaAt: VOICE_AT + 10.4,
+    overlays: [
+      {
+        at: VOICE_AT + 3.0,
+        end: 7.6 - 0.3,
+        cls: 'cine-card',
+        html: `<small>오늘의 새 주민</small><b>${esc(name)}</b>${area ? `<em>${esc(area)}</em>` : ''}`,
+        sfx: 'chime',
+      },
+      { at: VOICE_AT + 10.4, end: 99, cls: 'cine-cta', html: `댓글에 <b>'입주'</b> 남기면<br />집 한 채 드려요 🏡`, sfx: 'pop' },
+    ],
   };
 }
 
@@ -370,6 +388,123 @@ async function findNewcomer(): Promise<Newcomer | null> {
 const regionLabel = (id: string) => REGIONS.find((r) => r.id === id)?.label ?? '';
 const esc = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+// ── 첫 1초 릴스 "이 빈 집, 댓글 하나면 당신 거" (2026-11-18) ──
+// 조회수 200 → 처음 1초에 붙잡기: 검은 화면 없이 빈 집 + 큰 글자로 바로 시작, 빈 집이 내 집(고양이, 마당, 이름표)으로 바뀌는 장면,
+// 창립 주민(처음 100명, ★) 남은 자리, "옆집 살 친구한테 보내고 댓글에 입주" (인스타는 DM 보내기를 크게 친다).
+// 약 14초, 끝에서 다시 빈 집으로 돌아가 반복 재생이 자연스럽다. 나레이션 src/app/reels/hook-voice.mp3 (Yeonhee, eleven_v4).
+// 단어 시간은 ElevenLabs 받아쓰기(scribe)로 잰 값이다. 파일을 바꾸면 아래 시간도 고친다.
+const HOOK_VOICE_AT = 0.15;
+
+/** 바꿔 보일 빈 집: 가장 최근 입주한 집과 같은 동네, 사는 집 바로 옆 빈 집 (친구랑 옆집) */
+function pickEmptyNextDoor(heroNo: number | null): number {
+  const lived = new Set([...state.houses.values()].filter((h) => !h.isNpc && h.igHandle).map((h) => h.houseNo));
+  const base = heroNo ? Math.floor((heroNo - 1) / NEIGHBORHOOD_SIZE) * NEIGHBORHOOD_SIZE : 0;
+  const inNb = (n: number) => base + (((n - base - 1 + NEIGHBORHOOD_SIZE) % NEIGHBORHOOD_SIZE) + 1);
+  if (heroNo) {
+    for (const d of [1, -1, 2, -2, 3, -3, 4, -4, 5]) {
+      const n = inNb(heroNo + d);
+      if (!lived.has(n)) return n;
+    }
+  }
+  for (let n = 1; n <= 1000; n++) if (!lived.has(n)) return n;
+  return 1;
+}
+
+function buildHookReel(heroNo: number | null): Reel {
+  const G = GROUND_Y;
+  const target = pickEmptyNextDoor(heroNo);
+  const { hs, nb } = heroFrame(target);
+  const fx = Math.sin(hs.rot);
+  const fz = Math.cos(hs.rot);
+  const doorX = hs.x + fx * 0.6;
+  const doorZ = hs.z + fz * 0.6;
+  const lived = [...state.houses.values()].filter((h) => !h.isNpc && h.igHandle).length;
+  const left = Math.max(0, FOUNDER_MAX - lived);
+  const A = HOOK_VOICE_AT;
+  const shotA = 6.15;
+  // 빈 집 → 내 집: 이 영상 안에서만 보이는 가짜 집 (진짜 데이터는 안 바뀐다. 끝나면 되돌린다)
+  const mine: House = {
+    houseNo: target,
+    igHandle: '여기 네 이름',
+    roofColor: '#ffb04d',
+    region: '' as RegionId,
+    cat: { pattern: 'cheese', fur: '#f4a24a', eyeColor: '#5fbf6a' },
+    likes: 0,
+    isNpc: false,
+    verified: false,
+  };
+  const shots: Shot[] = [
+    {
+      id: 'hook-house',
+      label: '빈 집 → 내 집',
+      dur: shotA,
+      fade: 0.04,
+      // 첫 프레임부터 빈 집이 화면 가운데. 천천히 다가가며 살짝 돈다
+      // 바라보는 곳을 지붕 위쪽으로 올려 집이 화면 가운데 아래에 오게 한다 (위쪽 글자 카드, 바뀐 뒤 이름표가 보이게)
+      pose: (u) => ({
+        x: doorX,
+        y: G + 2.2,
+        z: doorZ,
+        yaw: hs.rot + lerp(0.38, -0.2, u),
+        pitch: lerp(0.34, 0.26, u),
+        dist: lerpDist(19, 14, u),
+        fov: 40,
+      }),
+    },
+    {
+      id: 'hook-up',
+      label: '동네 위로',
+      dur: 14.2 - shotA,
+      fade: 0.04,
+      // 내 집에서 동네 위로: 이웃들 이름표와 빈 집들이 보이게
+      pose: (u) => ({
+        x: lerp(doorX, nb.x, u),
+        y: G + 0.5,
+        z: lerp(doorZ, nb.z, u),
+        yaw: hs.rot + lerp(-0.2, 0.75, u),
+        pitch: lerp(0.38, 0.9, u),
+        dist: lerpDist(15, 70, u),
+        fov: 38,
+      }),
+    },
+  ];
+  return {
+    shots,
+    heroNo: target,
+    voice: hookVoiceUrl,
+    voiceAt: A,
+    caps: [],
+    overlays: [
+      { at: 0, end: A + 3.6, cls: 'cine-hook', html: `이 빈 집,<br /><b>댓글 하나면</b><br />당신 거예요` },
+      {
+        at: A + 3.7,
+        end: A + 4.2,
+        cls: 'cine-flash',
+        html: '',
+        sfx: 'sparkle',
+        run: () => state.scene.setHouses(withMine(mine)),
+      },
+      { at: A + 3.75, end: shotA - 0.05, cls: 'cine-chips', html: `<span>🐱 내 고양이</span><span>🏡 마당</span><span>🏷️ 내 이름표</span>`, sfx: 'chime' },
+      {
+        at: A + 6.05,
+        end: A + 9.05,
+        cls: 'cine-founder',
+        html: `<i>★</i><b>창립 주민</b><span>처음 ${FOUNDER_MAX}명만</span><em>남은 자리 ${left}</em>`,
+        sfx: 'pop',
+      },
+      { at: A + 9.15, end: 99, cls: 'cine-cta', html: `<i>옆집 살 친구한테 보내고 ✈️</i><span>댓글에</span> <b>'입주'</b>`, sfx: 'pop' },
+    ],
+    cleanup: () => pushHousesToScene(true),
+  };
+}
+
+/** 지금 섬의 집들 + 가짜 내 집 (빈 집 자리) */
+function withMine(mine: House): House[] {
+  const list = new Map([...state.houses.values()].map((h) => [h.houseNo, h]));
+  list.set(mine.houseNo, mine);
+  return withEmptyLots([...list.values()], state.unlockedZones);
+}
+
 const FADE = 0.45;
 
 export function startCinema(scene: IslandScene) {
@@ -377,22 +512,22 @@ export function startCinema(scene: IslandScene) {
   scene.highlightHouse(null);
   scene.highlightRegion(null);
   const shots = buildShots();
-  // 새 주민 릴스: 나레이션은 미리 받아 두고, 주인공은 서버에 묻는다
-  const voiceReady = loadCineVoice(newcomerVoiceUrl);
+  // 릴스 나레이션은 미리 받아 두고, 새 주민은 서버에 묻는다
+  const voices = new Map([hookVoiceUrl, newcomerVoiceUrl].map((u) => [u, loadCineVoice(u)]));
   let newcomer: Newcomer | null = null;
 
   const root = document.createElement('div');
   root.id = 'cinema';
   root.innerHTML = `
-    <div class="cine-card" hidden></div>
-    <div class="cine-cta" hidden>댓글에 <b>'입주'</b> 남기면<br />집 한 채 드려요 🏡</div>
+    <div class="cine-ovl"></div>
     <div class="cine-cap" hidden><span></span></div>
     <div class="cine-black"></div>
     <div class="cine-panel">
       <h2>🎬 촬영 모드</h2>
       <p class="cine-lead">진짜 게임 화면에 카메라만 움직여요. 폰의 <b>화면 기록</b>을 켜고 고르세요.</p>
-      <button class="cine-go cine-reel" disabled>📣 새 주민 릴스 <small class="cine-reel-who">찾는 중…</small></button>
-      <p class="cine-reel-note">나레이션 목소리가 함께 나와요 (약 19초). 소리를 켜고 찍으세요.</p>
+      <button class="cine-go cine-hookreel">🔥 첫 1초 릴스 <small>빈 집 → 내 집, 약 14초</small></button>
+      <button class="cine-go cine-reel cine-go-sub2" disabled>📣 새 주민 릴스 <small class="cine-reel-who">찾는 중…</small></button>
+      <p class="cine-reel-note">나레이션 목소리가 함께 나와요. 소리를 켜고 찍으세요.</p>
       <button class="cine-go cine-all cine-go-sub">▶ 섬 구경 이어서 찍기 <small>약 ${Math.round(shots.reduce((s, x) => s + x.dur, 0))}초</small></button>
       <div class="cine-shots">
         ${shots.map((s, i) => `<button class="cine-shot" data-i="${i}">${s.label}</button>`).join('')}
@@ -409,8 +544,9 @@ export function startCinema(scene: IslandScene) {
   const $ = <T extends HTMLElement>(sel: string) => root.querySelector(sel) as T;
   const panel = $('.cine-panel');
   const black = $('.cine-black');
-  const card = $('.cine-card');
-  const cta = $('.cine-cta');
+  const ovl = $('.cine-ovl');
+  let ovlEls: HTMLElement[] = [];
+  let fired: boolean[] = [];
   const cap = $('.cine-cap');
   const capText = cap.querySelector('span') as HTMLSpanElement;
   const reelBtn = $<HTMLButtonElement>('.cine-reel');
@@ -423,8 +559,6 @@ export function startCinema(scene: IslandScene) {
   let reel: Reel | null = null;
   let showCaps = true;
   let stopVoice: (() => void) | null = null;
-  let firedCard = false;
-  let firedCta = false;
   let lastCap = '';
 
   void findNewcomer().then((n) => {
@@ -441,18 +575,16 @@ export function startCinema(scene: IslandScene) {
   /** 릴스 글자들: t 는 첫 컷부터 지난 시간(초) */
   const drawReelText = (t: number) => {
     if (!reel) return;
-    const onCard = t >= reel.cardAt && t < reel.cardEnd;
-    if (card.hidden === onCard) card.hidden = !onCard;
-    if (onCard && !firedCard) {
-      firedCard = true;
-      playCine('chime');
-    }
-    const onCta = t >= reel.ctaAt;
-    if (cta.hidden === onCta) cta.hidden = !onCta;
-    if (onCta && !firedCta) {
-      firedCta = true;
-      playCine('pop', 0.6);
-    }
+    reel.overlays.forEach((o, i) => {
+      const on = t >= o.at && t < o.end;
+      const el = ovlEls[i];
+      if (el.hidden === on) el.hidden = !on;
+      if (on && !fired[i]) {
+        fired[i] = true;
+        if (o.sfx) playCine(o.sfx, o.sfx === 'pop' ? 0.6 : 0);
+        o.run?.();
+      }
+    });
     const line = showCaps ? (reel.caps.find((c) => t >= c.at && t < c.end)?.text ?? '') : '';
     if (line !== lastCap) {
       lastCap = line;
@@ -462,8 +594,9 @@ export function startCinema(scene: IslandScene) {
   };
 
   const hideReelText = () => {
-    card.hidden = true;
-    cta.hidden = true;
+    ovl.innerHTML = '';
+    ovlEls = [];
+    fired = [];
     cap.hidden = true;
     lastCap = '';
   };
@@ -517,14 +650,23 @@ export function startCinema(scene: IslandScene) {
     showCaps = ($('[data-o="caps"]') as HTMLInputElement).checked;
     playlist = list;
     reel = withReel;
-    firedCard = false;
-    firedCta = false;
     hideReelText();
+    if (withReel) {
+      ovlEls = withReel.overlays.map((o) => {
+        const el = document.createElement('div');
+        el.className = o.cls;
+        el.innerHTML = o.html;
+        el.hidden = true;
+        ovl.appendChild(el);
+        return el;
+      });
+      fired = withReel.overlays.map(() => false);
+    }
     scene.highlightHouse(withReel ? withReel.heroNo : null);
     shotIndex = -1;
     panel.hidden = true;
     setBlack(1);
-    // 검은 화면 1.5초 (해 지는 중이던 하늘이 돌아오고, 고화질 그림자가 준비될 시간)
+    // 검은 화면 1.5초 (해 지는 중이던 하늘이 돌아오고, 고화질 그림자가 준비될 시간. 편집할 때 잘라 낸다)
     t0 = performance.now() + 1500;
     if (withReel && voice) stopVoice = playCineVoice(voice, 1.5 + withReel.voiceAt);
     playing = true;
@@ -534,6 +676,7 @@ export function startCinema(scene: IslandScene) {
     playing = false;
     stopVoice?.();
     stopVoice = null;
+    reel?.cleanup?.();
     reel = null;
     hideReelText();
     scene.highlightHouse(null);
@@ -543,19 +686,23 @@ export function startCinema(scene: IslandScene) {
     scene.setTimeOfDay('day');
   };
 
+  const startReel = (btn: HTMLButtonElement, make: () => Reel) => {
+    // 소리는 누른 순간에 켜야 한다 (아이폰). 나레이션 파일은 대개 이미 받아 둔 상태다
+    void unlockSound();
+    btn.disabled = true;
+    const r = make();
+    void (voices.get(r.voice) ?? loadCineVoice(r.voice)).then((voice) => {
+      btn.disabled = false;
+      play(r.shots, r, voice);
+    });
+  };
   reelBtn.addEventListener('click', () => {
     if (!newcomer) return;
     const n = newcomer;
-    // 소리는 누른 순간에 켜야 한다 (아이폰). 나레이션 파일은 대개 이미 받아 둔 상태다
-    void unlockSound();
-    reelBtn.disabled = true;
-    void voiceReady.then((voice) => {
-      reelBtn.disabled = false;
-      const r = buildNewcomerReel(n.houseNo, n.handle, n.region);
-      card.innerHTML = `<small>오늘의 새 주민</small><b>${esc(r.name)}</b>${regionLabel(r.region) ? `<em>${esc(regionLabel(r.region))}</em>` : ''}`;
-      play(r.shots, r, voice);
-    });
+    startReel(reelBtn, () => buildNewcomerReel(n.houseNo, n.handle, n.region));
   });
+  const hookBtn = $<HTMLButtonElement>('.cine-hookreel');
+  hookBtn.addEventListener('click', () => startReel(hookBtn, () => buildHookReel(newcomer?.houseNo ?? null)));
   $('.cine-all').addEventListener('click', () => play(shots));
   root.querySelectorAll<HTMLButtonElement>('.cine-shot').forEach((btn) => {
     btn.addEventListener('click', () => play([shots[Number(btn.dataset.i)]]));
