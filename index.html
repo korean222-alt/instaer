@@ -6,8 +6,74 @@
     <meta name="theme-color" content="#c9eef2" />
     <meta name="description" content="인스타 친구들이 다 같이 사는 고양이섬. 집 한 채와 고양이 한 마리를 무료로 입양하세요." />
     <title>고양이섬</title>
+    <style>
+      /* 처음 접속할 때 로딩 화면 (2026-11-18): 화면 파일(약 1MB)을 받는 동안 바로 보인다. 앱이 준비되면 main.ts 가 지운다 */
+      html, body { margin: 0; background: #c9eef2; }
+      #boot { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        background: linear-gradient(180deg, #c9eef2 0%, #e3f6f1 62%, #f6ecd6 100%); color: #5b4636;
+        font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; transition: opacity 0.45s ease; text-align: center; padding: 24px; }
+      #boot.out { opacity: 0; pointer-events: none; }
+      #boot svg { width: 112px; height: 112px; animation: boot-bob 1.4s ease-in-out infinite; filter: drop-shadow(0 8px 10px rgba(70, 50, 30, 0.14)); }
+      #boot .tail { transform-origin: 78px 86px; animation: boot-tail 1.1s ease-in-out infinite alternate; }
+      #boot b { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+      #boot p { margin: 0; font-size: 14px; font-weight: 700; color: rgba(91, 70, 54, 0.72); min-height: 20px; }
+      #boot .bar { width: 168px; height: 8px; border-radius: 4px; background: rgba(91, 70, 54, 0.12); overflow: hidden; }
+      #boot .bar i { display: block; height: 100%; width: 6%; border-radius: 4px; background: #ff8f7a; transition: width 0.6s ease; }
+      #boot .slow { font-size: 12.5px; font-weight: 600; max-width: 260px; line-height: 1.5; }
+      #boot .slow a { color: #e0705c; font-weight: 800; }
+      @keyframes boot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+      @keyframes boot-tail { from { transform: rotate(-12deg); } to { transform: rotate(14deg); } }
+      @media (prefers-reduced-motion: reduce) { #boot svg, #boot .tail { animation: none; } }
+    </style>
   </head>
   <body>
+    <div id="boot" role="status" aria-live="polite">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <ellipse cx="60" cy="108" rx="34" ry="6" fill="rgba(70,50,30,0.12)" />
+        <path class="tail" d="M78 88c14 0 22-8 20-20" fill="none" stroke="#f4a650" stroke-width="9" stroke-linecap="round" />
+        <ellipse cx="58" cy="84" rx="28" ry="22" fill="#f4a650" />
+        <path d="M30 40 34 14 52 32ZM86 40 82 14 64 32Z" fill="#f4a650" />
+        <path d="M35 34 37 22 46 31ZM81 34 79 22 70 31Z" fill="#ffc9b8" />
+        <ellipse cx="58" cy="50" rx="32" ry="26" fill="#f4a650" />
+        <path d="M44 30c4 4 4 10 0 14M58 26v14M72 30c-4 4-4 10 0 14" stroke="#e0843a" stroke-width="4" stroke-linecap="round" fill="none" />
+        <ellipse cx="46" cy="52" rx="4.5" ry="5.5" fill="#5b4636" />
+        <ellipse cx="70" cy="52" rx="4.5" ry="5.5" fill="#5b4636" />
+        <circle cx="47.5" cy="50" r="1.5" fill="#fff" />
+        <circle cx="71.5" cy="50" r="1.5" fill="#fff" />
+        <path d="M55 60h6l-3 3.5z" fill="#ff8f7a" />
+        <path d="M52 66c2 2.5 4 2.5 6 0 2 2.5 4 2.5 6 0" stroke="#5b4636" stroke-width="2" fill="none" stroke-linecap="round" />
+        <ellipse cx="38" cy="62" rx="5" ry="3" fill="#ffb3a0" opacity="0.6" />
+        <ellipse cx="78" cy="62" rx="5" ry="3" fill="#ffb3a0" opacity="0.6" />
+      </svg>
+      <b>고양이섬</b>
+      <div class="bar"><i id="boot-bar"></i></div>
+      <p id="boot-msg">섬으로 가는 배를 타는 중...</p>
+    </div>
+    <script>
+      // 로딩 문구를 조금씩 바꾸고, 진행 막대를 천천히 채운다 (진짜 진행률은 알 수 없어서 90% 까지만)
+      (function () {
+        var msgs = ['섬으로 가는 배를 타는 중...', '고양이들을 깨우는 중...', '집집마다 불을 켜는 중...', '이웃들을 부르는 중...'];
+        var i = 0, w = 6, t0 = Date.now();
+        var timer = setInterval(function () {
+          var el = document.getElementById('boot');
+          if (!el || el.classList.contains('out')) return clearInterval(timer);
+          w = Math.min(90, w + (90 - w) * 0.08);
+          var bar = document.getElementById('boot-bar');
+          if (bar) bar.style.width = w + '%';
+          if ((Date.now() - t0) % 2400 < 400) {
+            i = (i + 1) % msgs.length;
+            var m = document.getElementById('boot-msg');
+            if (m) m.textContent = msgs[i];
+          }
+          if (Date.now() - t0 > 20000 && !el.querySelector('.slow')) {
+            var p = document.createElement('p');
+            p.className = 'slow';
+            p.innerHTML = '인터넷이 느려서 오래 걸리고 있어요. 계속 안 되면 <a href="">새로고침</a> 해 주세요.';
+            el.appendChild(p);
+          }
+        }, 400);
+      })();
+    </script>
     <canvas id="scene" aria-label="고양이섬 지도"></canvas>
     <div id="app"></div>
     <script type="module" src="/src/app/main.ts"></script>

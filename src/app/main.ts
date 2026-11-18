@@ -37,7 +37,7 @@ import { createPlacement } from './play/placement';
 import { createMinimap } from './play/minimap';
 import { createSocial, type Social } from './play/social';
 import { claimableCount, coins, refreshWallet } from './wallet';
-import { initSound, play, setMusicMood } from './audio/sound';
+import { initSound, play, playAmbientMeow, setMusicMood } from './audio/sound';
 import { cinemaRequested, startCinema } from './cinema';
 import type { Screen } from './screens/types';
 import {
@@ -422,9 +422,22 @@ ctl.arcade = () => {
 };
 ctl.fishing = () => fishHere(explore.fishSpot() ?? 'pond');
 // 확인용 (콘솔에서 __catIsland.realtime.debug())
-(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state, ctl, place: (x: number, z: number) => debugPlaceWalker(scene, x, z), moveTo: (x: number, z: number) => scene.setLocalPosition(x, z), local: () => scene.getLocalState(), npcs: () => townNpcs(state.unlockedZones), ponds: () => pondsOf(state.unlockedZones), mailbox: (no: number) => mailboxPos(no) };
+(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state, ctl, play, playAmbientMeow, place: (x: number, z: number) => debugPlaceWalker(scene, x, z), moveTo: (x: number, z: number) => scene.setLocalPosition(x, z), local: () => scene.getLocalState(), npcs: () => townNpcs(state.unlockedZones), ponds: () => pondsOf(state.unlockedZones), mailbox: (no: number) => mailboxPos(no) };
 
 $('btn-walk').addEventListener('click', () => explore.setWalking(true));
+
+// 걷는 동안 가끔 가까운 고양이(주민, 다른 유저)가 운다 (2026-11-18). 판이 열렸거나 미니게임 중에는 조용히
+let nextAmbient = Date.now() + 12_000;
+setInterval(() => {
+  if (!explore.walking() || explore.inside() !== null || explore.caveLevel() > 0) return;
+  if (document.visibilityState !== 'visible' || document.body.classList.contains('playing') || sheet.classList.contains('open')) return;
+  if (Date.now() < nextAmbient) return;
+  const me = scene.getLocalState();
+  let best = Infinity;
+  for (const c of [...townNpcs(state.unlockedZones), ...netPlayers]) best = Math.min(best, Math.hypot(c.x - me.x, c.z - me.z));
+  nextAmbient = Date.now() + 20_000 + Math.random() * 25_000;
+  if (best < 24) playAmbientMeow(best);
+}, 3000);
 $('btn-walk-end').addEventListener('click', () => explore.setWalking(false));
 
 // ── 데이터 불러오기 ──
@@ -463,7 +476,23 @@ async function boot() {
     else showTutorial(() => go('move-in'));
   }
 }
-boot();
+boot().finally(hideBootScreen);
+// 데이터가 늦어도 12초 뒤에는 로딩 화면을 걷는다 (섬은 이미 그려져 있다)
+setTimeout(hideBootScreen, 12_000);
+
+/** index.html 의 로딩 화면을 걷는다 (섬이 한 번 그려진 다음에) */
+function hideBootScreen() {
+  const el = document.getElementById('boot');
+  if (!el || el.classList.contains('out')) return;
+  const bar = document.getElementById('boot-bar');
+  if (bar) bar.style.width = '100%';
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      el.classList.add('out');
+      setTimeout(() => el.remove(), 500);
+    }),
+  );
+}
 
 function welcomed(): boolean {
   try {

@@ -419,6 +419,7 @@ function renderForm(root: HTMLElement, ctx: { setTitle(t: string): void }) {
       saveToken(res.token);
       state.hideHandle = res.hideHandle;
       play('fanfare');
+      setTimeout(() => play('meow'), 1100);
       setMe(res.house);
       void refreshWallet();
       refreshRegions();

@@ -183,6 +183,7 @@ export function createSocial(scene: IslandScene, realtime: Realtime, icon: (n: s
     sitting = on;
     scene.setSitting(on);
     if (on) {
+      play('purr');
       if (dancing) setDance(null);
       const me = scene.getLocalState();
       const b = benchNear(me.x, me.z, 2.4);

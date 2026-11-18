@@ -4,7 +4,7 @@
 // - 크기는 설정(배경 음악, 효과음 각각 0~1)에서 바꾸고 이 브라우저에 저장한다.
 // - 아이폰은 무음 스위치를 켜 두면 웹 소리가 나지 않는다 (브라우저 제한).
 
-export type Sfx = 'tap' | 'open' | 'close' | 'like' | 'place' | 'remove' | 'rotate' | 'save' | 'fanfare' | 'error' | 'meow' | 'ding' | 'jump';
+export type Sfx = 'tap' | 'open' | 'close' | 'like' | 'place' | 'remove' | 'rotate' | 'save' | 'fanfare' | 'error' | 'meow' | 'mew' | 'purr' | 'ding' | 'jump';
 
 export interface SoundSettings {
   bgm: number;
@@ -34,19 +34,56 @@ let nextBeat = 0;
 let step = 0;
 let night = false;
 
-// ── 음악 재료: 느긋한 F 장조 5음계, 4마디 진행 (F - Dm - Bb - C) ──
-const BPM = 76;
-const BEAT = 60 / BPM;
+// ── 음악 재료 (2026-11-18 다시 씀): 직접 지은 잔잔한 16마디 곡. 무작위 음 대신 정해진 가락을 오르골 소리로 ──
+// 화음(패드) + 낮은 음 + 8분음 아르페지오 + 가락. 세 바퀴에 한 번은 가락 없이 쉬어 가는 간주. 잔향을 걸고 아주 작은 파도 소리를 깐다.
 const midi = (n: number) => 440 * 2 ** ((n - 69) / 12);
-const CHORDS = [
-  [53, 57, 60], // F
-  [50, 53, 57], // Dm
-  [46, 50, 53], // Bb
-  [48, 52, 55], // C
+type ChordQ = 'M' | 'm' | '7';
+/** 16마디: F Am Bb F | Dm Gm C C | F Am Bb Gm | F C7 F F (근음은 F3=53 근처) */
+const PROG: Array<[number, ChordQ]> = [
+  [53, 'M'], [57, 'm'], [58, 'M'], [53, 'M'],
+  [50, 'm'], [55, 'm'], [48, 'M'], [48, 'M'],
+  [53, 'M'], [57, 'm'], [58, 'M'], [55, 'm'],
+  [53, 'M'], [48, '7'], [53, 'M'], [53, 'M'],
 ];
-const SCALE = [65, 67, 69, 72, 74, 77, 79, 81]; // F 5음계 (높은 음)
+const THIRD: Record<ChordQ, number> = { M: 4, m: 3, '7': 4 };
+const ARP: Record<ChordQ, number[]> = {
+  M: [0, 7, 12, 16, 19, 16, 12, 7],
+  m: [0, 7, 12, 15, 19, 15, 12, 7],
+  '7': [0, 7, 10, 16, 19, 16, 10, 7],
+};
+/** 가락: [음(0 이면 쉼), 박] 마디마다 4박 */
+const MELODY: Array<[number, number]> = [
+  [72, 1], [69, 1], [72, 1], [77, 1],
+  [76, 2], [72, 1], [69, 1],
+  [74, 1.5], [72, 0.5], [70, 1], [74, 1],
+  [72, 3], [0, 1],
+  [69, 1], [74, 1], [77, 1], [76, 1],
+  [74, 2], [70, 1], [67, 1],
+  [72, 1], [76, 1], [79, 1], [76, 1],
+  [74, 3], [0, 1],
+  [72, 1], [69, 1], [72, 1], [77, 1],
+  [76, 1.5], [77, 0.5], [76, 1], [72, 1],
+  [74, 1], [77, 1], [81, 1], [79, 1],
+  [77, 1.5], [74, 0.5], [70, 1], [74, 1],
+  [72, 2], [69, 1], [77, 1],
+  [76, 1], [74, 1], [72, 1], [70, 1],
+  [69, 2], [67, 1], [69, 1],
+  [65, 3], [0, 1],
+];
+/** 8분음 칸 → 그 칸에서 시작하는 가락 음 */
+const MELODY_AT = new Map<number, { n: number; beats: number }>();
+{
+  let at = 0;
+  for (const [n, b] of MELODY) {
+    if (n) MELODY_AT.set(at, { n, beats: b });
+    at += Math.round(b * 2);
+  }
+}
+const CYCLE = PROG.length * 8;
 let seed = 12345;
 const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+let musicBus: GainNode | null = null;
+let waves: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
 
 function ensure(): AudioContext | null {
   if (ctx) return ctx;
@@ -64,6 +101,20 @@ function ensure(): AudioContext | null {
   sfxGain = ctx.createGain();
   bgmGain.connect(master);
   sfxGain.connect(master);
+  // 음악 잔향: 짧게 만든 잔향 소리(2.4초)를 섞는다
+  musicBus = ctx.createGain();
+  const dry = ctx.createGain();
+  dry.gain.value = 0.8;
+  const wet = ctx.createGain();
+  wet.gain.value = 0.38;
+  const verb = ctx.createConvolver();
+  verb.buffer = impulse(ctx, 2.4);
+  const warm = ctx.createBiquadFilter();
+  warm.type = 'lowpass';
+  warm.frequency.value = 3200;
+  musicBus.connect(warm);
+  warm.connect(dry).connect(bgmGain);
+  warm.connect(verb).connect(wet).connect(bgmGain);
   applyVolume();
   return ctx;
 }
@@ -71,7 +122,7 @@ function ensure(): AudioContext | null {
 function applyVolume() {
   if (!ctx) return;
   // 사람 귀에 맞게 제곱으로
-  bgmGain.gain.setTargetAtTime(settings.bgm ** 2 * 0.5, ctx.currentTime, 0.1);
+  bgmGain.gain.setTargetAtTime(settings.bgm ** 2 * 0.95, ctx.currentTime, 0.1);
   sfxGain.gain.setTargetAtTime(settings.sfx ** 2 * 0.9, ctx.currentTime, 0.05);
 }
 
@@ -109,33 +160,101 @@ function noise(out: AudioNode, at: number, dur: number, vol: number, freq: numbe
   src.start(at);
 }
 
-// ── 배경 음악: 미리 1초씩 음을 예약한다 ──
+/** 잔향용 소리: 점점 작아지는 잡음 (양쪽 귀를 조금 다르게) */
+function impulse(c: AudioContext, sec: number): AudioBuffer {
+  const len = Math.ceil(c.sampleRate * sec);
+  const buf = c.createBuffer(2, len, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3.2;
+  }
+  return buf;
+}
+
+/** 오르골 소리 (가락) */
+function bell(out: AudioNode, freq: number, at: number, dur: number, vol: number) {
+  tone(out, freq, at, Math.max(1.2, dur), vol, 'sine', 0.004);
+  tone(out, freq * 2, at, 0.5, vol * 0.28, 'sine', 0.003);
+  tone(out, freq * 3.01, at, 0.18, vol * 0.08, 'sine', 0.002);
+}
+
+/** 부드러운 전자 피아노 (아르페지오) */
+function keys(out: AudioNode, freq: number, at: number, vol: number) {
+  tone(out, freq, at, 0.9, vol, 'triangle', 0.006);
+  tone(out, freq * 2, at, 0.25, vol * 0.2, 'sine', 0.003);
+}
+
+/** 멀리서 들리는 파도 (잡음을 아주 천천히 키웠다 줄인다) */
+function startWaves() {
+  if (!ctx || !musicBus || waves) return;
+  const c = ctx;
+  const len = c.sampleRate * 4;
+  const buf = c.createBuffer(1, len, c.sampleRate);
+  const d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < len; i++) {
+    // 갈색 잡음 (낮은 소리 위주) + 앞뒤를 맞춰 끊김 없이 돈다
+    last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+    d[i] = last * 3.2;
+  }
+  const fade = Math.floor(c.sampleRate * 0.2);
+  for (let i = 0; i < fade; i++) {
+    const k = i / fade;
+    d[len - fade + i] = d[len - fade + i] * (1 - k) + d[i] * k;
+  }
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  const lp = c.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 520;
+  const gain = c.createGain();
+  gain.gain.value = 0.05;
+  // 9초에 한 번 밀려왔다 빠지는 느낌
+  const lfo = c.createOscillator();
+  lfo.frequency.value = 0.11;
+  const depth = c.createGain();
+  depth.gain.value = 0.035;
+  lfo.connect(depth).connect(gain.gain);
+  src.connect(lp).connect(gain).connect(bgmGain);
+  src.start();
+  lfo.start();
+  waves = { src, gain };
+}
+
+// ── 배경 음악: 8분음 단위로 미리 1초씩 음을 예약한다 ──
 function scheduleMusic() {
-  if (!ctx || settings.bgm <= 0) return;
+  if (!ctx || !musicBus || settings.bgm <= 0) return;
+  const out = musicBus;
+  const bpm = night ? 62 : 70;
+  const eighth = 60 / bpm / 2;
   // 소리를 껐다 켜면 밀린 음을 한꺼번에 내지 않게 지금부터 다시 센다
   if (nextBeat < ctx.currentTime - 0.1) nextBeat = ctx.currentTime + 0.1;
   while (nextBeat < ctx.currentTime + 1.2) {
-    const bar = Math.floor(step / 4) % CHORDS.length;
-    const beat = step % 4;
-    const chord = CHORDS[bar];
+    const pos = step % CYCLE;
+    const cycle = Math.floor(step / CYCLE);
+    const bar = Math.floor(pos / 8);
+    const e = pos % 8;
+    const [root, q] = PROG[bar];
     const t = nextBeat;
-    // 마디 첫 박: 낮은 음과 부드러운 화음 (길게)
-    if (beat === 0) {
-      tone(bgmGain, midi(chord[0] - 12), t, BEAT * 3.8, 0.16, 'sine', 0.08);
-      for (const n of chord) tone(bgmGain, midi(n), t, BEAT * 3.6, 0.045, 'triangle', 0.4);
+    const human = () => 0.85 + rnd() * 0.3;
+    // 마디 첫 박: 길게 깔리는 화음과 낮은 음
+    if (e === 0) {
+      for (const iv of [0, THIRD[q], 7]) {
+        tone(out, midi(root + 12 + iv), t, eighth * 8.6, 0.022, 'sine', 0.5);
+        tone(out, midi(root + 12 + iv) * 1.003, t, eighth * 8.6, 0.012, 'triangle', 0.7);
+      }
+      tone(out, midi(root - 12), t, eighth * 3.6, 0.14, 'sine', 0.03);
     }
-    // 뜯는 소리 화음 (2, 4박)
-    if (beat === 1 || beat === 3) tone(bgmGain, midi(chord[1 + (beat >> 1)]), t, BEAT * 0.9, 0.05, 'triangle', 0.01);
-    // 가끔 멜로디 (밤에는 더 드물게)
-    if (rnd() < (night ? 0.35 : 0.55)) {
-      const n = SCALE[Math.floor(rnd() * SCALE.length)] - (night ? 12 : 0);
-      const off = rnd() < 0.3 ? BEAT / 2 : 0;
-      tone(bgmGain, midi(n), t + off, BEAT * 1.4, 0.07, 'sine', 0.01);
-      tone(bgmGain, midi(n + 12), t + off, BEAT * 0.6, 0.012, 'sine', 0.01); // 반짝임
-    }
-    // 아주 가끔 풍경 소리
-    if (rnd() < 0.04) tone(bgmGain, midi(SCALE[5] + 12), t, 2.5, 0.02, 'sine', 0.005);
-    nextBeat += BEAT * (night ? 1.15 : 1);
+    if (e === 4) tone(out, midi(root - 12 + 7), t, eighth * 3.4, 0.08, 'sine', 0.03);
+    // 아르페지오: 낮에는 8분음 전부, 밤에는 4분음만
+    if (!night || e % 2 === 0) keys(out, midi(root + ARP[q][e]), t, 0.032 * human());
+    // 가락: 세 바퀴에 한 번은 쉰다. 밤에는 한 옥타브 낮고 작게
+    const m = cycle % 3 === 2 ? undefined : MELODY_AT.get(pos);
+    if (m) bell(out, midi(m.n - (night ? 12 : 0)), t, m.beats * eighth * 2, (night ? 0.05 : 0.065) * human());
+    // 쉬는 바퀴에는 가끔 높은 풍경 소리
+    if (cycle % 3 === 2 && e % 4 === 2 && rnd() < 0.3) bell(out, midi(root + 24 + ARP[q][Math.floor(rnd() * 5)]), t, 2, 0.02);
+    nextBeat += eighth;
     step++;
   }
 }
@@ -143,13 +262,127 @@ function scheduleMusic() {
 function startMusic() {
   if (!ctx || musicTimer) return;
   nextBeat = ctx.currentTime + 0.1;
+  startWaves();
+  if (waves) waves.gain.gain.setTargetAtTime(0.05, ctx.currentTime, 0.5);
   musicTimer = window.setInterval(scheduleMusic, 250);
   scheduleMusic();
 }
 function stopMusic() {
   clearInterval(musicTimer);
   musicTimer = 0;
+  if (ctx && waves) waves.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.2);
 }
+
+// ── 고양이 소리 (2026-11-18): 목소리(톱니파)를 입 모양 필터(포먼트)에 통과시켜 "미-아-오" 로 바꾼다 ──
+interface MeowOpts {
+  /** 기본 목소리 높이 (Hz) */
+  pitch: number;
+  /** 길이 (초) */
+  dur: number;
+  vol: number;
+  /** 멀리서 들리면 더 먹먹하게 (0~1) */
+  far?: number;
+}
+function meowVoice(out: AudioNode, at: number, o: MeowOpts) {
+  const c = ctx!;
+  const end = at + o.dur;
+  const src = c.createOscillator();
+  src.type = 'sawtooth';
+  // 높이: 살짝 올라갔다가 길게 내려온다
+  src.frequency.setValueAtTime(o.pitch * 0.82, at);
+  src.frequency.linearRampToValueAtTime(o.pitch * 1.12, at + o.dur * 0.3);
+  src.frequency.linearRampToValueAtTime(o.pitch * 1.05, at + o.dur * 0.55);
+  src.frequency.exponentialRampToValueAtTime(o.pitch * 0.7, end);
+  // 떨림
+  const vib = c.createOscillator();
+  vib.frequency.value = 5.5 + Math.random() * 2;
+  const vibAmt = c.createGain();
+  vibAmt.gain.value = o.pitch * 0.015;
+  vib.connect(vibAmt).connect(src.frequency);
+  // 입 모양 (포먼트 둘): "ㅁ"(닫힘) → "이" → "아" → "오/우"
+  const mix = c.createGain();
+  const formants: Array<[number[], number, number]> = [
+    // [시간별 중심 주파수 (시작, 30%, 60%, 끝)], Q, 크기
+    [[350, 700, 1000, 520], 6, 1],
+    [[2300, 1900, 1500, 900], 9, 0.55],
+    [[3100, 2900, 2600, 2300], 12, 0.18],
+  ];
+  for (const [f, q, g] of formants) {
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = q;
+    bp.frequency.setValueAtTime(f[0], at);
+    bp.frequency.linearRampToValueAtTime(f[1], at + o.dur * 0.25);
+    bp.frequency.linearRampToValueAtTime(f[2], at + o.dur * 0.55);
+    bp.frequency.linearRampToValueAtTime(f[3], end);
+    const gg = c.createGain();
+    gg.gain.value = g;
+    src.connect(bp).connect(gg).connect(mix);
+  }
+  // 숨소리 조금
+  const nb = c.createBuffer(1, Math.ceil(c.sampleRate * o.dur), c.sampleRate);
+  const nd = nb.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  const ns = c.createBufferSource();
+  ns.buffer = nb;
+  const nf = c.createBiquadFilter();
+  nf.type = 'bandpass';
+  nf.frequency.value = 2600;
+  nf.Q.value = 1.5;
+  const ng = c.createGain();
+  ng.gain.value = 0.05;
+  ns.connect(nf).connect(ng).connect(mix);
+  // 크기: 입을 열며 커지고 끝에서 닫힌다
+  const env = c.createGain();
+  env.gain.setValueAtTime(0.0001, at);
+  env.gain.exponentialRampToValueAtTime(o.vol * 0.5, at + Math.min(0.06, o.dur * 0.15));
+  env.gain.linearRampToValueAtTime(o.vol, at + o.dur * 0.35);
+  env.gain.linearRampToValueAtTime(o.vol * 0.75, at + o.dur * 0.75);
+  env.gain.exponentialRampToValueAtTime(0.0001, end);
+  let tail: AudioNode = env;
+  if (o.far) {
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 4200 - o.far * 2800;
+    env.connect(lp);
+    tail = lp;
+  }
+  mix.connect(env);
+  tail.connect(out);
+  src.start(at);
+  vib.start(at);
+  ns.start(at);
+  src.stop(end + 0.05);
+  vib.stop(end + 0.05);
+  ns.stop(end + 0.05);
+}
+
+/** 가르릉: 낮은 떨림(초당 25번)을 숨 들이쉬고 내쉬듯 두 번 */
+function purr(out: AudioNode, at: number, vol: number) {
+  const c = ctx!;
+  const o = c.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.value = 24 + Math.random() * 4;
+  const lp = c.createBiquadFilter();
+  lp.type = 'lowpass';
+  // 폰 스피커는 아주 낮은 소리를 못 내서, 떨림의 배음(수백 Hz)이 들리게 조금 열어 둔다
+  lp.frequency.value = 650;
+  lp.Q.value = 1.5;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  const breaths = [0, 1.25, 2.5];
+  for (const b of breaths) {
+    const v = b === 1.25 ? vol * 0.7 : vol;
+    g.gain.exponentialRampToValueAtTime(v, at + b + 0.35);
+    g.gain.exponentialRampToValueAtTime(vol * 0.12, at + b + 1.15);
+  }
+  g.gain.exponentialRampToValueAtTime(0.0001, at + 3.7);
+  o.connect(lp).connect(g).connect(out);
+  o.start(at);
+  o.stop(at + 3.8);
+}
+
+const vary = (a: number, b: number) => a + Math.random() * (b - a);
 
 // ── 효과음 ──
 const SFX: Record<Sfx, (t: number) => void> = {
@@ -176,11 +409,9 @@ const SFX: Record<Sfx, (t: number) => void> = {
     tone(sfxGain, 220, t, 0.14, 0.12, 'triangle');
     tone(sfxGain, 185, t + 0.12, 0.2, 0.12, 'triangle');
   },
-  meow: (t) => {
-    // 고양이 "냥": 높이가 올라갔다 내려가는 소리 두 겹
-    tone(sfxGain, 520, t, 0.32, 0.1, 'sawtooth', 0.04, 380);
-    tone(sfxGain, 760, t, 0.28, 0.05, 'triangle', 0.03, 600);
-  },
+  meow: (t) => meowVoice(sfxGain, t, { pitch: vary(430, 560), dur: vary(0.45, 0.7), vol: 0.95 }),
+  mew: (t) => meowVoice(sfxGain, t, { pitch: vary(640, 780), dur: vary(0.22, 0.32), vol: 0.8 }),
+  purr: (t) => purr(sfxGain, t, 0.3),
   ding: (t) => tone(sfxGain, midi(88), t, 0.5, 0.08, 'sine', 0.003),
   jump: (t) => tone(sfxGain, 300, t, 0.18, 0.1, 'sine', 0.005, 620),
 };
@@ -188,6 +419,19 @@ const SFX: Record<Sfx, (t: number) => void> = {
 export function play(name: Sfx) {
   if (!ctx || settings.sfx <= 0 || ctx.state !== 'running') return;
   SFX[name](ctx.currentTime + 0.01);
+}
+
+/** 멀리 있는 고양이 울음 (걷는 동안 가끔). distance 는 미터: 멀수록 작고 먹먹하다 */
+export function playAmbientMeow(distance: number) {
+  if (!ctx || settings.sfx <= 0 || ctx.state !== 'running') return;
+  const far = Math.min(1, Math.max(0, (distance - 3) / 20));
+  const kitten = Math.random() < 0.3;
+  meowVoice(sfxGain, ctx.currentTime + 0.01, {
+    pitch: kitten ? vary(620, 760) : vary(400, 560),
+    dur: kitten ? vary(0.22, 0.34) : vary(0.4, 0.75),
+    vol: 0.6 * (1 - far * 0.8),
+    far,
+  });
 }
 
 export function getSoundSettings(): SoundSettings {
