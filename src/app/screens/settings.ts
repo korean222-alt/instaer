@@ -22,6 +22,7 @@ export const settingsScreen: Screen = {
           ? `<div class="set-group">
         <div class="set-row"><span>내 고양이</span><b>${esc(me.igHandle ?? '')} · ${me.houseNo}번지</b></div>
         <a class="btn" href="#/move-in">내 고양이 입양 카드 보기</a>
+        <a class="btn" href="#/guide">🐾 처음 할 일 다시 보기</a>
         <label class="field"><span>닉네임(= 고양이 이름) 바꾸기 <small>${RENAME_COST} ${CURRENCY} · 지금 ${coins().toLocaleString()} ${CURRENCY}</small></span>
           <input class="input" id="rename" maxlength="12" placeholder="새 닉네임" autocomplete="off" /></label>
         <p class="note" id="rename-hint">한글, 영문, 숫자, 밑줄(_) 12자까지. 다른 고양이와 같은 이름은 안 돼요.</p>

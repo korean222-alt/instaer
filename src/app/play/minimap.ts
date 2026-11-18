@@ -110,6 +110,8 @@ export interface Minimap {
   /** 큰 지도 열기 */
   open(): void;
   close(): void;
+  /** 그 자리로 길 안내 (처음 할 일 안내에서 부른다, 2026-11-18). 걷기가 꺼져 있으면 켠다 */
+  guideTo(x: number, z: number, title: string): void;
 }
 
 export function createMinimap(scene: IslandScene, players: () => RemotePlayer[], hooks: MapHooks): Minimap {
@@ -492,7 +494,10 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
       x = s.x + Math.sin(s.rot) * 4.2;
       z = s.z + Math.cos(s.rot) * 4.2;
     }
-    dest = { x, z, title: m.title };
+    startRoute(x, z, m.title);
+  }
+  function startRoute(x: number, z: number, title: string) {
+    dest = { x, z, title };
     route = null;
     play('ding');
     if (!hooks.walking()) hooks.startWalking();
@@ -679,5 +684,6 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
     },
     open: openBig,
     close: closeBig,
+    guideTo: startRoute,
   };
 }

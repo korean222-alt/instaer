@@ -18,15 +18,16 @@
 //   #/report/12   신고 (번지 없이도 된다)
 //   #/reclaim/아이디  내 인스타 아이디의 집 되찾기
 //   #/admin       관리자 (ADMIN_KEY)
+//   #/guide       처음 할 일 (입주한 사람에게, 2026-11-18)
 // 지도(씬)는 항상 뒤에 깔려 있고, 다른 화면은 아래에서 올라오는 판으로 그 위에 뜬다. 뒤로 가기로 닫힌다.
 
-export type ScreenId = 'map' | 'move-in' | 'rank' | 'decorate' | 'house' | 'search' | 'settings' | 'quests' | 'shop' | 'draw' | 'npc' | 'board' | 'friends' | 'mail' | 'wish' | 'report' | 'reclaim' | 'admin';
+export type ScreenId = 'map' | 'move-in' | 'rank' | 'decorate' | 'house' | 'search' | 'settings' | 'quests' | 'shop' | 'draw' | 'npc' | 'board' | 'friends' | 'mail' | 'wish' | 'report' | 'reclaim' | 'admin' | 'guide';
 export interface Route {
   id: ScreenId;
   param: string | null;
 }
 
-const IDS: readonly ScreenId[] = ['map', 'move-in', 'rank', 'decorate', 'house', 'search', 'settings', 'quests', 'shop', 'draw', 'npc', 'board', 'friends', 'mail', 'wish', 'report', 'reclaim', 'admin'];
+const IDS: readonly ScreenId[] = ['map', 'move-in', 'rank', 'decorate', 'house', 'search', 'settings', 'quests', 'shop', 'draw', 'npc', 'board', 'friends', 'mail', 'wish', 'report', 'reclaim', 'admin', 'guide'];
 const isScreen = (v: string): v is ScreenId => (IDS as readonly string[]).includes(v);
 
 export function currentRoute(): Route {

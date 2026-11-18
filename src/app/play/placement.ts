@@ -7,6 +7,7 @@ import type { Drawing, HouseDecor, PlacedItem } from '../../shared/types';
 import { loadMyDrawings, myDrawingList, pinDrawings, surfaceDrawing } from '../art';
 import { play } from '../audio/sound';
 import { ApiError, saveDecor } from '../net/api';
+import { markGuide } from './guide';
 import { go } from '../router';
 import { state } from '../state';
 import { drawingThumb } from '../ui/drawingThumb';
@@ -177,6 +178,7 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
       if (where === 'yard') state.yards.set(houseNo, d.yard);
       else explore.setInsideDecor(d);
       play('save');
+      markGuide('decorate');
       toast(where === 'room' ? '집 안을 저장했어요' : '마당을 저장했어요');
       finish();
     } catch (e) {

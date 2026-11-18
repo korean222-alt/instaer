@@ -21,6 +21,8 @@ import { questsScreen } from './screens/quests';
 import { shopScreen } from './screens/shop';
 import { boardScreen, friendsScreen, newsUnseen } from './screens/social';
 import { mailScreen } from './screens/mail';
+import { guideScreen } from './screens/guide';
+import { initGuide, markGuide } from './play/guide';
 import { createWalkQuests } from './play/walkQuests';
 import { showArt } from './ui/artView';
 import { debugPlaceWalker, houseSlot, mailboxPos } from '../scene';
@@ -100,6 +102,7 @@ const SCREENS: Record<Exclude<ScreenId, 'map'>, Screen> = {
   report: reportScreen,
   reclaim: reclaimScreen,
   admin: adminScreen,
+  guide: guideScreen,
 };
 // 2026-11-15: 입주 탭은 뺐다 (입주 전에는 위쪽 "입주하기" 버튼, 내 고양이 카드는 설정에서)
 const TABS: Array<{ id: ScreenId; label: string }> = [
@@ -174,7 +177,7 @@ const sheetBody = $('sheet-body');
 let cleanup: (() => void) | void;
 let ready = false;
 
-const TAB_OF: Partial<Record<ScreenId, ScreenId>> = { house: 'map', search: 'map', settings: 'map', npc: 'map', board: 'map', mail: 'map', wish: 'map', report: 'map', reclaim: 'map', admin: 'map', shop: 'decorate', draw: 'decorate', 'move-in': 'map' };
+const TAB_OF: Partial<Record<ScreenId, ScreenId>> = { house: 'map', search: 'map', settings: 'map', npc: 'map', board: 'map', mail: 'map', wish: 'map', report: 'map', reclaim: 'map', admin: 'map', guide: 'map', shop: 'decorate', draw: 'decorate', 'move-in': 'map' };
 function show(route: Route) {
   const tabId = TAB_OF[route.id] ?? route.id;
   for (const a of app.querySelectorAll<HTMLAnchorElement>('[data-tab]')) {
@@ -321,6 +324,7 @@ explore = createExplore(scene, realtime, {
     minimap.setVisible(on);
     social?.setWalking(on);
     if (on) {
+      markGuide('walk');
       go('map');
       if (state.me && testRoom) toast(`미니게임 시험 방 '${testRoom}' 에 들어왔어요`);
     } else {
@@ -378,6 +382,8 @@ const minimap = createMinimap(scene, () => netPlayers, {
   startWalking: () => explore.setWalking(true),
   openHouse: (no) => go('house', no),
 });
+ctl.minimap = minimap;
+initGuide();
 // "지도" 탭을 누르면 (판을 닫고) 섬 지도를 크게 연다. 걷지 않을 때도 된다
 app.querySelector('[data-tab="map"]')?.addEventListener('click', () => {
   if (ready) setTimeout(() => minimap.open(), 0);

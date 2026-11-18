@@ -26,7 +26,12 @@ function renderMine(root: HTMLElement, justMoved: { rank: number; total: number;
   const label = regionLabel(me.region);
 
   root.innerHTML = `
-    ${justMoved ? `<p class="lead"><b>입주 완료!</b> ${me.houseNo}번지가 내 집이 됐어요.</p>` : ''}
+    ${
+      justMoved
+        ? `<p class="lead"><b>입주 완료!</b> ${me.houseNo}번지가 내 집이 됐어요.</p>
+      <div class="guide-start"><b>🐾 이제 뭐 하지?</b><span>걷기, 우편함, 주민 부탁, 낚시까지 차근차근 알려 드릴게요.</span><button class="btn primary" data-act="guide">섬 생활 시작하기</button></div>`
+        : ''
+    }
     ${
       rank !== null
         ? `<div class="region-card"><b>${esc(label)} ${rank}위</b><span>${
@@ -52,6 +57,7 @@ function renderMine(root: HTMLElement, justMoved: { rank: number; total: number;
     state.scene.focusHouse(me.houseNo);
   });
   root.querySelector('[data-act="decorate"]')?.addEventListener('click', () => go('decorate'));
+  root.querySelector('[data-act="guide"]')?.addEventListener('click', () => go('guide'));
 }
 
 /** 고양이 그림: 씬이 찍어 준 3D 그림, 안 되면 2D 그림 */
