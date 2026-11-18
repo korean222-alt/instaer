@@ -288,6 +288,12 @@ body.walking .sheet.open ~ .near-btn { display: none; }
 .badge.ok { background: #c9efd6; }
 .badge.dim { color: var(--ink-soft); }
 .house-meta { font-size: 13px; color: var(--ink-soft); font-weight: 700; }
+.decor-score { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin-top: 6px; padding: 6px 10px; border-radius: 12px; background: var(--field); font-size: 13px; }
+.decor-score[hidden] { display: none; }
+.decor-score .ds-label { color: var(--ink-soft); font-weight: 700; }
+.decor-score b { font-size: 18px; color: var(--accent, #e8846a); }
+.decor-score .ds-rank { font-weight: 800; }
+.decor-score small { flex-basis: 100%; color: var(--ink-soft); font-size: 11px; line-height: 1.4; }
 
 /* 찾기 */
 .result-list { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 6px; }
@@ -809,3 +815,17 @@ body.decorating .guide-walk, body.playing .guide-walk, body:has(.sheet.open) .gu
 .guide-daily { margin: 0 0 14px; padding-left: 18px; font-size: 13px; line-height: 1.7; color: var(--ink-soft); }
 .guide-hide { width: 100%; }
 .guide-list li .btn:not(.primary) { background: var(--card-solid); box-shadow: 0 1px 4px var(--shadow); }
+
+/* 꾸미기 화면 돌리기 버튼 (2026-11-18) */
+.view-pad {
+  position: absolute; right: calc(8px + env(safe-area-inset-right, 0px)); top: 50%; transform: translateY(-50%); z-index: 6;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.view-pad[hidden] { display: none; }
+.view-pad button {
+  width: 48px; height: 48px; border-radius: 50%; border: 0; background: var(--card); color: var(--ink);
+  font-family: inherit; font-weight: 800; font-size: 20px; line-height: 1; box-shadow: 0 3px 10px var(--shadow); -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.view-pad button[data-view="top"], .view-pad button[data-view="reset"] { font-size: 13px; }
+.view-pad button.on { background: var(--accent); color: var(--accent-ink); }
+.view-pad button:active { transform: scale(0.92); }

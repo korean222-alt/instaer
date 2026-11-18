@@ -22,6 +22,7 @@ export interface RigOptions {
 
 const PITCH_NEAR = THREE.MathUtils.degToRad(37);
 const PITCH_FAR = THREE.MathUtils.degToRad(47);
+const PITCH_TOP = THREE.MathUtils.degToRad(76);
 
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
@@ -43,6 +44,16 @@ export class CameraRig {
   private downAt = 0;
   private moved = 0;
   private multi = false;
+  /**
+   * 2026-11-18 꾸미기: 화면 돌리기(yaw)와 위에서 보기(tilt 0~1). 꾸미기가 끝나면 0 으로 돌아간다.
+   * twist 가 켜져 있으면 두 손가락을 비틀어서도 돌린다.
+   */
+  yaw = 0;
+  yawGoal = 0;
+  tilt = 0;
+  tiltGoal = 0;
+  twist = false;
+  private twistAngle: number | null = null;
   private tapCb: ((clientX: number, clientY: number) => void) | null = null;
   private readonly ray = new THREE.Raycaster();
   private readonly plane: THREE.Plane;
@@ -147,6 +158,9 @@ export class CameraRig {
     this.tx += (this.gx - this.tx) * k;
     this.tz += (this.gz - this.tz) * k;
     this.dist *= Math.pow(this.gdist / this.dist, k);
+    const kv = 1 - Math.exp(-dt * 8);
+    this.yaw += (this.yawGoal - this.yaw) * kv;
+    this.tilt += (this.tiltGoal - this.tilt) * kv;
     this.place();
   }
 
@@ -158,10 +172,11 @@ export class CameraRig {
   private place() {
     const t = this.zoomT;
     const ease = t * t * (3 - 2 * t);
-    const pitch = THREE.MathUtils.lerp(PITCH_NEAR, PITCH_FAR, ease);
+    const pitch = THREE.MathUtils.lerp(THREE.MathUtils.lerp(PITCH_NEAR, PITCH_FAR, ease), PITCH_TOP, this.tilt);
     const lift = THREE.MathUtils.lerp(0.55, 0, ease);
     const y = this.opts.groundY + lift;
-    this.camera.position.set(this.tx, y + Math.sin(pitch) * this.dist, this.tz + Math.cos(pitch) * this.dist);
+    const flat = Math.cos(pitch) * this.dist;
+    this.camera.position.set(this.tx + Math.sin(this.yaw) * flat, y + Math.sin(pitch) * this.dist, this.tz + Math.cos(this.yaw) * flat);
     this.camera.lookAt(this.tx, y, this.tz);
     // 카메라 바로 앞을 가리는 나무나 집은 잘라낸다
     const near = Math.max(1, this.dist * 0.26);
@@ -215,6 +230,18 @@ export class CameraRig {
       this.vx = this.vx * 0.6 + mx * inst * 0.4;
       this.vz = this.vz * 0.6 + mz * inst * 0.4;
     }
+    if (this.pointers.size >= 2 && this.twist) {
+      const pts = [...this.pointers.values()];
+      const ang = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+      if (this.twistAngle !== null) {
+        let d = ang - this.twistAngle;
+        if (d > Math.PI) d -= Math.PI * 2;
+        if (d < -Math.PI) d += Math.PI * 2;
+        this.yawGoal -= d;
+        this.yaw -= d;
+      }
+      this.twistAngle = ang;
+    }
     if (this.pointers.size >= 2) {
       const spread = this.pointerSpread();
       if (this.pinchDist > 0 && spread > 0) {
@@ -233,6 +260,7 @@ export class CameraRig {
     this.pointers.delete(e.pointerId);
     if (this.dom.hasPointerCapture?.(e.pointerId)) this.dom.releasePointerCapture(e.pointerId);
     if (this.pointers.size === 1) this.pinchDist = 0;
+    if (this.pointers.size < 2) this.twistAngle = null;
     if (this.pointers.size === 0) {
       const quick = performance.now() - this.downAt < 400;
       if (!cancelled && !this.multi && quick && this.moved < 10) {

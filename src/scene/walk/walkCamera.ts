@@ -14,6 +14,7 @@ export const WALK_DIST = 14;
 /** 내려다보는 각도 후보. 앞의 것부터 보고, 가려지지 않는 첫 각도를 쓴다 */
 const PITCHES = [35, 48, 62, 78].map((d) => THREE.MathUtils.degToRad(d));
 const MIN_DIST = 2.4;
+const PITCH_CAP = THREE.MathUtils.degToRad(80);
 const STEP = 0.7;
 const FOCUS_UP = 0.85;
 
@@ -36,9 +37,12 @@ export class WalkCamera {
   dist = WALK_DIST;
   /** 시야 넓히기 0~1 (setWalkZoom). 카메라가 멀고 조금 높아진다 */
   zoom = 0;
+  /** 2026-11-18 꾸미기: 위에서 보기(0~1)와 두 손가락 확대 배율 (꾸미기가 끝나면 0, 1 로 돌아간다) */
+  tilt = 0;
+  zoomMul = 1;
   private pitch = PITCHES[0];
   private get far() {
-    return WALK_DIST * (1 + 0.38 * this.zoom);
+    return WALK_DIST * (1 + 0.38 * this.zoom) * this.zoomMul;
   }
   hasHouse: (houseNo: number) => boolean = () => true;
   private readonly vx = { v: 0 };
@@ -64,11 +68,11 @@ export class WalkCamera {
     this.focus.y = smoothDamp(this.focus.y, groundY + FOCUS_UP + air * 0.3, this.vy, 0.3, dt);
 
     // 가려지지 않는 가장 낮은 각도를 고른다. 전부 가려지면 가장 멀리까지 트인 각도
-    const lift = this.zoom * THREE.MathUtils.degToRad(7);
-    let goal = PITCHES[0] + lift;
+    const lift = this.zoom * THREE.MathUtils.degToRad(7) + this.tilt * THREE.MathUtils.degToRad(38);
+    let goal = Math.min(PITCH_CAP, PITCHES[0] + lift);
     let bestFree = 0;
     for (const p0 of PITCHES) {
-      const p = p0 + lift;
+      const p = Math.min(PITCH_CAP, p0 + lift);
       const f = this.freeDistance(p);
       if (f > bestFree + 0.01) {
         bestFree = f;

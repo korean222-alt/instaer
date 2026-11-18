@@ -200,6 +200,8 @@ export const reportMine = (ores: Array<{ id: string; level: number }>) =>
 export const sellItems = (items: Record<string, number>) =>
   call<WithWallet<{ sold: number; coins: number; capped: boolean }>>('POST', '/api/shop/sell', { items });
 export const renameMe = (handle: string) => call<WithWallet<{ house: House }>>('POST', '/api/me/rename', { handle });
+/** 이사 (2026-11-18): 열린 구역 안의 빈 집으로 */
+export const moveMyHouse = (houseNo: number) => call<WithWallet<{ house: House; from: number; cost: number }>>('POST', '/api/me/move', { houseNo });
 export const reportArcade = (score: number, ms: number) =>
   call<WithWallet<{ score: number; coins: number; prize: string | null; morePaid: number }>>('POST', '/api/game/arcade', { score, ms });
 export const reportVisit = (home: number) =>
@@ -227,6 +229,6 @@ export const fetchFriends = () => call<{ friends: Person[]; incoming: Person[]; 
 export const friendAction = (houseNo: number, action: 'request' | 'accept' | 'decline' | 'remove') =>
   call<{ ok: true; state: FriendState }>('POST', `/api/friends/${houseNo}`, { action });
 export const fetchHouseSocial = (houseNo: number) =>
-  call<{ guestbook: Post[]; friendState: FriendState; friendCount: number }>('GET', `/api/house/${houseNo}/social`);
+  call<{ guestbook: Post[]; friendState: FriendState; friendCount: number; decorScore?: number }>('GET', `/api/house/${houseNo}/social`);
 export const postGuestbook = (houseNo: number, text: string) => call<{ ok: true }>('POST', `/api/house/${houseNo}/guestbook`, { text });
 export const deleteGuestbook = (id: number) => call<{ ok: true }>('DELETE', `/api/guestbook/${id}`);

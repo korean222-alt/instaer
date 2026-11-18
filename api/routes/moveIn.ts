@@ -10,7 +10,7 @@ import { bumpRegion, HOUSE_COLS, isRegion, markZoneDirty, regionStats, toHouse, 
 import { allow } from '../lib/rateLimit';
 import { createSession, isSecure, sessionCookie, sessionHouse } from '../lib/session';
 import { loadWallet, saveWallet, walletView } from '../lib/wallet';
-import { CURRENCY, RENAME_COST } from '../../src/shared/economy';
+import { CURRENCY, MOVE_HOUSE_COST, RENAME_COST } from '../../src/shared/economy';
 import { REGIONS_KEY } from './regions';
 import { VILLAGE_KEY } from './village';
 import { incomingCount } from './social';
@@ -215,4 +215,53 @@ export async function rename(request: Request, env: Env): Promise<Response> {
   invalidate(VILLAGE_KEY);
   const house = toHouse({ ...mine.house, ig_handle: handle }, true);
   return json({ ok: true, house, wallet: walletView(w, mine.house.house_no) });
+}
+
+/**
+ * POST /api/me/move {houseNo} : 이사 (2026-11-18 사용자 요청: "트리 있는 집에서 살고 싶은데").
+ * 열린 구역 안의 빈 집으로만 옮긴다. 마당/집 안/지붕 그림/넓히기는 집(id)에 붙어 있어서 그대로 따라온다.
+ * 창립 주민 표시는 번지로 정해지므로 창립 주민(1~FOUNDER_MAX)은 그 안에서만, 다른 집은 그 밖에서만 옮긴다.
+ * 첫 이사는 무료, 그다음부터 MOVE_HOUSE_COST 츄르.
+ */
+export async function moveHouse(request: Request, env: Env): Promise<Response> {
+  if (!(await allow(env.RL_WRITE, `write:${clientIp(request)}`, 40))) return error(429, 'rate_limited', '잠시 후에 다시 해 주세요');
+  const mine = await sessionHouse(env.DB, request);
+  if (!mine) return error(401, 'no_session', '입주한 사람만 이사할 수 있어요');
+  const body = await readJson<{ houseNo?: unknown }>(request);
+  const to = body?.houseNo;
+  if (!(typeof to === 'number' && Number.isInteger(to) && to >= 1)) return error(400, 'bad_house', '이사할 집을 골라 주세요');
+  const from = mine.house.house_no;
+  if (to === from) return error(400, 'same', '지금 사는 집이에요');
+  const founder = from <= FOUNDER_MAX;
+  if (founder !== to <= FOUNDER_MAX) {
+    return error(400, 'founder_line', founder ? `창립 주민은 1~${FOUNDER_MAX}번지 안에서 이사할 수 있어요` : `1~${FOUNDER_MAX}번지는 창립 주민 집이라 이사할 수 없어요`);
+  }
+  const [c, w] = await Promise.all([
+    env.DB.prepare('SELECT COALESCE(SUM(n), 0) AS total, (SELECT MAX(house_no) FROM houses) AS max_no FROM region_counts WHERE week = 0').first<{ total: number; max_no: number | null }>(),
+    loadWallet(env.DB, mine.house.id),
+  ]);
+  if (to > maxPickableHouseNo(c?.total ?? 0, c?.max_no ?? 0)) return error(400, 'house_locked', '아직 열리지 않은 집이에요');
+  const free = !w.data.owned.includes('moved_once');
+  const cost = free ? 0 : MOVE_HOUSE_COST;
+  if (w.coins < cost) return error(400, 'no_coins', `${CURRENCY}가 ${cost - w.coins}개 모자라요`);
+  w.coins -= cost;
+  if (free) w.data.owned.push('moved_once');
+  try {
+    await env.DB.batch([
+      env.DB.prepare('UPDATE houses SET house_no = ? WHERE id = ?').bind(to, mine.house.id),
+      // 기기 하나에 집 하나 검사가 새 번지로도 이어지게
+      env.DB.prepare('UPDATE signup_log SET house_no = ? WHERE house_no = ?').bind(to, from),
+      env.DB.prepare("INSERT INTO signup_log (house_no, ig_id, kind, ip_hash) SELECT ?, ig_id, 'move', ? FROM houses WHERE id = ?").bind(to, `from:${from}`, mine.house.id),
+      saveWallet(env.DB, mine.house.id, w),
+      markZoneDirty(env.DB, from, 2),
+      markZoneDirty(env.DB, to, 2),
+    ]);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/UNIQUE|house_no/i.test(msg)) return error(409, 'house_taken', `${to}번지는 이미 다른 고양이가 살고 있어요`);
+    throw e;
+  }
+  invalidate(VILLAGE_KEY);
+  const house = toHouse({ ...mine.house, house_no: to }, true);
+  return json({ ok: true, house, from, cost, wallet: walletView(w, to) });
 }

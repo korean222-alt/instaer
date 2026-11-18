@@ -16,7 +16,7 @@ import { FishingRig, type FishingState } from './fishing/FishingRig';
 import { Placer } from './free/Placer';
 import { blockersOf, pickItem, type Space } from './free/space';
 import type { Drawing, InteriorItem, PlacedItem } from './free/types';
-import { Interior, ROOM_CAM_YAW, ROOM_EXIT, ROOM_START, ROOM_WALK } from './interior/Interior';
+import { Interior, ROOM_EXIT, ROOM_START, ROOM_WALK } from './interior/Interior';
 import { ROOM_HALF, ROOM_HALF_BIG } from './free/space';
 import { Npcs, type SceneNpc } from './npc/Npcs';
 import { CarLayer, CAR_SEAT_Y, CAR_SPEED, seatOffset } from './car/CatCar';
@@ -231,6 +231,17 @@ export interface IslandScene {
   onArtTap(cb: (drawingId: string, type: string) => void): void;
   /** 걷기 카메라가 보는 방향 (라디안. 0 이면 카메라가 고양이 남쪽(+z)에서 북쪽을 본다). 지도 돌리기용 */
   getViewYaw(): number;
+  /**
+   * 2026-11-18 꾸미기 시점. 지금 쓰는 카메라(집 안, 걷기, 섬)를 돌린다 (라디안, 기본 45도).
+   * 집 안은 벽이 두 면이라 정면~오른쪽 옆까지만 돈다. 꾸미는 중에는 빈 곳을 끌어서도 돌리고(위아래로 끌면 기울이기),
+   * 두 손가락으로 확대한다. 꾸미기가 끝나면 기울기/확대는 원래대로 돌아간다.
+   */
+  rotateView(step?: number): void;
+  /** 위에서 내려다보기 켜기/끄기 */
+  setTopView(on: boolean): void;
+  getTopView(): boolean;
+  /** 돌리기/기울기/확대를 처음으로 */
+  resetView(): void;
   /**
    * 고양이 자동차 (2026-11-16). 내 고양이가 자동차에 타거나(on) 내린다. 타면 빠르게 달린다.
    * passenger: 남의 차 뒷자리에 탔을 때 (조이스틱이 듣지 않고, 앱이 setLocalPosition 으로 운전자 자리를 따라가게 한다)
@@ -678,6 +689,31 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
   const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => resize()) : null;
   observer?.observe(canvas);
 
+  // ── 2026-11-18 꾸미기 시점: 화면 돌리기 버튼, 위에서 보기, 꾸미기가 끝나면 원래 시점으로 ──
+  let yawKick = 0;
+  let walkTiltGoal = 0;
+  let wasPlacing = false;
+  const takeYawKick = (dt: number) => {
+    const d = yawKick * (1 - Math.exp(-dt * 9));
+    yawKick -= d;
+    if (Math.abs(yawKick) < 1e-4) yawKick = 0;
+    return d;
+  };
+  const updatePlaceView = (dt: number) => {
+    controls.lookOnly = placer.active;
+    rig.twist = placer.active && !walking && inside === null;
+    if (wasPlacing && !placer.active) {
+      // 꾸미기 끝: 섬 카메라는 정면으로, 걷기 카메라는 기울기/확대만 원래대로 (도는 방향은 그대로 둔다)
+      rig.yawGoal = 0;
+      rig.tiltGoal = 0;
+      walkTiltGoal = 0;
+      walkCam.zoomMul = 1;
+      interior?.resetView();
+    }
+    wasPlacing = placer.active;
+    walkCam.tilt += (walkTiltGoal - walkCam.tilt) * (1 - Math.exp(-dt * 8));
+  };
+
   const onTap = (cx: number, cy: number) => {
     // 다른 유저 고양이를 누르면 프로필 (꾸미는 중에는 빼고)
     if (remoteTapCb && walking && !placer.active && remotes.shown > 0) {
@@ -956,6 +992,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     }
 
     atmosphere.update(dt);
+    updatePlaceView(dt);
     if (inCave && cave) {
       // 동굴 안: 섬은 그리지 않는다
       controls.update();
@@ -989,10 +1026,16 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     if (inside !== null && interior) {
       // 집 안: 섬은 그리지 않고 방 하나만 그린다
       controls.update();
-      controls.takeLook();
+      // 2026-11-18: 빈 곳을 끌면 방을 돌려 본다 (꾸미는 중에는 위아래로 끌면 위에서 보기, 두 손가락은 확대)
+      interior.rotateView(controls.takeLook());
+      if (placer.active) {
+        const ty = controls.takeLookY();
+        if (ty) interior.setTilt(interior.tiltTarget + ty * 2.2);
+        interior.zoomView(controls.takeZoom());
+      }
       // 꾸미는 동안에는 조이스틱이 숨고 고양이도 가만히 있는다 (2026-11-16)
       const jumpIn = controls.takeJump();
-      walker.update(dt, placer.active ? 0 : controls.moveX, placer.active ? 0 : controls.moveY, ROOM_CAM_YAW, !placer.active && jumpIn);
+      walker.update(dt, placer.active ? 0 : controls.moveX, placer.active ? 0 : controls.moveY, interior.yaw, !placer.active && jumpIn);
       interior.updateCamera(camera, dt, walker.x, walker.z);
       interior.update();
       const dmi = drawPlayer(dt, 0.01);
@@ -1044,7 +1087,13 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
         }
       } else if (placer.active) walker.update(dt, 0, 0, walkCam.yaw, false);
       else walker.update(dt, controls.moveX, controls.moveY, walkCam.yaw, jump);
-      walkCam.update(dt, camera, walker.x, walker.groundY, walker.air, walker.z, controls.takeLook());
+      if (placer.active) {
+        const ty = controls.takeLookY();
+        if (ty) walkTiltGoal = THREE.MathUtils.clamp(walkTiltGoal + ty * 2.2, 0, 1);
+        const zr = controls.takeZoom();
+        if (zr !== 1) walkCam.zoomMul = THREE.MathUtils.clamp(walkCam.zoomMul / zr, 0.5, 1.5);
+      }
+      walkCam.update(dt, camera, walker.x, walker.groundY, walker.air, walker.z, controls.takeLook() + takeYawKick(dt));
       // 물고기를 낚으면 눈웃음을 짓는다
       const dmw = drawPlayer(dt, 0.035, fishing === 'caught' ? 1 : 0, fishing === null);
       player.setMood(0, riding ? 1 : dmw ? 0 : walker.sit, fishing !== null || riding ? 0 : walker.yawn);
@@ -1435,7 +1484,29 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     onArtTap(cb) {
       artTapCb = cb;
     },
-    getViewYaw: () => (walking ? walkCam.yaw : 0),
+    getViewYaw: () => (walking ? walkCam.yaw : rig.yaw),
+    rotateView(step = Math.PI / 4) {
+      if (inside !== null && interior) interior.rotateView(step, true);
+      else if (walking) yawKick += step;
+      else rig.yawGoal += step;
+    },
+    setTopView(on) {
+      const t = on ? 1 : 0;
+      if (inside !== null && interior) interior.setTilt(t, true);
+      else if (walking) walkTiltGoal = t;
+      else rig.tiltGoal = t;
+    },
+    getTopView: () => (inside !== null && interior ? interior.tiltTarget > 0.5 : walking ? walkTiltGoal > 0.5 : rig.tiltGoal > 0.5),
+    resetView() {
+      if (inside !== null && interior) interior.resetView();
+      else if (walking) {
+        walkTiltGoal = 0;
+        walkCam.zoomMul = 1;
+      } else {
+        rig.yawGoal = Math.round(rig.yawGoal / (Math.PI * 2)) * Math.PI * 2;
+        rig.tiltGoal = 0;
+      }
+    },
     setRiding(mode, driverId) {
       riding = mode === 'drive' || mode === 'passenger' ? mode : null;
       rideDriver = riding === 'passenger' ? (driverId ?? null) : null;

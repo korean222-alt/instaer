@@ -9,6 +9,7 @@ import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
 import { applyWallet, coins } from '../wallet';
 import type { Screen } from './types';
+import { moveCostLabel, startMovePicking } from '../play/moveHouse';
 
 export const settingsScreen: Screen = {
   id: 'settings',
@@ -23,6 +24,7 @@ export const settingsScreen: Screen = {
         <div class="set-row"><span>내 고양이</span><b>${esc(me.igHandle ?? '')} · ${me.houseNo}번지</b></div>
         <a class="btn" href="#/move-in">내 고양이 입양 카드 보기</a>
         <a class="btn" href="#/guide">🐾 처음 할 일 다시 보기</a>
+        <button class="btn" id="move-house">🏡 이사하기 <small>${moveCostLabel()} · 섬에서 빈 집 고르기</small></button>
         <label class="field"><span>닉네임(= 고양이 이름) 바꾸기 <small>${RENAME_COST} ${CURRENCY} · 지금 ${coins().toLocaleString()} ${CURRENCY}</small></span>
           <input class="input" id="rename" maxlength="12" placeholder="새 닉네임" autocomplete="off" /></label>
         <p class="note" id="rename-hint">한글, 영문, 숫자, 밑줄(_) 12자까지. 다른 고양이와 같은 이름은 안 돼요.</p>
@@ -65,6 +67,12 @@ export const settingsScreen: Screen = {
       if (gfxNow) gfxNow.textContent = g.mode === 'auto' ? `지금: ${g.low ? '저사양' : '보통'}${g.weakDevice ? ' (가벼운 폰으로 보여요)' : ''}` : '';
     };
     showGfx();
+    root.querySelector('#move-house')?.addEventListener('click', () => {
+      play('tap');
+      startMovePicking();
+      // 광장 큰 트리 근처 집도 보이게 지도부터 내 동네를 보여 준다
+      if (state.me) state.scene.focusHouse(state.me.houseNo);
+    });
     root.querySelectorAll<HTMLButtonElement>('[data-gfx]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const mode = btn.dataset.gfx as GraphicsMode;

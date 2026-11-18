@@ -1,4 +1,5 @@
 // 소통 화면 (2026-11-15): 마을 게시판, 친구, 이장님 소식, 집 프로필(친구 신청, 방명록).
+import { DECOR_SCORE_RULES, decorRank } from '../../shared/decorScore';
 import { BOARD_MAX, BOARD_PER_DAY, GUESTBOOK_MAX } from '../../shared/social';
 import { NEWS, latestNewsId } from '../../shared/news';
 import { play } from '../audio/sound';
@@ -200,6 +201,16 @@ export const friendsScreen: Screen = {
   },
 };
 
+// ── 꾸미기 점수 (2026-11-18): 프로필(집 팝업)에서만 보인다 ──
+function showDecorScore(box: HTMLElement, score: number | undefined, mine: boolean) {
+  const el = box.parentElement?.querySelector<HTMLElement>('[data-score]');
+  if (!el || typeof score !== 'number') return;
+  const R = DECOR_SCORE_RULES;
+  el.hidden = false;
+  el.innerHTML = `<span class="ds-label">꾸미기 점수</span><b>${score.toLocaleString()}</b><span class="ds-rank">${esc(decorRank(score))}</span>
+    ${mine ? `<small>가구 하나 ${R.item}점, 새 종류 +${R.variety}, 그림 붙인 가구 +${R.art}, 지붕 그림 ${R.roof}, 벽지/바닥 바꾸기 ${R.surface}</small>` : ''}`;
+}
+
 // ── 집 프로필: 친구 버튼 + 방명록 (houseScreen 안에 붙는다) ──
 const FRIEND_BTN: Record<FriendState, string> = {
   self: '',
@@ -245,6 +256,7 @@ export function mountHouseSocial(box: HTMLElement, houseNo: number) {
       .then((r) => {
         st = r.friendState;
         count = r.friendCount;
+        showDecorScore(box, r.decorScore, st === 'self');
         book = r.guestbook;
         draw();
       })

@@ -1,5 +1,7 @@
 // 소통 (2026-11-15): 친구, 방명록, 마을 게시판.
 // D1 무료 한도(하루 읽기 500만 행, 쓰기 10만 행)에 맞게 목록은 짧게(LIMIT), 게시판은 60초 캐시한다.
+import { decorScore } from '../../src/shared/decorScore';
+import { toDecor, type DecorRow } from '../lib/decor';
 import { cleanChat } from '../../src/shared/handle';
 import { BOARD_MAX, BOARD_PER_DAY, BOARD_SHOW, FRIEND_MAX, GUESTBOOK_MAX, GUESTBOOK_SHOW } from '../../src/shared/social';
 import { houseCat } from '../../src/shared/catLook';
@@ -150,13 +152,16 @@ export async function houseSocial(houseNo: number, request: Request, env: Env): 
   const house = await houseByNo(env.DB, houseNo);
   if (!house) return error(404, 'no_house', '빈 집이에요');
   const mine = await sessionHouse(env.DB, request);
-  const [gb, cnt] = await env.DB.batch([
+  const [gb, cnt, dec] = await env.DB.batch([
     env.DB.prepare(
       `SELECT g.id, g.text, g.created_at, h.house_no, h.ig_handle, h.hide_handle, h.cat FROM guestbook g
        JOIN houses h ON h.id = g.author_id WHERE g.house_id = ? ORDER BY g.created_at DESC, g.id DESC LIMIT ?`,
     ).bind(house.id, GUESTBOOK_SHOW),
     env.DB.prepare('SELECT COUNT(*) AS n FROM friends WHERE (a = ? OR b = ?) AND status = 1').bind(house.id, house.id),
+    env.DB.prepare('SELECT yard, room, wallpaper, floor, roof_art FROM house_decor WHERE house_id = ?').bind(house.id),
   ]);
+  // 꾸미기 점수 (2026-11-18): 프로필에서만 보인다
+  const score = decorScore(toDecor(houseNo, (dec.results[0] as DecorRow | undefined) ?? null));
   let state: FriendState = 'none';
   if (mine) state = mine.house.id === house.id ? 'self' : stateOf(mine.house.id, await pairOf(env.DB, mine.house.id, house.id));
   const guestbook = (gb.results as Array<PersonRow & { id: number; text: string; created_at: number }>).map((r) => ({
@@ -165,7 +170,7 @@ export async function houseSocial(houseNo: number, request: Request, env: Env): 
     at: r.created_at,
     ...person(r),
   }));
-  return json({ guestbook, friendState: state, friendCount: (cnt.results[0] as { n: number } | undefined)?.n ?? 0 });
+  return json({ guestbook, friendState: state, friendCount: (cnt.results[0] as { n: number } | undefined)?.n ?? 0, decorScore: score });
 }
 
 /** POST /api/house/:no/guestbook {text} : 친구(또는 집 주인)만 */

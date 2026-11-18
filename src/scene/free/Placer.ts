@@ -317,6 +317,7 @@ export class Placer {
 
   private onDown(e: PointerEvent) {
     if (!this.active || !this.space || e.target !== this.canvas) return;
+    this.downs.add(e.pointerId);
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.dragId >= 0) {
@@ -338,7 +339,9 @@ export class Placer {
     if (!hit) {
       this.pointers.delete(e.pointerId);
       // 2026-11-15: 아이템을 든 채 빈 곳을 짧게 누르면 그 자리로 옮긴다 (터치는 카메라에도 그대로 간다)
-      if (h && this.groundId < 0) {
+      // 2026-11-18: 손가락이 둘이면 (확대/돌리기) 누르기로 치지 않는다
+      if (this.downs.size > 1) this.groundId = -1;
+      else if (h && this.groundId < 0) {
         this.groundId = e.pointerId;
         this.groundX = e.clientX;
         this.groundY = e.clientY;
@@ -415,6 +418,7 @@ export class Placer {
   }
 
   private onUp(e: PointerEvent) {
+    this.downs.delete(e.pointerId);
     if (e.pointerId === this.groundId) {
       this.groundId = -1;
       if (e.type === 'pointerup' && performance.now() - this.groundAt < TAP_MS && this.active && this.space && this.held && this.dragId < 0) this.moveHeldTo(this.ray(e));
@@ -483,6 +487,9 @@ export class Placer {
     this.refresh();
     this.onChange?.();
   }
+
+  /** 지금 화면에 닿아 있는 손가락 */
+  private readonly downs = new Set<number>();
 
   private cancelDrag() {
     this.groundId = -1;

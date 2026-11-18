@@ -50,6 +50,31 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
   dock.className = 'decor-dock';
   dock.hidden = true;
   document.getElementById('app')!.appendChild(dock);
+  // 2026-11-18 사용자: "집 화면도 돌리면서 배치하고 싶다". 오른쪽에 화면 돌리기/위에서 보기 버튼
+  const viewPad = document.createElement('div');
+  viewPad.className = 'view-pad';
+  viewPad.hidden = true;
+  viewPad.innerHTML = `
+    <button type="button" data-view="left" aria-label="화면 왼쪽으로 돌리기">↺</button>
+    <button type="button" data-view="right" aria-label="화면 오른쪽으로 돌리기">↻</button>
+    <button type="button" data-view="top" aria-label="위에서 보기">위</button>
+    <button type="button" data-view="reset" aria-label="처음 시점">처음</button>`;
+  document.getElementById('app')!.appendChild(viewPad);
+  const drawPad = () => {
+    viewPad.hidden = !where;
+    viewPad.querySelector('[data-view="top"]')!.classList.toggle('on', !!where && scene.getTopView());
+  };
+  viewPad.addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
+    if (!b || !where) return;
+    const v = b.dataset.view;
+    if (v === 'left') scene.rotateView(-Math.PI / 4);
+    else if (v === 'right') scene.rotateView(Math.PI / 4);
+    else if (v === 'top') scene.setTopView(!scene.getTopView());
+    else if (v === 'reset') scene.resetView();
+    play('tap');
+    drawPad();
+  });
   /** 아이템 그림 (씬이 찍은 것) */
   const pic = (type: string) => {
     try {
@@ -104,6 +129,7 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
   }
 
   function draw() {
+    drawPad();
     if (!where) {
       bar.hidden = true;
       dock.hidden = true;
@@ -143,12 +169,15 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
              <div class="decor-sel">
               ${def.mount !== 'wall' ? '<button class="pill btn-pill" data-act="rotate">돌리기</button>' : ''}
               ${def.art ? `<button class="pill btn-pill${panel === 'art' ? ' on' : ''}" data-act="art">그림</button>` : ''}
+              <button class="pill btn-pill" data-act="again">하나 더</button>
               <button class="pill btn-pill" data-act="remove">치우기</button>
               <button class="pill btn-pill primary" data-act="done">다 놓았어요</button></div>`
           : pendingType
             ? `<div class="decor-sel picked"><b>${esc(decorItem(pendingType)?.label ?? '')} 고름</b><span class="hint-line">${decorItem(pendingType)?.mount === 'wall' ? '걸 벽을 눌러요' : '놓을 곳을 눌러요'}</span></div>
                <div class="decor-sel"><button class="pill btn-pill" data-act="unpick">안 놓을래요</button></div>`
-            : `<div class="decor-sel hint-line">아래에서 아이템을 고르고, 놓을 곳을 눌러요. 놓인 아이템을 누르면 다시 골라요</div>`
+            : `<div class="decor-sel hint-line">아래에서 아이템을 고르고 놓을 곳을 눌러요. 놓인 아이템은 누르면 다시 골라요. ${
+                where === 'room' || explore.walking() ? '빈 곳을 끌면 화면이 돌고, 두 손가락으로 확대해요' : '두 손가락을 비틀면 화면이 돌아요'
+              }</div>`
       }
       ${
         where === 'room'
@@ -250,6 +279,18 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
         panel = null;
         play('place');
         scene.startPlacing(null, where === 'yard' ? houseNo : undefined);
+      } else if (act === 'again' && it) {
+        // 같은 가구를 하나 더 (2026-11-18)
+        if (items.length >= max()) {
+          play('error');
+          toast(`${max()}개까지 놓을 수 있어요`);
+          return;
+        }
+        picked = null;
+        panel = null;
+        pendingType = it.type;
+        play('tap');
+        scene.startPlacing(it.type, where === 'yard' ? houseNo : undefined);
       } else if (act === 'remove' && it) {
         items = items.filter((i) => i.id !== it.id);
         picked = null;

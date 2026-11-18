@@ -44,6 +44,15 @@ export class WalkControls {
   private lookDelta = 0;
   private lookMoved = 0;
   private lookDownAt = 0;
+  /** 2026-11-18 꾸미기: 조이스틱 없이 빈 곳 끌기는 모두 화면 돌리기(좌우)/기울이기(위아래), 두 손가락은 확대 */
+  lookOnly = false;
+  private lookY = 0;
+  private lookDeltaY = 0;
+  private pinchId = -1;
+  private pinchX = 0;
+  private pinchY = 0;
+  private pinchFrom = 0;
+  private zoomRatio = 1;
   private jump = false;
   private readonly held = new Set<string>();
   private tapCb: ((clientX: number, clientY: number) => void) | null = null;
@@ -134,6 +143,20 @@ export class WalkControls {
     this.tapCb = cb;
   }
 
+  /** 지난번 이후 쌓인 위아래 끌기 (화면 높이에 대한 비율, 아래로 끌면 +) */
+  takeLookY(): number {
+    const d = this.lookDeltaY;
+    this.lookDeltaY = 0;
+    return d;
+  }
+
+  /** 지난번 이후 두 손가락 벌림 비율 (1보다 크면 벌렸다 = 가까이) */
+  takeZoom(): number {
+    const r = this.zoomRatio;
+    this.zoomRatio = 1;
+    return r;
+  }
+
   /** 지난번 이후 쌓인 카메라 회전량(라디안)을 꺼낸다 */
   takeLook(): number {
     const d = this.lookDelta;
@@ -192,6 +215,9 @@ export class WalkControls {
     this.stickMX = this.stickMY = 0;
     this.moveX = this.moveY = 0;
     this.lookDelta = 0;
+    this.lookDeltaY = 0;
+    this.pinchId = -1;
+    this.zoomRatio = 1;
     this.jump = false;
     this.held.clear();
     this.base.style.transform = '';
@@ -208,7 +234,17 @@ export class WalkControls {
     const onBase = Math.hypot(e.clientX - (b.left + b.width / 2), e.clientY - (b.top + b.height / 2)) < BASE * 0.62;
     // 왼쪽 아래 영역(터치) 또는 조이스틱 그림 위(마우스 포함)에서 시작하면 조이스틱
     const stickZone = e.pointerType !== 'mouse' && u < 0.56 && v > 0.42;
-    if (this.stickId < 0 && (stickZone || onBase)) {
+    if (this.lookOnly && this.lookId >= 0 && this.pinchId < 0 && e.pointerId !== this.lookId) {
+      // 두 번째 손가락: 확대/축소 (그동안 돌리기는 멈춘다)
+      this.pinchId = e.pointerId;
+      this.canvas.setPointerCapture?.(e.pointerId);
+      this.pinchX = e.clientX;
+      this.pinchY = e.clientY;
+      this.pinchFrom = Math.hypot(this.pinchX - this.lookX, this.pinchY - this.lookY);
+      this.lookMoved = 99;
+      return;
+    }
+    if (!this.lookOnly && this.stickId < 0 && (stickZone || onBase)) {
       this.stickId = e.pointerId;
       this.canvas.setPointerCapture?.(e.pointerId);
       // 손가락을 댄 곳이 조이스틱 가운데가 된다 (화면 밖으로 나가지 않게만 한다)
@@ -227,19 +263,37 @@ export class WalkControls {
       this.lookId = e.pointerId;
       this.canvas.setPointerCapture?.(e.pointerId);
       this.lookX = e.clientX;
+      this.lookY = e.clientY;
       this.lookMoved = 0;
       this.lookDownAt = performance.now();
     }
   }
 
+  private pinchMove() {
+    const d = Math.hypot(this.pinchX - this.lookX, this.pinchY - this.lookY);
+    if (this.pinchFrom > 20 && d > 20) this.zoomRatio *= d / this.pinchFrom;
+    this.pinchFrom = d;
+  }
+
   private onMove(e: PointerEvent) {
     if (!this.active) return;
     if (e.pointerId === this.stickId) this.moveStick(e);
-    else if (e.pointerId === this.lookId) {
+    else if (e.pointerId === this.pinchId) {
+      this.pinchX = e.clientX;
+      this.pinchY = e.clientY;
+      this.pinchMove();
+    } else if (e.pointerId === this.lookId) {
       const dx = e.clientX - this.lookX;
+      const dy = e.clientY - this.lookY;
       this.lookX = e.clientX;
-      this.lookMoved += Math.abs(dx);
+      this.lookY = e.clientY;
+      if (this.pinchId >= 0) {
+        this.pinchMove();
+        return;
+      }
+      this.lookMoved += Math.abs(dx) + (this.lookOnly ? Math.abs(dy) : 0);
       this.lookDelta -= dx * LOOK_SPEED;
+      if (this.lookOnly) this.lookDeltaY += dy / Math.max(200, this.canvas.clientHeight);
     }
   }
 
@@ -250,8 +304,18 @@ export class WalkControls {
       this.base.style.transform = '';
       this.base.style.opacity = '0.7';
       this.knob.style.transform = '';
+    } else if (e.pointerId === this.pinchId) {
+      this.pinchId = -1;
     } else if (e.pointerId === this.lookId) {
       this.lookId = -1;
+      if (this.pinchId >= 0) {
+        // 남은 손가락이 이어서 돌린다
+        this.lookId = this.pinchId;
+        this.lookX = this.pinchX;
+        this.lookY = this.pinchY;
+        this.pinchId = -1;
+        this.lookMoved = 99;
+      }
       if (this.active && !cancelled && this.lookMoved < 8 && performance.now() - this.lookDownAt < 400) {
         this.tapCb?.(e.clientX, e.clientY);
       }

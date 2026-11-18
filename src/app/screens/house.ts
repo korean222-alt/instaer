@@ -8,6 +8,7 @@ import { toast } from '../ui/toast';
 import { chooseHouse, pickingHouse } from './moveIn';
 import type { Screen } from './types';
 import { mountHouseSocial } from './social';
+import { moveCostLabel, moveProblem, moveTo, pickingMove } from '../play/moveHouse';
 
 /** 집을 탭했을 때 아래에서 올라오는 구경 팝업 */
 export const houseScreen: Screen = {
@@ -21,14 +22,19 @@ export const houseScreen: Screen = {
       // 입주 전이면 이 빈 집을 바로 내 집으로 고를 수 있다
       root.innerHTML = `
         <p class="empty">아직 빈 집이에요. 동네 고양이가 대신 지키고 있어요.</p>
-        ${state.me ? '' : `<button class="btn primary" data-act="choose">${pickingHouse() ? '이 집으로 할래요' : '이 집에 입주하기'}</button>`}`;
+        ${
+          state.me
+            ? `<button class="btn primary" data-act="move" ${moveProblem(no) ? 'disabled' : ''}>이 집으로 이사하기 <small>${moveCostLabel()}</small></button>
+               <p class="note">${moveProblem(no) ? esc(moveProblem(no)!) : `${pickingMove() ? '' : '마음에 드는 빈 집으로 옮길 수 있어요. '}마당, 집 안, 지붕 그림은 그대로 따라가요.`}</p>`
+            : `<button class="btn primary" data-act="choose">${pickingHouse() ? '이 집으로 할래요' : '이 집에 입주하기'}</button>`
+        }`;
       root.querySelector('[data-act="choose"]')?.addEventListener('click', () => chooseHouse(no));
+      root.querySelector('[data-act="move"]')?.addEventListener('click', () => void moveTo(no));
       state.scene.highlightHouse(no);
       return () => state.scene.highlightHouse(state.todayTop?.houseNo ?? null);
     }
     const mine = state.me?.houseNo === no;
     const handle = house.igHandle;
-    const items = state.yards.get(no)?.length ?? 0;
     root.innerHTML = `
       <div class="house-head">
         ${house.cat ? catSvg(house.cat, 88, `h${no}`) : ''}
@@ -39,7 +45,8 @@ export const houseScreen: Screen = {
             ${isFounder(no) ? `<span class="badge gold">창립 주민 ${no}번지</span>` : `<span class="badge">${no}번지</span>`}
             ${house.verified ? '<span class="badge ok">인증</span>' : ''}
           </div>
-          <div class="house-meta">꾸미기 ${items}개 · 예뻐요 <b data-likes>${house.likes.toLocaleString()}</b></div>
+          <div class="house-meta">예뻐요 <b data-likes>${house.likes.toLocaleString()}</b></div>
+          <div class="decor-score" data-score hidden></div>
         </div>
       </div>
       <div class="row">

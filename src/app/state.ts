@@ -2,7 +2,7 @@
 import type { IslandScene } from '../scene';
 import { FOUNDER_MAX, REGIONS, ZONE_CAPACITY } from '../shared/config';
 import type { House, PlacedItem, RegionId } from '../shared/types';
-import { fetchRegions, fetchVillage, type Regions, type Village, type WalletView } from './net/api';
+import { fetchDecor, fetchRegions, fetchVillage, type Regions, type Village, type WalletView } from './net/api';
 import { withEmptyLots } from './village';
 import { openZoneCount } from '../shared/zones';
 
@@ -111,7 +111,10 @@ export function setMyRoofArt(id: string | null, back = false) {
 }
 
 export function applyVillage(v: Village) {
-  state.houses = new Map(v.houses.map((h) => [h.houseNo, h]));
+  // 이사 (2026-11-18): 서버 캐시가 아직 옛 번지를 들고 있으면 (최대 1~2분) 내 옛 집은 빼고, 새 집 꾸미기는 내가 아는 값을 쓴다
+  const me = state.me;
+  const staleMe = !!me && !v.houses.some((h) => h.houseNo === me.houseNo);
+  state.houses = new Map(v.houses.filter((h) => !me || h.houseNo === me.houseNo || h.igHandle !== me.igHandle).map((h) => [h.houseNo, h]));
   // 내 집은 서버 캐시(최대 1분)보다 내가 아는 값이 더 새롭다
   if (state.me) state.houses.set(state.me.houseNo, state.me);
   const prevYards = state.yards;
@@ -128,13 +131,18 @@ export function applyVillage(v: Village) {
     const no = state.me.houseNo;
     // 내 집은 서버 캐시(최대 1분)보다 내가 아는 값이 더 새롭다
     if (prevYards.has(no)) state.yards.set(no, prevYards.get(no)!);
-    if (myRoofKnown) {
+    if (myRoofKnown || staleMe) {
       if (prevRoof.has(no)) state.roofArt.set(no, prevRoof.get(no)!);
       else state.roofArt.delete(no);
       if (prevBack.has(no)) state.roofArtBack.set(no, prevBack.get(no)!);
       else state.roofArtBack.delete(no);
     }
   }
+  // 사람이 없는 번지(이사 나간 집)의 마당/지붕은 버린다
+  for (const map of [state.yards, state.roofArt, state.roofArtBack]) for (const no of [...map.keys()]) if (!state.houses.has(no)) map.delete(no);
+  for (const no of [...state.bigYards]) if (!state.houses.has(no)) state.bigYards.delete(no);
+  // 막 이사했는데 화면을 새로 열어서 내가 아는 값이 없으면 새 집 꾸미기를 직접 받아 온다
+  if (me && staleMe && !prevYards.has(me.houseNo)) void loadMyDecor(me.houseNo);
   // 마당이 비워진 집도 씬에서 지운다
   const cleared = [...prevYards.keys()].filter((no) => !state.yards.has(no));
   state.todayTop = v.todayTop;
@@ -145,6 +153,38 @@ export function applyVillage(v: Village) {
   for (const [no, items] of state.yards) if (no !== state.editingYard) state.scene.setYardItemsFree(no, items);
   state.scene.highlightHouse(state.todayTop?.houseNo ?? null);
   emit();
+}
+
+async function loadMyDecor(no: number) {
+  try {
+    const d = await fetchDecor(no);
+    if (state.me?.houseNo !== no) return;
+    state.yards.set(no, d.yard);
+    if (d.roofArt) state.roofArt.set(no, d.roofArt);
+    if (d.roofArtBack) state.roofArtBack.set(no, d.roofArtBack);
+    if (d.bigYard) state.bigYards.add(no);
+    if (no !== state.editingYard) state.scene.setYardItemsFree(no, d.yard);
+    pushBigYards();
+    emit();
+  } catch {
+    /* 다음 마을 새로 받기에서 맞춰진다 */
+  }
+}
+
+/** 이사 (2026-11-18): 내 집이 from 에서 house.houseNo 로 옮겨졌다. 마당/지붕/넓히기를 새 번지로 옮긴다 */
+export function moveMyHouseLocal(from: number, house: House) {
+  const to = house.houseNo;
+  state.houses.delete(from);
+  for (const map of [state.yards, state.roofArt, state.roofArtBack] as Array<Map<number, unknown>>) {
+    if (map.has(from)) map.set(to, map.get(from)!);
+    map.delete(from);
+  }
+  if (state.bigYards.delete(from)) state.bigYards.add(to);
+  myRoofKnown = true;
+  state.scene.setYardItemsFree(from, []);
+  state.scene.setYardItemsFree(to, state.yards.get(to) ?? []);
+  pushBigYards();
+  setMe(house);
 }
 
 export async function refreshVillage(): Promise<boolean> {
@@ -178,6 +218,8 @@ export function setWallet(w: WalletView | null) {
 export function setMe(house: House | null) {
   state.me = house;
   if (house) {
+    // 이사 직후 서버 캐시가 옛 번지에 나를 들고 있으면 지운다 (2026-11-18)
+    for (const [no, h] of state.houses) if (no !== house.houseNo && h.igHandle && h.igHandle === house.igHandle) state.houses.delete(no);
     state.houses.set(house.houseNo, house);
     state.unlockedZones = Math.max(state.unlockedZones, openZoneCount(state.houses.size, maxHouseNo()));
     pushHousesToScene();

@@ -15,6 +15,11 @@ import { fillAttr, mergeParts, paint } from '../util/geo';
 /** 카메라가 방을 보는 방향 (0이면 정면. 조금 오른쪽에서 봐서 왼쪽 벽이 보인다) */
 export const ROOM_CAM_YAW = 0.34;
 const CAM_PITCH = THREE.MathUtils.degToRad(40);
+/** 위에서 보기 (꾸미기, 2026-11-18) */
+const CAM_PITCH_TOP = THREE.MathUtils.degToRad(76);
+/** 화면 돌리기 범위 (벽 두 면이 다 안쪽에서 보이는 만큼) */
+export const ROOM_YAW_MIN = 0;
+export const ROOM_YAW_MAX = 1.35;
 export const ROOM_FOV = 38;
 /** 문(앞쪽 가운데)의 절반 폭과, 문턱이 방 밖으로 나간 길이 */
 export const DOOR_HALF = 0.8;
@@ -104,8 +109,17 @@ export class Interior {
   private wallpaper = 'cream';
   private floor = 'wood';
   private readonly focus = new THREE.Vector3();
-  private readonly dir = new THREE.Vector3(Math.sin(ROOM_CAM_YAW) * Math.cos(CAM_PITCH), Math.sin(CAM_PITCH), Math.cos(ROOM_CAM_YAW) * Math.cos(CAM_PITCH));
+  private readonly dir = new THREE.Vector3();
   private zoom = 1;
+  /**
+   * 2026-11-18 사용자: "집 화면도 돌리면서 배치하고 싶다". 화면 돌리기(yaw), 위에서 보기(tilt 0~1), 확대(userZoom).
+   * 벽이 뒤/왼쪽 두 면뿐이라 돌리는 범위는 정면(0)부터 오른쪽 옆(약 77도)까지다. 그보다 돌면 벽 뒤에서 보게 된다.
+   */
+  yaw = ROOM_CAM_YAW;
+  private yawGoal = ROOM_CAM_YAW;
+  tilt = 0;
+  private tiltGoal = 0;
+  private userZoom = 1;
   private half = 0;
   private readonly c = new THREE.Color();
 
@@ -202,6 +216,34 @@ export class Interior {
     this.setItems(items);
     this.focus.set(0, 0.8, 0.4);
     this.zoom = 0.86;
+    this.yaw = this.yawGoal = ROOM_CAM_YAW;
+    this.tilt = this.tiltGoal = 0;
+    this.userZoom = 1;
+  }
+
+  /** 화면을 돌린다 (라디안, +는 오른쪽에서 보는 쪽으로) */
+  rotateView(d: number, smooth = false) {
+    this.yawGoal = THREE.MathUtils.clamp(this.yawGoal + d, ROOM_YAW_MIN, ROOM_YAW_MAX);
+    if (!smooth) this.yaw = this.yawGoal;
+  }
+  /** 위에서 보기 정도 (0 보통 ~ 1 거의 위에서). smooth 면 천천히 */
+  setTilt(t: number, smooth = false) {
+    this.tiltGoal = THREE.MathUtils.clamp(t, 0, 1);
+    if (!smooth) this.tilt = this.tiltGoal;
+  }
+  get tiltTarget() {
+    return this.tiltGoal;
+  }
+  /** 두 손가락 확대 (ratio > 1 이면 가까이) */
+  zoomView(ratio: number) {
+    if (!(ratio > 0)) return;
+    this.userZoom = THREE.MathUtils.clamp(this.userZoom / ratio, 0.55, 1.35);
+  }
+  /** 처음 시점으로 */
+  resetView() {
+    this.yawGoal = ROOM_CAM_YAW;
+    this.tiltGoal = 0;
+    this.userZoom = 1;
   }
 
   /** 지금 방 한 변의 절반 */
@@ -241,11 +283,16 @@ export class Interior {
     this.focus.x += (catX * 0.22 - this.focus.x) * k;
     this.focus.z += (catZ * 0.22 + 0.2 - this.focus.z) * k;
     this.zoom += (1 - this.zoom) * (1 - Math.exp(-dt * 3));
+    const kv = 1 - Math.exp(-dt * 9);
+    this.yaw += (this.yawGoal - this.yaw) * kv;
+    this.tilt += (this.tiltGoal - this.tilt) * kv;
+    const pitch = THREE.MathUtils.lerp(CAM_PITCH, CAM_PITCH_TOP, this.tilt);
+    this.dir.set(Math.sin(this.yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(this.yaw) * Math.cos(pitch));
     const tanV = Math.tan(THREE.MathUtils.degToRad(ROOM_FOV) / 2);
     const tanH = tanV * camera.aspect;
     // 세로 화면은 가로 폭에, 가로 화면은 높이에 맞춘다
     const k2 = this.half / ROOM_HALF;
-    const dist = THREE.MathUtils.clamp(Math.max((5.3 * k2) / tanH, (4.5 * k2) / tanV), 12, 52) * this.zoom;
+    const dist = THREE.MathUtils.clamp(Math.max((5.3 * k2) / tanH, (4.5 * k2) / tanV), 12, 52) * this.zoom * this.userZoom;
     camera.position.copy(this.focus).addScaledVector(this.dir, dist);
     camera.lookAt(this.focus);
     if (camera.fov !== ROOM_FOV || camera.near !== 1) {

@@ -4,7 +4,7 @@ import type { Env } from './env';
 import { error } from './http';
 import { health, newcomer } from './routes/health';
 import { like } from './routes/like';
-import { me, moveIn, rename, setPrivacy } from './routes/moveIn';
+import { me, moveHouse, moveIn, rename, setPrivacy } from './routes/moveIn';
 import { regions } from './routes/regions';
 import { village } from './routes/village';
 import { realtimeConnect, realtimeUsage } from './routes/realtime';
@@ -62,6 +62,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (method === 'POST' && path === '/api/shop/sell') return sell(request, env);
   if (method === 'POST' && path === '/api/game/mine') return mine(request, env);
   if (method === 'POST' && path === '/api/me/rename') return rename(request, env);
+  if (method === 'POST' && path === '/api/me/move') return moveHouse(request, env);
   if (method === 'POST' && path === '/api/game/fish') return fish(request, env);
   if (method === 'POST' && path === '/api/game/arcade') return arcade(request, env);
   if (method === 'POST' && path === '/api/game/visit') return visit(request, env);

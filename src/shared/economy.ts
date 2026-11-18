@@ -9,6 +9,8 @@ export const WELCOME_COINS = 50;
 export const DAILY_GAME_CAP = 400;
 /** 닉네임(= 고양이 이름) 바꾸기 값 */
 export const RENAME_COST = 500;
+/** 이사 (2026-11-18 사용자 요청): 첫 이사는 무료, 그다음부터 이 값. 지갑 owned 에 'moved_once' 가 남는다 */
+export const MOVE_HOUSE_COST = 200;
 
 // ── 한 번 사면 계속 쓰는 것 (2026-11-16 사용자 요청). 지갑 owned 에 key 로 들어간다 ──
 export const UPGRADES = [
