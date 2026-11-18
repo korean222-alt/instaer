@@ -716,6 +716,21 @@ body.cinema-mode > *:not(#scene):not(#cinema) { display: none !important; }
 .cine-btns { display: flex; justify-content: flex-end; margin-top: 6px; }
 .cine-exit { display: grid; place-items: center; height: 40px; padding: 0 18px; border-radius: 12px; background: #efe5d8; color: #6b5242; font-weight: 800; text-decoration: none; }
 #cinema [hidden] { display: none !important; }
+/* 새 주민 릴스 (2026-11-18): 이름 카드, 자막, 마지막 "댓글에 입주" 카드. 릴스 화면 위/아래 글자와 오른쪽 버튼을 피해 가운데 위쪽에 둔다 */
+.cine-go-sub { margin-top: 10px; height: 44px; background: #e9dccb; color: #4a3424; font-size: 15px; }
+.cine-go:disabled { opacity: .55; }
+.cine-reel-note { margin: 6px 2px 0; font-size: 12.5px; color: #8a705c; }
+.cine-card { top: calc(env(safe-area-inset-top, 0px) + 13%); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 170px; padding: 12px 22px 14px; border-radius: 22px; background: rgba(255, 250, 240, .97); color: #4a3424; box-shadow: 0 8px 26px rgba(0, 0, 0, .22); text-align: center; animation: cine-pop .5s cubic-bezier(.2, 1.5, .4, 1) both; }
+.cine-card small { font-size: 13px; font-weight: 900; color: #f08a6c; letter-spacing: .02em; }
+.cine-card b { font-size: 27px; font-weight: 900; line-height: 1.15; }
+.cine-card em { font-style: normal; font-size: 13px; font-weight: 800; color: #8a705c; }
+.cine-cta { top: 24%; left: 22px; right: 22px; padding: 20px 16px 22px; border-radius: 26px; background: #f08a6c; color: #fff; font-size: 27px; font-weight: 900; line-height: 1.35; text-align: center; box-shadow: 0 10px 30px rgba(120, 50, 20, .3); text-shadow: 0 2px 0 rgba(120, 50, 20, .25); animation: cine-pop .55s cubic-bezier(.2, 1.5, .4, 1) both; }
+.cine-cta b { color: #fff3a8; font-size: 33px; }
+.cine-cap { top: 60%; left: 18px; right: 18px; text-align: center; }
+.cine-cap span { display: inline-block; padding: 9px 15px 10px; border-radius: 14px; background: rgba(45, 30, 20, .62); color: #fff; font-size: 20px; font-weight: 800; line-height: 1.4; white-space: pre-line; animation: cine-fade .2s ease-out both; }
+@keyframes cine-pop { from { opacity: 0; transform: translateX(var(--tx, 0)) scale(.6); } to { opacity: 1; transform: translateX(var(--tx, 0)) scale(1); } }
+.cine-card { --tx: -50%; }
+@keyframes cine-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* 처음 온 사람용 안내 */
 .tutorial {

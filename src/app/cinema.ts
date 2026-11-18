@@ -6,9 +6,10 @@
 // - 장면(컷)을 하나씩 찍거나 전체를 이어서 찍을 수 있다. 컷 사이에는 짧게 검게 넘어간다.
 // 씬은 setCinemaCamera / setNameTags / setCinemaQuality / setTimeOfDay 로만 다룬다.
 import { dockArea, GROUND_Y, houseSlot, neighborhoodArea, townSquares, type CinemaCamera, type IslandScene } from '../scene';
-import { NEIGHBORHOOD_SIZE } from '../shared/config';
+import { NEIGHBORHOOD_SIZE, REGIONS } from '../shared/config';
 import type { House } from '../shared/types';
-import { unlockSound } from './audio/sound';
+import { loadCineVoice, playCine, playCineVoice, unlockSound } from './audio/sound';
+import newcomerVoiceUrl from './reels/newcomer-voice.mp3?url';
 import { state } from './state';
 
 export const cinemaRequested = () => new URLSearchParams(location.search).has('cinema');
@@ -29,6 +30,8 @@ interface Shot {
   label: string;
   dur: number;
   night?: boolean;
+  /** 이 컷 앞뒤로 검게 넘어가는 시간(초). 없으면 FADE */
+  fade?: number;
   /** u: 0~1 (이 컷 안에서 얼마나 지났는지, 부드럽게 굴린 값) */
   pose: (u: number) => Pose;
 }
@@ -214,6 +217,159 @@ function buildShots(): Shot[] {
   ];
 }
 
+// ── 새 주민 릴스 (2026-11-18): "오늘 새 주민이 왔어요 → 댓글에 '입주' 남기면 집 한 채" ──
+// 나레이션은 ElevenLabs 로 만든 파일(src/app/reels/newcomer-voice.mp3, 목소리 Yeonhee, 이름은 말하지 않아 매일 쓸 수 있다).
+// 주인공은 가장 최근에 입주한 집(/api/newcomer). 주소에 &who=닉네임 을 붙이면 그 집으로 바꾼다.
+// 자막 시간은 나레이션 파일의 문장 사이 쉼(ffmpeg silencedetect)에 맞춘 값이다. 파일을 바꾸면 같이 고친다.
+
+interface Cap {
+  at: number;
+  end: number;
+  text: string;
+}
+
+interface Reel {
+  shots: Shot[];
+  heroNo: number;
+  name: string;
+  region: string;
+  /** 영상 시작(검은 화면 뒤 첫 컷)에서 나레이션이 시작하는 때(초) */
+  voiceAt: number;
+  caps: Cap[];
+  /** 새 주민 이름 카드가 떠 있는 때 */
+  cardAt: number;
+  cardEnd: number;
+  /** 마지막 "댓글에 입주" 카드가 뜨는 때 (끝까지 남는다) */
+  ctaAt: number;
+}
+
+const VOICE_AT = 0.6;
+/** 나레이션 파일 안에서 각 문장이 나오는 때 (초) */
+const VOICE_LINES: [number, number, string][] = [
+  [0.0, 2.95, '오늘 고양이섬에 새 주민이 이사 왔어요!'],
+  [3.15, 6.65, '마당 있는 집 한 채랑\n귀여운 고양이 한 마리도 같이요'],
+  [7.1, 10.05, '섬에는 아직\n빈 집이 많이 남아 있어요'],
+  [10.43, 12.7, "댓글에 '입주'라고 남겨 주세요!"],
+  [13.0, 15.1, '당신에게도 집 한 채를 드릴게요'],
+];
+
+/** 주인공 집 둘레의 위치들 (컷 카메라 계산용) */
+function heroFrame(heroNo: number) {
+  const hs = houseSlot(heroNo);
+  const nb = neighborhoodArea(hs.neighborhood);
+  return {
+    hs,
+    nb,
+    fx: Math.sin(hs.rot),
+    fz: Math.cos(hs.rot),
+    heroAng: Math.atan2(hs.x - nb.x, hs.z - nb.z),
+    ringR: Math.hypot(hs.x - nb.x, hs.z - nb.z),
+  };
+}
+
+function buildNewcomerReel(heroNo: number, name: string, region: string): Reel {
+  const G = GROUND_Y;
+  const { hs, nb, fx, fz, heroAng, ringR } = heroFrame(heroNo);
+  const doorX = hs.x + fx * 0.6;
+  const doorZ = hs.z + fz * 0.6;
+  const shots: Shot[] = [
+    {
+      id: 'arrive',
+      label: '새 주민 집으로 내려가기',
+      dur: 7.6,
+      fade: 0.3,
+      // 동네 높이 위에서 새 주민 집 마당 앞까지 한 번에 내려온다 (첫 문장 동안 동네, 둘째 문장에 집과 고양이)
+      pose: (u) => {
+        const k = clamp01(u * 1.4);
+        return {
+          x: lerp(nb.x, doorX, k),
+          y: G + lerp(0, 0.55, u),
+          z: lerp(nb.z, doorZ, k),
+          yaw: hs.rot + lerp(1.3, -0.25, u),
+          pitch: lerp(1.0, 0.24, u),
+          dist: lerpDist(140, 12, u),
+          fov: 38,
+        };
+      },
+    },
+    {
+      id: 'empty',
+      label: '빈 집 골목',
+      dur: 3.3,
+      fade: 0.25,
+      // 새 주민 집 옆으로 이어지는 집들(아직 빈 집) 앞을 고양이 눈높이로 지나간다
+      pose: (u) => {
+        const th = heroAng + lerp(0.45, 1.15, u);
+        const r = ringR - 4.5;
+        return {
+          x: nb.x + Math.sin(th) * r,
+          y: G + 1.6,
+          z: nb.z + Math.cos(th) * r,
+          yaw: th + Math.PI,
+          pitch: 0.12,
+          dist: Math.max(6, Math.min(10, ringR - 7)),
+          fov: 40,
+        };
+      },
+    },
+    {
+      id: 'cta',
+      label: '댓글에 입주',
+      dur: 7.6,
+      fade: 0.25,
+      // 새 주민 집에서 동네 위로 천천히 올라간다 (마지막 카드가 떠 있는 동안)
+      pose: (u) => ({
+        x: lerp(doorX, (hs.x + nb.x) / 2, u),
+        y: G + 0.5,
+        z: lerp(doorZ, (hs.z + nb.z) / 2, u),
+        yaw: hs.rot + lerp(-0.35, 0.55, u),
+        pitch: lerp(0.3, 0.85, u),
+        dist: lerpDist(14, 78, u),
+        fov: 38,
+      }),
+    },
+  ];
+  return {
+    shots,
+    heroNo,
+    name,
+    region,
+    voiceAt: VOICE_AT,
+    caps: VOICE_LINES.map(([a, b, text]) => ({ at: VOICE_AT + a, end: VOICE_AT + b + 0.25, text })),
+    cardAt: VOICE_AT + 3.0,
+    cardEnd: 7.6 - 0.3,
+    ctaAt: VOICE_AT + 10.4,
+  };
+}
+
+interface Newcomer {
+  houseNo: number;
+  handle: string;
+  region: string;
+}
+
+/** 릴스 주인공: &who=닉네임 > 가장 최근 입주 (서버) > 섬에서 고른 집 */
+async function findNewcomer(): Promise<Newcomer | null> {
+  const lived = [...state.houses.values()].filter((h) => !h.isNpc && h.igHandle);
+  const who = new URLSearchParams(location.search).get('who')?.trim().replace(/^@/, '');
+  if (who) {
+    const h = lived.find((x) => x.igHandle === who);
+    if (h) return { houseNo: h.houseNo, handle: h.igHandle!, region: h.region };
+  }
+  try {
+    const res = await fetch('/api/newcomer', { cache: 'no-store' });
+    const data = (await res.json()) as { house: Newcomer | null };
+    if (data.house) return data.house;
+  } catch {
+    /* 서버가 안 되면 아래 */
+  }
+  const h = lived.sort((a, b) => b.houseNo - a.houseNo)[0];
+  return h ? { houseNo: h.houseNo, handle: h.igHandle!, region: h.region } : null;
+}
+
+const regionLabel = (id: string) => REGIONS.find((r) => r.id === id)?.label ?? '';
+const esc = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
 const FADE = 0.45;
 
 export function startCinema(scene: IslandScene) {
@@ -221,18 +377,27 @@ export function startCinema(scene: IslandScene) {
   scene.highlightHouse(null);
   scene.highlightRegion(null);
   const shots = buildShots();
+  // 새 주민 릴스: 나레이션은 미리 받아 두고, 주인공은 서버에 묻는다
+  const voiceReady = loadCineVoice(newcomerVoiceUrl);
+  let newcomer: Newcomer | null = null;
 
   const root = document.createElement('div');
   root.id = 'cinema';
   root.innerHTML = `
+    <div class="cine-card" hidden></div>
+    <div class="cine-cta" hidden>댓글에 <b>'입주'</b> 남기면<br />집 한 채 드려요 🏡</div>
+    <div class="cine-cap" hidden><span></span></div>
     <div class="cine-black"></div>
     <div class="cine-panel">
       <h2>🎬 촬영 모드</h2>
       <p class="cine-lead">진짜 게임 화면에 카메라만 움직여요. 폰의 <b>화면 기록</b>을 켜고 고르세요.</p>
-      <button class="cine-go cine-all">▶ 전체 이어서 찍기 <small>약 ${Math.round(shots.reduce((s, x) => s + x.dur, 0))}초</small></button>
+      <button class="cine-go cine-reel" disabled>📣 새 주민 릴스 <small class="cine-reel-who">찾는 중…</small></button>
+      <p class="cine-reel-note">나레이션 목소리가 함께 나와요 (약 19초). 소리를 켜고 찍으세요.</p>
+      <button class="cine-go cine-all cine-go-sub">▶ 섬 구경 이어서 찍기 <small>약 ${Math.round(shots.reduce((s, x) => s + x.dur, 0))}초</small></button>
       <div class="cine-shots">
         ${shots.map((s, i) => `<button class="cine-shot" data-i="${i}">${s.label}</button>`).join('')}
       </div>
+      <label class="cine-opt"><input type="checkbox" data-o="caps" checked /> 자막 넣기 <small>(새 주민 릴스)</small></label>
       <label class="cine-opt"><input type="checkbox" data-o="tags" checked /> 집 이름표 보이기</label>
       <label class="cine-opt"><input type="checkbox" data-o="max" checked /> 아주 선명하게 <small>(끊기면 끄세요)</small></label>
       <div class="cine-btns">
@@ -244,15 +409,63 @@ export function startCinema(scene: IslandScene) {
   const $ = <T extends HTMLElement>(sel: string) => root.querySelector(sel) as T;
   const panel = $('.cine-panel');
   const black = $('.cine-black');
+  const card = $('.cine-card');
+  const cta = $('.cine-cta');
+  const cap = $('.cine-cap');
+  const capText = cap.querySelector('span') as HTMLSpanElement;
+  const reelBtn = $<HTMLButtonElement>('.cine-reel');
 
   let playlist: Shot[] = [];
   let t0 = 0;
   let playing = false;
   let shotIndex = -1;
   let idleAt = performance.now();
+  let reel: Reel | null = null;
+  let showCaps = true;
+  let stopVoice: (() => void) | null = null;
+  let firedCard = false;
+  let firedCta = false;
+  let lastCap = '';
+
+  void findNewcomer().then((n) => {
+    newcomer = n;
+    const who = reelBtn.querySelector('.cine-reel-who') as HTMLElement;
+    who.textContent = n ? `주인공 ${n.handle}` : '입주한 집이 없어요';
+    reelBtn.disabled = !n;
+  });
 
   const setBlack = (v: number) => {
     black.style.opacity = String(clamp01(v));
+  };
+
+  /** 릴스 글자들: t 는 첫 컷부터 지난 시간(초) */
+  const drawReelText = (t: number) => {
+    if (!reel) return;
+    const onCard = t >= reel.cardAt && t < reel.cardEnd;
+    if (card.hidden === onCard) card.hidden = !onCard;
+    if (onCard && !firedCard) {
+      firedCard = true;
+      playCine('chime');
+    }
+    const onCta = t >= reel.ctaAt;
+    if (cta.hidden === onCta) cta.hidden = !onCta;
+    if (onCta && !firedCta) {
+      firedCta = true;
+      playCine('pop', 0.6);
+    }
+    const line = showCaps ? (reel.caps.find((c) => t >= c.at && t < c.end)?.text ?? '') : '';
+    if (line !== lastCap) {
+      lastCap = line;
+      capText.textContent = line;
+      cap.hidden = !line;
+    }
+  };
+
+  const hideReelText = () => {
+    card.hidden = true;
+    cta.hidden = true;
+    cap.hidden = true;
+    lastCap = '';
   };
 
   const frame = (now: number) => {
@@ -269,6 +482,7 @@ export function startCinema(scene: IslandScene) {
       setBlack(1);
       return;
     }
+    drawReelText(t);
     let i = 0;
     while (i < playlist.length && t >= playlist[i].dur) {
       t -= playlist[i].dur;
@@ -288,34 +502,60 @@ export function startCinema(scene: IslandScene) {
     }
     scene.setCinemaCamera(toCamera(shot.pose(glide(t / shot.dur)), now / 1000));
     // 컷 사이: 앞뒤로 살짝 검게
-    const fadeIn = clamp01(t / FADE);
-    const fadeOut = clamp01((shot.dur - t) / FADE);
+    const fade = shot.fade ?? FADE;
+    const fadeIn = clamp01(t / fade);
+    const fadeOut = clamp01((shot.dur - t) / fade);
     setBlack(1 - Math.min(fadeIn, fadeOut));
   };
 
-  const play = (list: Shot[]) => {
+  const play = (list: Shot[], withReel: Reel | null = null, voice: AudioBuffer | null = null) => {
     void unlockSound();
     const max = ($('[data-o="max"]') as HTMLInputElement).checked;
     scene.setCinemaQuality(max ? 'max' : 'high');
     scene.setNameTags(($('[data-o="tags"]') as HTMLInputElement).checked);
     scene.setTimeOfDay(list[0].night ? 'night' : 'day');
+    showCaps = ($('[data-o="caps"]') as HTMLInputElement).checked;
     playlist = list;
+    reel = withReel;
+    firedCard = false;
+    firedCta = false;
+    hideReelText();
+    scene.highlightHouse(withReel ? withReel.heroNo : null);
     shotIndex = -1;
     panel.hidden = true;
     setBlack(1);
     // 검은 화면 1.5초 (해 지는 중이던 하늘이 돌아오고, 고화질 그림자가 준비될 시간)
     t0 = performance.now() + 1500;
+    if (withReel && voice) stopVoice = playCineVoice(voice, 1.5 + withReel.voiceAt);
     playing = true;
   };
 
   const stop = () => {
     playing = false;
+    stopVoice?.();
+    stopVoice = null;
+    reel = null;
+    hideReelText();
+    scene.highlightHouse(null);
     idleAt = performance.now();
     panel.hidden = false;
     setBlack(0);
     scene.setTimeOfDay('day');
   };
 
+  reelBtn.addEventListener('click', () => {
+    if (!newcomer) return;
+    const n = newcomer;
+    // 소리는 누른 순간에 켜야 한다 (아이폰). 나레이션 파일은 대개 이미 받아 둔 상태다
+    void unlockSound();
+    reelBtn.disabled = true;
+    void voiceReady.then((voice) => {
+      reelBtn.disabled = false;
+      const r = buildNewcomerReel(n.houseNo, n.handle, n.region);
+      card.innerHTML = `<small>오늘의 새 주민</small><b>${esc(r.name)}</b>${regionLabel(r.region) ? `<em>${esc(regionLabel(r.region))}</em>` : ''}`;
+      play(r.shots, r, voice);
+    });
+  });
   $('.cine-all').addEventListener('click', () => play(shots));
   root.querySelectorAll<HTMLButtonElement>('.cine-shot').forEach((btn) => {
     btn.addEventListener('click', () => play([shots[Number(btn.dataset.i)]]));

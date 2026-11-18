@@ -111,3 +111,4 @@ createIslandScene(canvas) → IslandScene
 - 촬영 모드(`?cinema`, 설정 버튼): 릴스용 자동 카메라 장면, 자막, 효과음 (2026-11-17, Opus). README.md.
 - 고양이 소리(포먼트 울음, 가르릉, 걷는 중 근처 고양이 울음), 직접 지은 잔잔한 배경 음악(오르골, 잔향, 파도), 첫 접속 로딩 화면(`index.html` #boot) (2026-11-18, Opus). README.md.
 - 처음 할 일 안내(입주 뒤 6단계: 걷기, 우편함, 주민 부탁, 낚시, 팔기, 꾸미기 + 길 안내, `#/guide`, HUD 칩) (2026-11-18, Opus). README.md.
+- 촬영 모드 새 주민 릴스(최근 입주 집, ElevenLabs 나레이션, 자막, "댓글에 '입주'" 카드, `/api/newcomer`) (2026-11-18, Opus). README.md.

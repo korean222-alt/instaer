@@ -119,10 +119,13 @@ function ensure(): AudioContext | null {
   return ctx;
 }
 
+/** 촬영 모드 나레이션 중에는 배경 음악을 낮춘다 (1 = 그대로) */
+let musicDuck = 1;
+
 function applyVolume() {
   if (!ctx) return;
   // 사람 귀에 맞게 제곱으로
-  bgmGain.gain.setTargetAtTime(settings.bgm ** 2 * 0.95, ctx.currentTime, 0.1);
+  bgmGain.gain.setTargetAtTime(settings.bgm ** 2 * 0.95 * musicDuck, ctx.currentTime, musicDuck < 1 ? 0.35 : 0.1);
   sfxGain.gain.setTargetAtTime(settings.sfx ** 2 * 0.9, ctx.currentTime, 0.05);
 }
 
@@ -560,4 +563,50 @@ export function unlockSound(): Promise<void> {
   const c = ensure();
   if (!c) return Promise.resolve();
   return c.resume().then(() => startMusic());
+}
+
+// ── 촬영 모드 나레이션 (2026-11-18): 미리 만든 목소리 파일(ElevenLabs)을 영상 시간에 맞춰 튼다 ──
+
+/** 나레이션 파일을 미리 받아 풀어 둔다 (실패하면 null: 목소리 없이 찍는다) */
+export async function loadCineVoice(url: string): Promise<AudioBuffer | null> {
+  try {
+    const c = ensure();
+    if (!c) return null;
+    const data = await (await fetch(url)).arrayBuffer();
+    return await new Promise<AudioBuffer>((ok, fail) => c.decodeAudioData(data, ok, fail));
+  } catch {
+    return null;
+  }
+}
+
+/** delay 초 뒤에 나레이션을 튼다. 도는 동안 배경 음악을 낮춘다. 돌려준 함수로 멈춘다 */
+export function playCineVoice(buf: AudioBuffer, delay: number): () => void {
+  const c = ensure();
+  if (!c) return () => {};
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const g = c.createGain();
+  g.gain.value = 1;
+  // 목소리는 음악용 부드럽게 깎는 필터를 거치지 않고 바로 낸다 (또렷하게)
+  src.connect(g).connect(c.destination);
+  const at = c.currentTime + Math.max(0, delay);
+  src.start(at);
+  musicDuck = 0.4;
+  applyVolume();
+  let done = false;
+  const end = () => {
+    if (done) return;
+    done = true;
+    musicDuck = 1;
+    applyVolume();
+  };
+  src.onended = end;
+  return () => {
+    try {
+      src.stop();
+    } catch {
+      /* 이미 멈춤 */
+    }
+    end();
+  };
 }

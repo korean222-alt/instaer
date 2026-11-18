@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { publicHandle } from '../lib/houses';
 import { json } from '../http';
 
 /**
@@ -19,4 +20,20 @@ export async function health(env: Env): Promise<Response> {
       { status: noSchema ? 200 : 500 },
     );
   }
+}
+
+/**
+ * GET /api/newcomer : 가장 최근에 입주한 집 (촬영 모드 "새 주민 릴스"가 주인공을 고를 때만 부른다).
+ * 집이 적어서 created_at 정렬은 가볍다. 화면에 보이는 이름은 숨기기를 따른다.
+ */
+export async function newcomer(env: Env): Promise<Response> {
+  const row = await env.DB.prepare('SELECT house_no, ig_handle, hide_handle, region, created_at FROM houses ORDER BY created_at DESC, id DESC LIMIT 1').first<{
+    house_no: number;
+    ig_handle: string;
+    hide_handle: number;
+    region: string;
+    created_at: number;
+  }>();
+  if (!row) return json({ house: null });
+  return json({ house: { houseNo: row.house_no, handle: publicHandle(row), region: row.region, at: row.created_at } });
 }
