@@ -79,6 +79,21 @@ interface Draft {
 }
 const draft: Draft = { handle: '', region: '', cat: null, touched: false, houseNo: null, igId: '', password: '' };
 
+/** DM 링크(/?k=암호)로 들어오면 암호 칸을 미리 채우고, 주소에서는 암호를 지운다 */
+export function takePrefillPass(): boolean {
+  try {
+    const u = new URL(location.href);
+    const k = u.searchParams.get('k');
+    if (!k) return false;
+    u.searchParams.delete('k');
+    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    draft.password = k.trim().slice(0, 30);
+    return !!draft.password;
+  } catch {
+    return false; /* 주소를 못 읽으면 빈 칸 */
+  }
+}
+
 // ── 인스타 인증 (2026-11-17): 서버 설정(off/password/comment)에 따라 입주 화면이 바뀐다 ──
 let authMode: AuthMode | null = null;
 const needsAuth = () => authMode === 'password' || authMode === 'comment';
@@ -454,7 +469,7 @@ export const moveInScreen: Screen = {
       return;
     }
     if (needsAuth()) {
-      if (!stepsSeen && !draft.igId) renderSteps(root, ctx);
+      if (!stepsSeen && !draft.igId && !draft.password) renderSteps(root, ctx);
       else renderForm(root, ctx);
     } else if (FOLLOW_HANDLE && !followAsked()) renderFollow(root, ctx);
     else renderForm(root, ctx);

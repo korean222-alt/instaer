@@ -716,3 +716,24 @@ body.cinema-mode > *:not(#scene):not(#cinema) { display: none !important; }
 .cine-btns { display: flex; justify-content: flex-end; margin-top: 6px; }
 .cine-exit { display: grid; place-items: center; height: 40px; padding: 0 18px; border-radius: 12px; background: #efe5d8; color: #6b5242; font-weight: 800; text-decoration: none; }
 #cinema [hidden] { display: none !important; }
+
+/* 처음 온 사람용 안내 */
+.tutorial {
+  position: absolute; inset: 0; z-index: 40; pointer-events: auto;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px max(24px, env(safe-area-inset-right, 0px)) 24px max(24px, env(safe-area-inset-left, 0px));
+  background: rgba(70, 50, 30, 0.45);
+}
+.tutorial-card {
+  width: 100%; max-width: 340px; text-align: center; color: var(--ink);
+  background: var(--card-solid); border-radius: 24px; padding: 28px 22px 20px;
+  box-shadow: 0 12px 40px var(--shadow);
+}
+.tutorial-emoji { font-size: 52px; line-height: 1; }
+.tutorial-card h2 { margin: 14px 0 8px; font-size: 20px; font-weight: 800; }
+.tutorial-card p { margin: 0 0 16px; font-size: 14.5px; line-height: 1.6; color: var(--ink-soft); }
+.tutorial-dots { display: flex; justify-content: center; gap: 6px; margin-bottom: 16px; }
+.tutorial-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.tutorial-dots i.on { background: var(--accent); }
+.tutorial-card .btn { width: 100%; }
+.tutorial-skip { margin-top: 8px; padding: 8px; background: none; border: 0; font: inherit; font-size: 13px; color: var(--ink-soft); }

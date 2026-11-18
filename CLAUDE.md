@@ -5,6 +5,7 @@
 ## 배포 규칙 (2026-11-15 사용자: "다음 새 채팅에서도 만들면 바로 배포까지 하게 해줘")
 - **코드를 고쳐 만들면 끝에 바로 배포까지 한다. 사용자에게 배포할지 묻지 않는다.** (README 의 "직접 하실 일"은 이미 끝난 일)
 - Cloudflare 가 배포 기준으로 보는 브랜치는 **`claude/zen-mendel-t7b5sp` 하나뿐**이다(Builds 트리거, 이 브랜치에 push 하면 `npm run build` + `npx wrangler deploy` 가 자동 실행). 새 채팅은 브랜치 이름이 매번 다르니 아래 순서로 한다.
+  0. **먼저 최신 코드에서 시작한다.** 저장소 기본 브랜치(`claude/great-planck-vzld1e`)는 옛 코드라서, 새 채팅 브랜치가 거기서 시작했으면 작업 전에 `git fetch origin claude/zen-mendel-t7b5sp && git checkout -B <작업 브랜치> FETCH_HEAD` 로 옮긴다. (2026-11-17 에 옛 코드 위에서 작업해 배포 브랜치에 못 올라가 배포가 멈춘 일이 있었다)
   1. 타입 검사와 빌드 통과 확인: `npm install`(없으면) → `npm run typecheck` → `npm run build`
   2. 작업 브랜치에 커밋하고 push
   3. 같은 커밋을 배포 브랜치에도 push: `git push origin HEAD:claude/zen-mendel-t7b5sp` (이미 앞서 가 있으면 fast-forward 라 그냥 된다. 거절되면 `git fetch origin claude/zen-mendel-t7b5sp` 후 `git rebase`/merge 해서 다시 push. force push 는 하지 않는다)

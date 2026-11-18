@@ -10,7 +10,7 @@ import { createRealtime } from './net/realtime';
 import { currentRoute, go, onRoute, type Route, type ScreenId } from './router';
 import { decorateScreen } from './screens/decorate';
 import { houseScreen, openHouse } from './screens/house';
-import { moveInScreen } from './screens/moveIn';
+import { moveInScreen, takePrefillPass } from './screens/moveIn';
 import { rankScreen } from './screens/rank';
 import { searchScreen } from './screens/search';
 import { settingsScreen } from './screens/settings';
@@ -53,6 +53,7 @@ import {
 import { pushHousesToScene } from './state';
 import { esc } from './ui/dom';
 import { toast } from './ui/toast';
+import { showTutorial, tutorialSeen } from './ui/tutorial';
 
 const ICON: Record<string, string> = {
   map: '<path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z"/><path d="M9 4v13.5M15 6.5V20"/>',
@@ -447,7 +448,14 @@ async function boot() {
     startCinema(scene);
     return;
   }
-  if (!state.me && !state.offline && route.id === 'map' && !welcomed()) go('move-in');
+  // DM 링크(/?k=암호)로 온 사람은 암호를 미리 채운 입주 화면으로 바로 간다
+  const hasPass = takePrefillPass();
+  if (!state.me && !state.offline && hasPass) go('move-in');
+  // 처음 온 사람은 안내 3장을 본 뒤 입주 화면으로 간다
+  else if (!state.me && !state.offline && route.id === 'map' && !welcomed()) {
+    if (tutorialSeen()) go('move-in');
+    else showTutorial(() => go('move-in'));
+  }
 }
 boot();
 
