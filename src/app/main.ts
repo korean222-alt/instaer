@@ -339,7 +339,7 @@ explore = createExplore(scene, realtime, {
     minimap.setVisible(explore.walking() && no === null && explore.caveLevel() === 0 && explore.inside() === null);
   },
   talk(npc) {
-    go('npc', npc.role === 'resident' ? `resident-${npc.homeId}` : npc.role);
+    go('npc', npc.role === 'resident' ? `resident-${npc.homeId}` : npc.role === 'wanderer' ? `walker-${npc.homeId}` : npc.role);
   },
   fish(where) {
     play('tap');
@@ -381,6 +381,7 @@ const minimap = createMinimap(scene, () => netPlayers, {
   walking: () => explore.walking(),
   startWalking: () => explore.setWalking(true),
   openHouse: (no) => go('house', no),
+  radar: () => realtime.radar(),
 });
 ctl.minimap = minimap;
 initGuide();

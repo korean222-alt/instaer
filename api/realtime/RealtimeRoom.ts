@@ -15,7 +15,11 @@ import {
   MAX_MSG_PER_SEC,
   MAX_SPEED,
   POS_SCALE,
+  RADAR_MAX,
+  RADAR_MS,
+  ROT_SCALE,
   RT_PROTOCOL,
+  type RadarTuple,
   ZONE_CONN_MAX,
   type ClientMsg,
   type PlayerTuple,
@@ -81,6 +85,8 @@ export class RealtimeRoom extends DurableObject<Env> {
   /** 소켓 → 마지막으로 보낸 목록 (같으면 다시 보내지 않는다) */
   private lastSig = new Map<WebSocket, string>();
   private lastBroadcast = 0;
+  private lastRadar = 0;
+  private radarSig = '';
   private trailing: ReturnType<typeof setTimeout> | null = null;
   private usage: Usage = { day: day(), messages: 0, connects: 0, peak: 0, broadcasts: 0 };
   private lastFlush = Date.now();
@@ -341,6 +347,8 @@ export class RealtimeRoom extends DurableObject<Env> {
       }
     }
 
+    if (!isGame) this.radar(all);
+
     // 구역: 격자 칸에 나눠 담고 주변 9칸만 본다
     const grid = new Map<string, typeof all>();
     const cell = (v: number) => Math.floor(v / R);
@@ -388,6 +396,38 @@ export class RealtimeRoom extends DurableObject<Env> {
       if (sig === this.lastSig.get(me.ws)) continue;
       this.lastSig.set(me.ws, sig);
       this.sendTo(me.ws, { t: 's', st: Date.now(), p });
+    }
+  }
+
+  /** 지도 레이더: RADAR_MS 마다 구역 안 모두의 대강 자리를 모두에게 (같은 글을 한 번 만들어 보낸다) */
+  private radar(all: Array<{ ws: WebSocket; a: Att }>) {
+    const now = Date.now();
+    if (now - this.lastRadar < RADAR_MS) {
+      if (!this.trailing) this.trailing = setTimeout(() => {
+        this.trailing = null;
+        this.broadcast();
+      }, RADAR_MS - (now - this.lastRadar) + 20);
+      return;
+    }
+    this.lastRadar = now;
+    const p: RadarTuple[] = [];
+    const seen = new Set<string>();
+    for (const { a } of all) {
+      if (!a.t || seen.has(a.uid) || p.length >= RADAR_MAX) continue;
+      seen.add(a.uid);
+      const r = a.r / ROT_SCALE;
+      const dir = ((Math.round((r / (Math.PI * 2)) * 16) % 16) + 16) % 16;
+      p.push([a.id, Math.round(a.x / POS_SCALE), Math.round(a.z / POS_SCALE), dir, a.h, a.n ?? 0]);
+    }
+    const out = JSON.stringify({ t: 'r', p } satisfies ServerMsg);
+    if (out === this.radarSig) return;
+    this.radarSig = out;
+    for (const { ws } of all) {
+      try {
+        ws.send(out);
+      } catch {
+        /* 닫히는 중 */
+      }
     }
   }
 

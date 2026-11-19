@@ -58,12 +58,24 @@ export interface Realtime {
   setDance(id: string | null): void;
   /** 고양이 자동차: 0 내림, 1 운전, 2 남의 차 뒷자리 (driverId: 운전자 연결 id) */
   setCar(c: 0 | 1 | 2, driverId?: string): void;
+  /** 지도 레이더 (2026-11-19): 같은 구역 고양이 전체의 대강 자리 (나와 내 다른 창은 빼고). 몇 초마다 바뀐다 */
+  radar(): RadarPlayer[];
   /** 받은 유저 정보 (이름, 번지) */
   playerInfo(id: string): { handle: string; houseNo: number | null } | null;
   /** 지금 연결되어 있는지 */
   connected(): boolean;
   /** 확인용 */
   debug(): { room: string | null; open: boolean; solo: boolean; players: number; sent: number; received: number };
+}
+
+/** 지도 레이더 한 명 */
+export interface RadarPlayer {
+  id: string;
+  handle: string;
+  houseNo: number | null;
+  x: number;
+  z: number;
+  rotY: number;
 }
 
 interface Conn {
@@ -108,6 +120,9 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
   let received = 0;
   const info = new Map<string, { handle: string; houseNo: number | null; cat: RemotePlayer['cat'] }>();
   let players: RemotePlayer[] = [];
+  /** 내 연결 id (hello), 받은 레이더 */
+  let myId = '';
+  let radarList: RadarPlayer[] = [];
   /** 서버가 정한 보내기 간격 (ms) */
   let sendMs = SEND_MS_MIN;
   /** 보내려고 찍어 둔 내 위치 (SAMPLE_MS 간격) */
@@ -204,6 +219,8 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       return;
     }
     if (msg.t === 'hello') {
+      myId = msg.id;
+      radarList = [];
       fails = 0;
       setSolo(false);
       if (c === pending) {
@@ -221,6 +238,19 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     if (c !== conn) return; // 옮기는 중인 연결의 위치는 아직 쓰지 않는다
     // 집 안 ↔ 섬을 옮기는 중이면 이전 방의 위치는 좌표 기준이 달라서 그리지 않는다
     if (msg.t === 's' && c.room !== currentRoomName()) return;
+    if (msg.t === 'r') {
+      if (!Array.isArray(msg.p) || c.room !== currentRoomName() || gameRoom) return;
+      const mine = hooks.myHouseNo?.() ?? null;
+      radarList = [];
+      for (const t of msg.p) {
+        if (!Array.isArray(t) || t[0] === myId) continue;
+        const [id, x, z, dir, h, n] = t;
+        if (![x, z, dir].every(Number.isFinite)) continue;
+        if (mine !== null && n === mine) continue;
+        radarList.push({ id: String(id), handle: String(h ?? ''), houseNo: n ? n : null, x, z, rotY: (dir / 16) * Math.PI * 2 });
+      }
+      return;
+    }
     if (msg.t === 'u') {
       for (const u of msg.u)
         info.set(u.id, {
@@ -296,6 +326,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     const wasOpen = c.open;
     conn = null;
     players = [];
+    radarList = [];
     tracks.clear();
     visibleIds = [];
     scene.setRemotePlayers([]);
@@ -479,6 +510,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       pending?.ws.close(1000, 'stop');
       conn = pending = null;
       players = [];
+      radarList = [];
       fishPose = sentPose = 0;
       danceNo = 0;
       carNo = 0;
@@ -523,6 +555,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       danceNo = n;
       send({ t: 'd', d: n });
     },
+    radar: () => radarList,
     playerInfo(id) {
       const m = info.get(id);
       return m ? { handle: m.handle, houseNo: m.houseNo } : null;

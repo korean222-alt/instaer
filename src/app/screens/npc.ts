@@ -5,6 +5,7 @@ import { play } from '../audio/sound';
 import { ApiError, sellItems } from '../net/api';
 import { ctl } from '../play/ctl';
 import { MAYOR_NAME, npcLook, npcName } from '../play/npcs';
+import { WANDER_TALK } from '../play/wanderers';
 import { markNewsSeen, newsHtml } from './social';
 import { state } from '../state';
 import { catSvg } from '../ui/catSvg';
@@ -96,6 +97,16 @@ export const npcScreen: Screen = {
         <h3 class="sub">업데이트 소식</h3>
         ${newsHtml()}`;
       markNewsSeen();
+      return;
+    }
+    if (p.startsWith('walker-')) {
+      // 산책냥 (2026-11-19): 섬을 돌아다니는 주민. 부탁은 없고 인사만
+      const id = Number(p.slice(7)) || 0;
+      ctx.setTitle(npcName('wanderer', id));
+      root.innerHTML = `
+        <div class="npc-head">${face(npcLook('wanderer', id), `w${id}`)}
+          <p class="bubble">${esc(WANDER_TALK[(id + new Date().getDate()) % WANDER_TALK.length])}</p></div>
+        <p class="note">산책냥은 마을 광장과 동네 여기저기를 천천히 돌아다녀요. 작은 지도에서 노란 점으로 보여요.</p>`;
       return;
     }
     if (p.startsWith('resident-')) {

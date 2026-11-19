@@ -119,3 +119,4 @@ createIslandScene(canvas) → IslandScene
 - 촬영 모드 연재 릴스("팔로워 1명 = 집 1채, Day N", 약 39초, 집이 하나씩 늘어나는 장면, 새 이웃 5집, 광장 고양이 수다, `/api/series`, 나레이션 길이에 맞춰 영상 늘리기) (2026-11-19, Opus). README.md.
 - 소원 비는 곳을 개인 소원 빌기로 바꿈(문구만, DB/API 그대로), 글자 칸에 쓰는 중에는 스페이스/방향키로 고양이가 점프·걷지 않게(`src/scene/walk/controls.ts`) (2026-11-19, Opus).
 - 촬영 모드 자동 녹화(화면 기록 없이 MP4/WebM, 글자 카드도 같이, `src/app/reelRecorder.ts`)와 썸네일 사진(고양이 6마리, 글자 없이) (2026-11-19, Opus). README.md.
+- 미니지도에 다른 사람 화살표(구역 레이더 3초마다, 지도 밖이면 가장자리 화살표, 집 방향), 섬을 돌아다니는 산책냥(구역마다 3마리, 시계로 정한 자리, 씬 `SceneNpc.moving`) (2026-11-19, Opus). README.md.

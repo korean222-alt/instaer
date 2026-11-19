@@ -11,7 +11,9 @@ import { play } from '../audio/sound';
 import { state } from '../state';
 import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
+import type { RadarPlayer } from '../net/realtime';
 import { townNpcs, type NpcKind } from './npcs';
+import { wanderers } from './wanderers';
 import { findRoute, routeLength, type Pt } from './route';
 
 const ROLE_MARK: Record<NpcKind, { c: string; t: string; desc: string }> = {
@@ -24,7 +26,20 @@ const ROLE_MARK: Record<NpcKind, { c: string; t: string; desc: string }> = {
   mailman: { c: '#5aa0d8', t: '우', desc: '이웃 방문 부탁을 줘요' },
   resident: { c: '#9ab3d6', t: '이', desc: '놀러 가면 방문 보상' },
   mayor: { c: '#3d5a80', t: '장', desc: '업데이트 소식을 알려 줘요' },
+  wanderer: { c: '#f2b33d', t: '산', desc: '섬을 돌아다니는 산책냥. 말을 걸면 인사해요' },
 };
+/** 다른 사람(직접 걷는 고양이) 화살표 색 */
+const PEOPLE = '#3f8fd8';
+
+/** 지도에 그리는 다른 사람: 가까운 사람(정확한 자리) + 레이더(같은 구역 먼 사람, 몇 초마다) */
+interface Other {
+  id: string;
+  x: number;
+  z: number;
+  rotY: number;
+  handle: string;
+  houseNo: number | null;
+}
 
 interface LandImage {
   canvas: HTMLCanvasElement;
@@ -103,6 +118,8 @@ export interface MapHooks {
   startWalking(): void;
   /** 집(프로필) 보기 */
   openHouse(houseNo: number): void;
+  /** 같은 구역의 먼 사람들 (실시간 레이더, 2026-11-19) */
+  radar?(): RadarPlayer[];
 }
 
 export interface Minimap {
@@ -138,9 +155,9 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
         <div class="map-zoom"><button data-zoom="in" aria-label="확대">+</button><button data-zoom="out" aria-label="축소">−</button><button data-zoom="home" aria-label="우리 집 / 내 위치">◎</button></div>
       </div>
       <div class="map-info" hidden></div>
-      <div class="legend">${(['mayor', 'shop', 'arcade', 'fisher', 'gardener', 'explorer', 'painter', 'mailman', 'resident'] as NpcKind[])
+      <div class="legend">${(['mayor', 'shop', 'arcade', 'fisher', 'gardener', 'explorer', 'painter', 'mailman', 'resident'] as Exclude<NpcKind, 'wanderer'>[])
         .map((r) => `<span><i style="background:${ROLE_MARK[r].c}">${ROLE_MARK[r].t}</i>${r === 'resident' ? '이웃' : r === 'mayor' ? '이장' : NPC_INFO[r].title}</span>`)
-        .join('')}<span><i style="background:#e2574c">광</i>마을 광장</span><span><i style="background:#4a90c8">물</i>낚시터</span><span><i style="background:#3b2f2a">굴</i>동굴</span><span><i class="home">집</i>우리 집</span><span><i class="me"></i>나</span></div></div>`;
+        .join('')}<span><i style="background:#e2574c">광</i>마을 광장</span><span><i style="background:#4a90c8">물</i>낚시터</span><span><i style="background:#3b2f2a">굴</i>동굴</span><span><i style="background:${ROLE_MARK.wanderer.c}">산</i>산책냥</span><span><i class="home">집</i>우리 집</span><span><i class="me"></i>나</span><span><i style="background:${PEOPLE}"></i>다른 사람</span></div></div>`;
   app.appendChild(big);
   const bigCanvas = big.querySelector('canvas')!;
   const info = big.querySelector<HTMLElement>('.map-info')!;
@@ -160,6 +177,15 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
   let routeAt = 0;
 
   const dpr = () => Math.min(2, window.devicePixelRatio || 1);
+  /** 지도에 그릴 다른 사람 전체 (가까운 사람이 먼저, 레이더에서 겹치는 사람은 뺀다) */
+  const others = (): Other[] => {
+    const near = players();
+    const out: Other[] = near.map((p) => ({ id: p.id, x: p.x, z: p.z, rotY: p.rotY, handle: p.handle, houseNo: p.houseNo }));
+    const ids = new Set(out.map((p) => p.id));
+    const mine = state.me?.houseNo ?? null;
+    for (const r of hooks.radar?.() ?? []) if (!ids.has(r.id) && (mine === null || r.houseNo !== mine)) out.push(r);
+    return out;
+  };
   const fullRadius = () => (state.unlockedZones <= 1 ? 118 : 118 + Math.sqrt(state.unlockedZones) * 110);
   /** 지도의 기준점: 걷는 중이면 내 고양이, 아니면 우리 집, 없으면 마을 광장 */
   const anchor = (): Pt => {
@@ -179,7 +205,7 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
     const out: Mark[] = [];
     const zones = state.unlockedZones;
     for (const sq of townSquares(zones)) out.push({ kind: 'square', x: sq.x, z: sq.z, title: '마을 광장', sub: '마을 게시판, 이장님, 장터(잡화점·오락실), 벤치', hit: 16 });
-    for (const n of townNpcs(zones)) {
+    for (const n of [...townNpcs(zones), ...wanderers()]) {
       const mk = ROLE_MARK[n.role];
       out.push({ kind: 'npc', x: n.x, z: n.z, title: n.name, sub: mk.desc, hit: 14 });
     }
@@ -193,7 +219,7 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
       const mine = state.me?.houseNo === no;
       out.push({ kind: mine ? 'myhouse' : 'house', x: s.x, z: s.z, title: mine ? `우리 집 · ${no}번지` : `${h.igHandle ?? ''}의 집`, sub: `${no}번지 · 예뻐요 ${h.likes}`, houseNo: no, hit: mine ? 16 : 7 });
     }
-    for (const p of players())
+    for (const p of others())
       out.push({ kind: 'player', x: p.x, z: p.z, title: p.handle || '고양이', sub: p.houseNo ? `${p.houseNo}번지에 사는 고양이` : '지나가는 고양이', houseNo: p.houseNo ?? undefined, hit: 10 });
     return out;
   }
@@ -305,8 +331,15 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
       icon(...P(n.x, n.z), mk.c, mk.t, r);
       if (showLabels && n.role !== 'resident') {
         const [lx, ly] = P(n.x, n.z);
-        label(lx, ly + r + 8, n.role === 'mayor' ? '이장' : NPC_INFO[n.role].name);
+        label(lx, ly + r + 8, n.role === 'mayor' ? '이장' : n.role === 'wanderer' ? n.name.replace('산책냥 ', '') : NPC_INFO[n.role as keyof typeof NPC_INFO].name);
       }
+    }
+    // 산책냥 (돌아다니는 주민): 지금 자리에 작은 노란 표시
+    for (const n of wanderers()) {
+      const [x, y] = P(n.x, n.z);
+      if (x < -10 || y < -10 || x > w + 10 || y > h + 10) continue;
+      icon(x, y, ROLE_MARK.wanderer.c, ROLE_MARK.wanderer.t, detail ? r : r - 1.5);
+      if (showLabels) label(x, y + r + 8, n.name.replace('산책냥 ', ''));
     }
     // 집 이름 (많이 확대했을 때만)
     if (detail && radius < 38) {
@@ -370,15 +403,82 @@ export function createMinimap(scene: IslandScene, players: () => RemotePlayer[],
       g.closePath();
       g.fill();
     }
-    // 다른 고양이
-    for (const p of players()) {
-      g.fillStyle = '#fffaf2';
-      g.strokeStyle = '#5b4636';
-      g.lineWidth = 1;
+    // 다른 사람 (직접 걷는 고양이): 바라보는 쪽 파란 화살표. 작은 지도 밖이면 가장자리에 그쪽을 가리키는 화살표 (2026-11-19)
+    const arrow = (x: number, y: number, fx: number, fy: number, size: number, fill: string, alpha = 1) => {
+      g.globalAlpha = alpha;
+      g.fillStyle = fill;
+      g.strokeStyle = '#fff';
+      g.lineWidth = Math.max(1.2, size * 0.24);
+      g.lineJoin = 'round';
       g.beginPath();
-      g.arc(...P(p.x, p.z), detail ? 3.4 : 2.6, 0, Math.PI * 2);
+      g.moveTo(x + fx * size, y + fy * size);
+      g.lineTo(x - fy * size * 0.62 - fx * size * 0.5, y + fx * size * 0.62 - fy * size * 0.5);
+      g.lineTo(x - fx * size * 0.15, y - fy * size * 0.15);
+      g.lineTo(x + fy * size * 0.62 - fx * size * 0.5, y - fx * size * 0.62 - fy * size * 0.5);
+      g.closePath();
       g.fill();
-      if (detail) g.stroke();
+      g.stroke();
+      g.globalAlpha = 1;
+    };
+    /** 세계 방향 rotY → 지도 위 방향 (돌린 만큼) */
+    const dirOf = (rotY: number): [number, number] => [Math.sin(rotY) * cr - Math.cos(rotY) * sr, Math.sin(rotY) * sr + Math.cos(rotY) * cr];
+    const edge: Array<{ x: number; y: number; d: number }> = [];
+    const pad = 9;
+    for (const p of others()) {
+      const [x, y] = P(p.x, p.z);
+      if (x >= pad && y >= pad && x <= w - pad && y <= h - pad) {
+        arrow(x, y, ...dirOf(p.rotY), detail ? 7 : 5.5, PEOPLE);
+        if (detail && radius < 60 && p.handle) label(x, y - 12, p.handle);
+      } else if (!detail) edge.push({ x, y, d: Math.hypot(p.x - cx, p.z - cz) });
+    }
+    if (edge.length) {
+      // 가까운 사람부터 10명까지만 (너무 많으면 가장자리가 가득 찬다)
+      edge.sort((a, b) => a.d - b.d);
+      for (const e of edge.slice(0, 10)) {
+        const vx = e.x - w / 2;
+        const vy = e.y - h / 2;
+        const k = Math.min((w / 2 - pad) / Math.max(1e-6, Math.abs(vx)), (h / 2 - pad) / Math.max(1e-6, Math.abs(vy)));
+        const len = Math.hypot(vx, vy) || 1;
+        arrow(w / 2 + vx * k, h / 2 + vy * k, vx / len, vy / len, 5, PEOPLE, e.d < radius * 2.5 ? 0.95 : 0.6);
+      }
+    }
+    // 작은 지도: 같은 구역에 걷는 사람 수
+    if (!detail) {
+      const n = others().length;
+      if (n) {
+        g.font = '800 10px system-ui, sans-serif';
+        g.textAlign = 'left';
+        g.textBaseline = 'alphabetic';
+        g.lineWidth = 3;
+        g.strokeStyle = 'rgba(255,250,242,0.95)';
+        g.strokeText(`🐾 ${n}명`, 5, h - 5);
+        g.fillStyle = PEOPLE;
+        g.fillText(`🐾 ${n}명`, 5, h - 5);
+      }
+    }
+    // 작은 지도: 우리 집이 밖에 있으면 가장자리에 집 쪽 표시
+    if (!detail && state.me) {
+      const s = houseSlot(state.me.houseNo);
+      const [x, y] = P(s.x, s.z);
+      if (x < pad || y < pad || x > w - pad || y > h - pad) {
+        const vx = x - w / 2;
+        const vy = y - h / 2;
+        const k = Math.min((w / 2 - pad) / Math.max(1e-6, Math.abs(vx)), (h / 2 - pad) / Math.max(1e-6, Math.abs(vy)));
+        const ex = w / 2 + vx * k;
+        const ey = h / 2 + vy * k;
+        g.fillStyle = '#ff7a59';
+        g.strokeStyle = '#fff';
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.arc(ex, ey, 6, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+        g.fillStyle = '#fff';
+        g.font = '800 7px system-ui, sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText('집', ex, ey + 0.5);
+      }
     }
     // 고른 표시
     if (selected && detail) {

@@ -16,6 +16,7 @@ import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
 import { applyWallet } from '../wallet';
 import { toSceneNpc, townHomes, townNpcs, type Home, type Npc } from './npcs';
+import { wanderers } from './wanderers';
 
 export interface ExploreHooks {
   onWalking(on: boolean): void;
@@ -213,15 +214,16 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     if (cave) list = [];
     else if (inside !== null) list = [];
     else
-      list = townNpcs(state.unlockedZones)
+      list = [...townNpcs(state.unlockedZones), ...wanderers(me)]
         .map((n) => ({ n, d: Math.hypot(n.x - me.x, n.z - me.z) }))
         .filter((e) => e.d < 45)
         .sort((a, b) => a.d - b.d)
-        .slice(0, 6)
+        .slice(0, 8)
         .map((e) => e.n);
     const changed = list.length !== shownNpcs.length || list.some((n, i) => shownNpcs[i]?.id !== n.id);
     shownNpcs = list;
-    if (changed || force) pushNpcs();
+    // 산책냥은 자리가 계속 바뀌므로 보이는 동안 매번 넘긴다
+    if (changed || force || list.some((n) => n.moving !== undefined)) pushNpcs();
 
     // 가까운 주민, 주민 집 문, 동굴 입구, 낚시터, 광석
     let best: Npc | null = null;

@@ -27,6 +27,11 @@ export interface SceneNpc {
   cat: CatLook;
   /** 'shop' | 'arcade' | 'fisher' | 'gardener' | 'resident'. 모르는 값이면 표시 없이 고양이만 그린다 */
   role?: string;
+  /**
+   * (2026-11-19 산책냥) 값이 있으면 앱이 자리를 계속 옮겨 주는 주민이다: 씬은 혼자 돌아다니지 않고 준 자리를 부드럽게 따라간다.
+   * true 면 걷는 중, false 면 멈춰 있다(잠시 뒤 앉는다).
+   */
+  moving?: boolean;
 }
 
 /** 한 번에 그리는 주민 수 */
@@ -183,6 +188,8 @@ const ROLE_PARTS: Record<string, { worn: () => Piece[]; prop?: () => Piece[] }> 
   // 2026-11-16: 화가(베레모 + 이젤 대신 팔레트), 우체부(파란 모자 + 가방)
   painter: { worn: () => beret('#d97bc4'), prop: palette },
   mailman: { worn: () => [...cap('#5aa0d8', '#fffaf0'), ...scarf('#5aa0d8')], prop: mailBag },
+  // 산책냥 (2026-11-19): 밀짚모자 + 노란 목도리 (걸어 다니므로 놓인 소품은 없다)
+  wanderer: { worn: () => [...strawHat('#7fd8b0'), ...scarf('#ffd166')] },
   // 이장 (2026-11-15): 금색 목도리 + 남색 모자
   mayor: { worn: () => [...scarf('#f4c95d', true), ...cap('#3d5a80', '#f4c95d')] },
 };
@@ -226,6 +233,10 @@ class Rec {
   lookKey = '';
   tagSlot = -1;
   tagAlpha = 0;
+  /** 앱이 자리를 옮겨 주는 주민 (SceneNpc.moving), 걷는 중인지, 멈춘 지 얼마나 됐는지 */
+  follow = false;
+  goalWalk = false;
+  still = 0;
 }
 
 export interface NpcView {
@@ -297,7 +308,21 @@ export class Npcs {
       }
       r.role = n.role ?? '';
       const yaw = Number.isFinite(n.rotY) ? n.rotY : 0;
-      if (n.x !== r.givenX || n.z !== r.givenZ || yaw !== r.homeYaw) {
+      if (typeof n.moving === 'boolean') {
+        const first = Number.isNaN(r.givenX);
+        r.follow = true;
+        r.goalWalk = n.moving;
+        r.givenX = r.homeX = r.tx = n.x;
+        r.givenZ = r.homeZ = r.tz = n.z;
+        r.homeYaw = yaw;
+        if (first || Math.hypot(r.x - n.x, r.z - n.z) > 6) {
+          r.x = n.x;
+          r.z = n.z;
+          r.yaw = yaw;
+          r.sit = n.moving ? 0 : 1;
+          r.groundY = this.flatY ?? groundHeightAt(this.bridges, r.x, r.z);
+        }
+      } else if (n.x !== r.givenX || n.z !== r.givenZ || yaw !== r.homeYaw) {
         const first = Number.isNaN(r.givenX);
         r.givenX = n.x;
         r.givenZ = n.z;
@@ -464,6 +489,10 @@ export class Npcs {
 
   /** 주민 한 마리의 행동: 앉아 있기 → 가끔 둘레 걷기 → 돌아와 앉기 */
   private think(r: Rec, dt: number, view: NpcView) {
+    if (r.follow) {
+      this.follow(r, dt);
+      return;
+    }
     let goalYaw = r.yaw;
     let moved = 0;
     const px = view.focusX - r.x;
@@ -522,6 +551,31 @@ export class Npcs {
     r.phase += (moved / STRIDE) * Math.PI * 2;
     r.walk += ((moved > 0 ? 0.62 : 0) - r.walk) * (1 - Math.exp(-dt * 9));
     r.sit += ((r.walking ? 0 : 1) - r.sit) * (1 - Math.exp(-dt * 4));
+  }
+
+  /** 앱이 주는 자리를 따라 걷는다 (산책냥). 자리는 0.2초마다 오므로 그 사이를 이어 걷는다 */
+  private follow(r: Rec, dt: number) {
+    const ex = r.tx - r.x;
+    const ez = r.tz - r.z;
+    const d = Math.hypot(ex, ez);
+    let moved = 0;
+    let goalYaw = r.homeYaw;
+    if (d > 0.02) {
+      const step = Math.min(d, Math.max(WALK_SPEED * 1.15, d * 3) * dt);
+      r.x += (ex / d) * step;
+      r.z += (ez / d) * step;
+      moved = step;
+      if (d > 0.08) goalYaw = Math.atan2(ex, ez);
+    }
+    const walking = r.goalWalk || moved > 0.002;
+    r.still = walking ? 0 : r.still + dt;
+    r.yaw += angleDiff(goalYaw, r.yaw) * (1 - Math.exp(-dt * 7));
+    const g = this.flatY ?? groundHeightAt(this.bridges, r.x, r.z);
+    r.groundY += (g - r.groundY) * (1 - Math.exp(-dt * 18));
+    r.phase += (moved / STRIDE) * Math.PI * 2;
+    r.walk += ((moved > 0.002 ? 0.62 : 0) - r.walk) * (1 - Math.exp(-dt * 9));
+    // 멈추고 1.5초가 지나면 앉는다
+    r.sit += ((r.still > 1.5 ? 1 : 0) - r.sit) * (1 - Math.exp(-dt * 4));
   }
 
   private clearPath(x0: number, z0: number, x1: number, z1: number): boolean {

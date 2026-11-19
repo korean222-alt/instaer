@@ -31,6 +31,14 @@ export const SEND_MS_MAX = 3000;
 /** 구역 객체 하나의 하루 받는 메시지 예산 (20개 = 요청 1건, 무료 하루 10만 건). 넘어가면 간격을 늘린다 */
 export const DAY_MSG_SOFT = 1_000_000;
 
+// ── 지도 레이더 (2026-11-19) ──
+// 구역 안 모든 고양이의 대강 자리를 RADAR_MS 마다 한 번 보낸다 (미니지도 화살표용, 멀리 있는 사람도 보이게).
+// 보내는 메시지라 무료 한도(받는 메시지)에 들지 않는다. 너무 커지지 않게 RADAR_MAX 명까지만.
+export const RADAR_MS = 3000;
+export const RADAR_MAX = 150;
+/** 레이더 한 명: [id, x(미터 정수), z(미터 정수), 방향(0~15, 16등분), 이름, 번지(없으면 0)] */
+export type RadarTuple = [string, number, number, number, string, number];
+
 /** 화면 → 서버 */
 export type ClientMsg =
   /**
@@ -65,6 +73,8 @@ export type ServerMsg =
   | { t: 'u'; u: Array<{ id: string; h: string; n: number | null; c: [string, string, string] | null }> }
   /** 지금 내게 보이는 유저 전체: [id, x, z, r, a, f?] (빠진 유저는 사라진 것. f 는 낚시 중일 때만 붙는다) */
   | { t: 's'; st: number; p: Array<PlayerTuple> }
+  /** 지도 레이더: 구역 안 고양이 전체의 대강 자리 (나도 들어 있다) */
+  | { t: 'r'; p: RadarTuple[] }
   /** 보내기 간격 (ms). 바뀔 때마다 온다 */
   | { t: 'cfg'; si: number }
   /** 서버가 받아들이지 않은 위치. 이 위치로 되돌린다 */

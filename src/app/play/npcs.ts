@@ -4,9 +4,11 @@
 import { mapHills, npcHomes, townSquares, type SceneNpc } from '../../scene';
 import { homeRole, NPC_INFO, residentName, STALL_ROLES, type HomeRole } from '../../shared/economy';
 import type { CatLook } from '../../shared/types';
+import { wanderLook, wanderName } from './wanderers';
 
 /** 이장 (2026-11-15): 마을 광장 게시판 옆. 업데이트 소식을 알려 준다 */
-export type NpcKind = HomeRole | 'mayor';
+/** 산책냥 (2026-11-19): 섬을 돌아다니는 주민 고양이 (wanderers.ts) */
+export type NpcKind = HomeRole | 'mayor' | 'wanderer';
 export const MAYOR_NAME = '이장 냥냥';
 const MAYOR_LOOK: CatLook = { fur: '#e9e2d6', pattern: 'tuxedo', eyeColor: '#f2c94c' };
 
@@ -18,8 +20,10 @@ export interface Npc {
   z: number;
   rotY: number;
   cat: CatLook;
-  /** 사는 주민 집 번호 (npcHomes 의 id) */
+  /** 사는 주민 집 번호 (npcHomes 의 id). 산책냥은 산책냥 번호 */
   homeId: number;
+  /** 산책냥처럼 앱이 자리를 계속 옮겨 주는 주민 */
+  moving?: boolean;
 }
 
 export interface Home {
@@ -50,8 +54,8 @@ const RESIDENT_LOOKS: CatLook[] = [
   { fur: '#c9ccd4', pattern: 'gray', eyeColor: '#e0a13a' },
 ];
 
-export const npcName = (role: NpcKind, homeId: number) => (role === 'mayor' ? MAYOR_NAME : role === 'resident' ? `이웃 ${residentName(homeId)}` : `${NPC_INFO[role].title} ${NPC_INFO[role].name}`);
-export const npcLook = (role: NpcKind, homeId: number) => (role === 'mayor' ? MAYOR_LOOK : role === 'resident' ? RESIDENT_LOOKS[homeId % RESIDENT_LOOKS.length] : LOOK[role]);
+export const npcName = (role: NpcKind, homeId: number) => (role === 'wanderer' ? wanderName(homeId) : role === 'mayor' ? MAYOR_NAME : role === 'resident' ? `이웃 ${residentName(homeId)}` : `${NPC_INFO[role].title} ${NPC_INFO[role].name}`);
+export const npcLook = (role: NpcKind, homeId: number) => (role === 'wanderer' ? wanderLook(homeId) : role === 'mayor' ? MAYOR_LOOK : role === 'resident' ? RESIDENT_LOOKS[homeId % RESIDENT_LOOKS.length] : LOOK[role]);
 
 let cachedZones = -1;
 let cachedNpcs: Npc[] = [];
@@ -104,4 +108,4 @@ export function homeNpc(homeId: number): Npc {
   return { id: `npc-in-${homeId}`, role, name: npcName(role, homeId), x: 1.5, z: -1.2, rotY: -0.4, cat: npcLook(role, homeId), homeId };
 }
 
-export const toSceneNpc = (n: Npc): SceneNpc => ({ id: n.id, name: n.name, x: n.x, z: n.z, rotY: n.rotY, cat: n.cat, role: n.role });
+export const toSceneNpc = (n: Npc): SceneNpc => ({ id: n.id, name: n.name, x: n.x, z: n.z, rotY: n.rotY, cat: n.cat, role: n.role, ...(n.moving !== undefined ? { moving: n.moving } : {}) });
