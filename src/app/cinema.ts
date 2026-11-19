@@ -5,9 +5,9 @@
 // - 촬영 중에는 화질을 최고 단계로 고정한다 (자동으로 낮추지 않음, 선택하면 해상도 3배).
 // - 장면(컷)을 하나씩 찍거나 전체를 이어서 찍을 수 있다. 컷 사이에는 짧게 검게 넘어간다.
 // 씬은 setCinemaCamera / setNameTags / setCinemaQuality / setTimeOfDay 로만 다룬다.
-import { dockArea, GROUND_Y, houseSlot, neighborhoodArea, townSquares, type CinemaCamera, type IslandScene } from '../scene';
+import { dockArea, GROUND_Y, houseSlot, neighborhoodArea, townSquares, TOWN_SQUARE, type CinemaCamera, type IslandScene } from '../scene';
 import { FOUNDER_MAX, NEIGHBORHOOD_SIZE, REGIONS } from '../shared/config';
-import type { House, RegionId } from '../shared/types';
+import type { House, RegionId, RemotePlayer } from '../shared/types';
 import { loadCineVoice, playCine, playCineVoice, unlockSound, type CineSfx } from './audio/sound';
 import hookVoiceUrl from './reels/hook-voice.mp3?url';
 import newcomerVoiceUrl from './reels/newcomer-voice.mp3?url';
@@ -255,6 +255,8 @@ interface Reel {
   overlays: Overlay[];
   /** 끝날 때 되돌릴 일 */
   cleanup?: () => void;
+  /** 매 프레임 (t: 첫 컷부터 지난 시간). 말풍선처럼 따라다니는 것 */
+  tick?: (t: number) => void;
 }
 
 const VOICE_AT = 0.6;
@@ -503,23 +505,29 @@ function buildHookReel(heroNo: number | null): Reel {
 
 // ── 연재 릴스 "팔로워 1명 = 집 1채, Day N" (2026-11-19) ──
 // 조회수 2200, 팔로우 30 → 매일 이어 보는 연재. 어제 섬(최근 24시간 새 집을 빼고) → 숫자가 올라가며 새 집이 하나씩 선다 →
-// 새 이웃 집 3곳 가까이 (이름 카드) → 창립 주민 남은 자리 → 해 지는 섬 "내일은 몇 채?" → 밤 동네 "댓글에 입주, 다음 편에 당신 집".
-// 나레이션 src/app/reels/series-voice.mp3 (ElevenLabs Yeonhee, eleven_v4, 25.8초). 숫자와 이름은 말하지 않아 매일 그대로 쓴다.
-// 문장 시간은 ffmpeg silencedetect 로 잰 값이다. 파일을 바꾸면 SERIES_LINES 도 고친다.
+// 새 이웃 집 최대 5곳을 2초씩 가까이 (이름 카드) → 마을 광장에 고양이들이 모여 수다 (말풍선, 2차) → 창립 주민 남은 자리 →
+// 해 지는 섬 "내일은 몇 채?" → 밤 동네 "댓글에 입주, 다음 편에 당신 집".
+// 나레이션 src/app/reels/series-voice.mp3 (ElevenLabs Yeonhee, eleven_v4, 36.7초). 숫자와 이름은 말하지 않아 매일 그대로 쓴다.
+// 문장 시간은 ffmpeg silencedetect 로 잰 값이다. 파일을 바꾸면 SERIES_LINES 도 고친다 (컷 경계도 이 시간에서 나온다).
 // 영상 길이는 나레이션 길이에 맞춰 늘어난다(startReel 의 fitVoice): 목소리가 끝나기 전에 영상이 끝나지 않는다.
 const SERIES_VOICE_AT = 0.3;
 const SERIES_LINES: [number, number, string][] = [
-  [0.0, 3.8, '팔로워 한 명이 늘 때마다\n이 섬에 집이 한 채씩 생겨요!'],
-  [4.1, 6.57, '어제보다 집이 이만큼이나 늘었어요'],
-  [6.85, 8.12, '새로 온 이웃들이에요'],
-  [8.45, 11.56, '다들 마당 있는 집에\n고양이 한 마리씩 데리고 왔어요'],
-  [12.03, 14.08, '처음 100명은 창립 주민이 돼요'],
-  [14.48, 16.43, '이제 자리가 얼마 안 남았어요!'],
-  [16.72, 18.75, '내일은 섬이 얼마나 커질까요?'],
-  [19.11, 21.0, '팔로우하고 같이 지켜봐 주세요'],
-  [21.43, 23.55, "댓글에 '입주'라고 남기면"],
-  [23.74, 25.63, '다음 편엔 당신 집이 나와요!'],
+  [0.0, 3.69, '팔로워 한 명이 늘 때마다\n이 섬에 집이 한 채씩 생겨요!'], // 0
+  [4.04, 6.42, '어제보다 집이 이만큼이나 늘었어요'], // 1
+  [6.81, 9.21, '새로 온 이웃들,\n한 집씩 구경해 볼까요?'], // 2
+  [9.74, 12.98, '다들 마당 있는 집에\n고양이 한 마리씩 데리고 왔어요'], // 3
+  [13.39, 16.33, '고양이 무늬랑 털 색도\n다 직접 골랐대요'], // 4
+  [16.86, 18.74, '그리고 여기는 마을 광장!'], // 5
+  [19.16, 22.34, '이웃 고양이들이 모여서\n수다도 떨고, 같이 놀아요'], // 6
+  [22.82, 24.96, '처음 100명은 창립 주민이 돼요'], // 7
+  [25.33, 27.27, '이제 자리가 얼마 안 남았어요!'], // 8
+  [27.64, 29.66, '내일은 섬이 얼마나 커질까요?'], // 9
+  [30.04, 31.97, '팔로우하고 같이 지켜봐 주세요'], // 10
+  [32.43, 34.48, "댓글에 '입주'라고 남기면"], // 11
+  [34.65, 36.51, '다음 편엔 당신 집이 나와요!'], // 12
 ];
+/** 광장 수다 (말풍선). 하루 지나도 어색하지 않은 말만 */
+const SQUARE_TALK = ['안녕! 새로 왔어 🐾', '어디 살아?', '나 바닷가 쪽!', '우리 옆집이다 😻', '낚시 같이 갈래?', '츄르 사러 가자', '트리 예쁘다 🎄', '내일 또 놀자!'];
 /** 연재 1일째 (한국 시간 2026-11-17). 주소에 &day=N 이면 그 숫자 */
 const SERIES_START_KST = Date.UTC(2026, 10, 17);
 export function seriesDay(): number {
@@ -548,12 +556,14 @@ async function fetchSeries(): Promise<SeriesData> {
 function buildSeriesReel(data: SeriesData, day: number): Reel {
   const G = GROUND_Y;
   const A = SERIES_VOICE_AT;
+  const L = (i: number) => A + SERIES_LINES[i][0];
   // 서버 목록과 지금 섬에 있는 집이 맞는 것만 (이사했거나 막 바뀐 집 빼기)
   const recent = data.recent.filter((r) => state.houses.has(r.houseNo));
   const total = Math.max(data.total, recent.length);
   const before = total - recent.length;
   const newSet = new Set(recent.map((r) => r.houseNo));
   const lived = [...state.houses.values()];
+  const residents = lived.filter((h) => !h.isNpc && h.igHandle);
   /** 새 집 중 앞의 k 채만 세운 섬 (오래된 새 집부터 선다) */
   const grown = [...recent].reverse();
   const islandWith = (k: number) => {
@@ -583,21 +593,25 @@ function buildSeriesReel(data: SeriesData, day: number): Reel {
     }
     return { x, z, r };
   };
-  const all = center(lived.filter((h) => !h.isNpc && h.igHandle).map((h) => h.houseNo));
+  const all = center(residents.map((h) => h.houseNo));
   const fresh = recent.length ? center(recent.map((r) => r.houseNo)) : all;
   const growDist = Math.min(150, Math.max(42, fresh.r * 2.4 + 18));
 
-  // 가까이 볼 새 이웃: 가장 최근 3집 (없으면 섬에서 아무 집)
-  const stars = (recent.length ? recent : lived.filter((h) => !h.isNpc && h.igHandle).map((h) => ({ houseNo: h.houseNo, handle: h.igHandle!, region: h.region }))).slice(0, 3);
-  const last = stars[stars.length - 1];
-  const lastNb = last ? neighborhoodArea(houseSlot(last.houseNo).neighborhood) : { x: all.x, z: all.z };
+  // 가까이 볼 새 이웃: 가장 최근 5집 (없으면 섬에서 아무 집). 집마다 2초쯤 (사용자 2026-11-19: "너무 짧아서 잘 못 봤어")
+  const stars = (recent.length ? recent : residents.map((h) => ({ houseNo: h.houseNo, handle: h.igHandle!, region: h.region }))).slice(0, 5);
 
-  const t1 = A + 3.0; // 섬 → 자라는 컷
-  const t2 = A + 6.75; // 새 이웃 가까이
-  const t3 = A + 11.85; // 창립 주민 (올라가기)
-  const t4 = A + 16.6; // 내일은? (해 짐)
-  const t5 = A + 21.2; // 댓글에 입주 (밤)
-  const tEnd = A + 25.7 + 2.5;
+  // 마을 광장 (가장 가까운 광장 = 첫 구역)
+  const sq = townSquares(1)[0] ?? { x: TOWN_SQUARE.x, z: TOWN_SQUARE.z };
+  const gx = sq.x;
+  const gz = sq.z + 5.2; // 광장 트리 앞 (트리가 뒤로 보이게 조금 떨어져서)
+
+  const t1 = L(1) - 0.2; // 섬 → 자라는 컷
+  const t2 = L(2) - 0.2; // 새 이웃 가까이
+  const t3 = L(5) - 0.25; // 마을 광장
+  const t4 = L(7) - 0.25; // 창립 주민 (광장 위로 올라가기)
+  const t5 = L(9) - 0.2; // 내일은? (해 짐)
+  const t6 = L(11) - 0.2; // 댓글에 입주 (밤)
+  const tEnd = A + 36.6 + 2.5;
 
   const shots: Shot[] = [
     {
@@ -625,41 +639,44 @@ function buildSeriesReel(data: SeriesData, day: number): Reel {
       id: `series-nb${i}`,
       label: `새 이웃 ${s.handle}`,
       dur: each,
-      fade: 0.12,
-      // 바라보는 곳을 지붕 위로 올려 집과 이름표가 위쪽 이름 카드 아래에 오게 한다
-      pose: (u) => ({ x: dx, y: G + 2.6, z: dz, yaw: hs.rot + side * lerp(0.45, 0.1, u), pitch: lerp(0.36, 0.3, u), dist: lerpDist(16, 12.5, u), fov: 40 }),
+      fade: 0.14,
+      // 바라보는 곳을 지붕 위로 올려 집과 이름표가 위쪽 이름 카드 아래에 오게 한다. 천천히 옆으로 돌며 마당과 고양이를 보여 준다
+      pose: (u) => ({ x: dx, y: G + 2.6, z: dz, yaw: hs.rot + side * lerp(0.5, 0.05, u), pitch: lerp(0.38, 0.3, u), dist: lerpDist(17, 12.5, u), fov: 40 }),
     });
   });
-  const lastHs = last ? houseSlot(last.houseNo) : { x: all.x, z: all.z, rot: 0 };
   shots.push(
+    {
+      id: 'series-square',
+      label: '광장 수다',
+      dur: t4 - t3,
+      fade: 0.2,
+      // 광장 트리 앞에 모인 고양이들을 조금 위에서 천천히 돌아본다. 바라보는 곳을 카메라 쪽으로 당겨 무리가 화면 가운데 위에 오게 (아래 자막을 피해서)
+      pose: (u) => {
+        const yaw = lerp(-0.5, 0.3, u);
+        return { x: gx + Math.sin(yaw) * 1.0, y: G + 0.4, z: gz + Math.cos(yaw) * 1.0, yaw, pitch: lerp(0.5, 0.42, u), dist: lerpDist(13.5, 11.5, u), fov: 40 };
+      },
+    },
     {
       id: 'series-founder',
       label: '창립 주민',
-      dur: t4 - t3,
+      dur: t5 - t4,
       fade: 0.15,
-      pose: (u) => ({
-        x: lerp(lastHs.x, lastNb.x, u),
-        y: G + 0.5,
-        z: lerp(lastHs.z, lastNb.z, u),
-        yaw: lastHs.rot + lerp(-0.2, 0.7, u),
-        pitch: lerp(0.4, 0.88, u),
-        dist: lerpDist(16, 75, u),
-        fov: 38,
-      }),
+      // 광장에서 동네 위로 올라간다
+      pose: (u) => ({ x: lerp(gx, fresh.x, u), y: G + 0.5, z: lerp(gz, fresh.z, u), yaw: lerp(0.35, 1.2, u), pitch: lerp(0.45, 0.9, u), dist: lerpDist(14, Math.max(70, growDist), u), fov: 38 }),
     },
     {
       id: 'series-tomorrow',
       label: '내일은 몇 채?',
-      dur: t5 - t4,
+      dur: t6 - t5,
       fade: 0.2,
       night: true,
       // 해가 지는 동안 섬 전체로 멀어진다 (아직 빈 집 자리가 많이 보이게)
-      pose: (u) => ({ x: lerp(lastNb.x, all.x, u), y: G, z: lerp(lastNb.z, all.z, u), yaw: 3.0 + 0.4 * u, pitch: lerp(0.75, 0.9, u), dist: lerpDist(70, Math.min(215, Math.max(130, all.r * 3 + 60)), u), fov: 38 }),
+      pose: (u) => ({ x: lerp(fresh.x, all.x, u), y: G, z: lerp(fresh.z, all.z, u), yaw: 3.0 + 0.4 * u, pitch: lerp(0.75, 0.9, u), dist: lerpDist(70, Math.min(215, Math.max(130, all.r * 3 + 60)), u), fov: 38 }),
     },
     {
       id: 'series-cta',
       label: '댓글에 입주',
-      dur: tEnd - t5,
+      dur: tEnd - t6,
       fade: 0.2,
       night: true,
       pose: (u) => ({ x: fresh.x, y: G, z: fresh.z, yaw: 3.5 + 0.35 * u, pitch: lerp(0.62, 0.5, u), dist: lerpDist(growDist * 0.95, growDist * 0.75, u), fov: 38 }),
@@ -670,12 +687,86 @@ function buildSeriesReel(data: SeriesData, day: number): Reel {
   const n = recent.length;
   // 어제의 섬: 최근 24시간 새 집을 잠깐 빈 집으로 둔다 (검은 화면 동안 바꿔 둔다. 끝나면 cleanup 이 되돌린다)
   state.scene.setHouses(islandWith(0));
+
+  // 광장에 모인 고양이들: 진짜 주민 고양이(새 이웃 먼저)를 가짜 접속자로 세운다. 영상 안에서만
+  const crowdSrc = [...recent.map((r) => state.houses.get(r.houseNo)!), ...residents.filter((h) => !newSet.has(h.houseNo))].filter(Boolean).slice(0, 8);
+  const ACTS: Array<Pick<RemotePlayer, 'anim' | 'dance'>> = [
+    { anim: 'idle' },
+    { anim: 'sit' },
+    { anim: 'idle', dance: 'wiggle' },
+    { anim: 'idle' },
+    { anim: 'sit' },
+    { anim: 'idle', dance: 'sway' },
+    { anim: 'idle' },
+    { anim: 'idle', dance: 'hop' },
+  ];
+  const crowd: RemotePlayer[] = crowdSrc.map((h, i) => {
+    const k = crowdSrc.length;
+    const a = (i / k) * Math.PI * 2 + 0.3;
+    const r = 1.25 + (i % 2) * 0.45;
+    const x = gx + Math.sin(a) * r;
+    const z = gz + Math.cos(a) * r;
+    // 뒤쪽 고양이는 가운데(=카메라 쪽)를, 앞쪽 고양이는 옆 친구를 본다 (등만 보이지 않게 옆모습)
+    const toC = Math.atan2(gx - x, gz - z) + Math.PI; // 씬의 rotY 는 이 방향이 반대다 (촬영 화면으로 확인)
+    const rotY = z > gz ? toC + (x > gx ? -1.25 : 1.25) : toC;
+    return { id: `cine-sq${i}`, houseNo: h.houseNo, handle: h.igHandle!, x, z, rotY, cat: h.cat, ...ACTS[i % ACTS.length] };
+  });
+  // 말풍선: 광장 컷 동안 고양이들이 돌아가며 한마디씩 (머리 위를 따라다닌다)
+  const talks = crowd.length
+    ? SQUARE_TALK.slice(0, 7).map((text, i) => ({ id: crowd[(i * 3) % crowd.length].id, text, at: t3 + 1.2 + i * 0.65, end: t3 + 1.2 + i * 0.65 + 2.2 }))
+    : [];
+  let bubs: HTMLElement[] = [];
+  const tick = (t: number) => {
+    const on = t >= t3 - 0.3 && t < t4;
+    if (!on) {
+      if (bubs.length) {
+        bubs.forEach((b) => b.remove());
+        bubs = [];
+      }
+      return;
+    }
+    if (!bubs.length) {
+      const layer = document.querySelector('#cinema .cine-ovl');
+      bubs = talks.map((tk) => {
+        const el = document.createElement('div');
+        el.className = 'cine-bub';
+        el.textContent = tk.text;
+        el.hidden = true;
+        layer?.appendChild(el);
+        return el;
+      });
+    }
+    talks.forEach((tk, i) => {
+      const el = bubs[i];
+      const show = t >= tk.at && t < tk.end;
+      const pos = show ? state.scene.remoteScreenPos(tk.id) : null;
+      if (!pos) {
+        if (!el.hidden) el.hidden = true;
+        return;
+      }
+      if (el.hidden) {
+        el.hidden = false;
+        playCine('pop', 0.35 + (i % 4) * 0.15);
+      }
+      const half = Math.min(el.offsetWidth / 2 + 6, innerWidth / 2);
+      const bx = Math.min(innerWidth - half, Math.max(half, pos.x));
+      el.style.transform = `translate(${bx}px, ${pos.y - 26}px) translate(-50%, -100%)`;
+    });
+  };
+
   const setCount = (v: number) => {
     document.querySelectorAll('#cinema .cine-num').forEach((el) => (el.textContent = String(v)));
   };
   const overlays: Overlay[] = [
     // 처음부터 끝까지: 왼쪽 위 "Day N · 🏠 집 수"
-    { at: 0, end: 99, cls: 'cine-day', html: `<b>Day ${day}</b><span>🏠 <i class="cine-num">${before}</i>채</span>` },
+    {
+      at: 0,
+      end: 99,
+      cls: 'cine-day',
+      html: `<b>Day ${day}</b><span>🏠 <i class="cine-num">${before}</i>채</span>`,
+      // 광장 고양이들은 처음부터 세워 둔다 (나타나는 시간이 있어서 광장 컷에 바로 보이게)
+      run: () => state.scene.setRemotePlayers(crowd),
+    },
     {
       at: 0,
       end: t1 - 0.05,
@@ -692,7 +783,7 @@ function buildSeriesReel(data: SeriesData, day: number): Reel {
   ];
   // 새 집이 하나씩 선다 (뽁 소리가 점점 높게). 많으면 시간 안에 촘촘하게
   const g0 = t1 + 0.45;
-  const g1 = t2 - 0.55;
+  const g1 = t2 - 0.45;
   grown.forEach((_, i) => {
     overlays.push({
       at: n === 1 ? g0 + 0.6 : g0 + ((g1 - g0) * i) / Math.max(1, n - 1),
@@ -713,37 +804,45 @@ function buildSeriesReel(data: SeriesData, day: number): Reel {
       at: t2 + each * i + 0.15,
       end: t2 + each * (i + 1) - 0.12,
       cls: 'cine-card',
-      html: `<small>${recent.length ? '새 이웃' : '이웃'} ${i + 1}</small><b>${esc(s.handle)}</b>${area ? `<em>${esc(area)}</em>` : ''}`,
+      html: `<small>${recent.length ? '새 이웃' : '이웃'} ${i + 1}/${stars.length}</small><b>${esc(s.handle)}</b>${area ? `<em>${esc(area)}</em>` : ''}`,
       sfx: 'sparkle',
     });
   });
   if (recent.length > stars.length) {
-    const rest = recent.slice(stars.length, stars.length + 9);
+    const rest = recent.slice(stars.length, stars.length + 12);
     const more = recent.length - stars.length - rest.length;
     overlays.push({
-      at: t2 + each * (stars.length - 1) + 0.4,
+      at: t2 + each * (stars.length - 1) + 0.2,
       end: t3 - 0.12,
       cls: 'cine-names',
-      html: `${rest.map((r) => `<span>${esc(r.handle)}</span>`).join('')}${more > 0 ? `<span>+${more}</span>` : ''}<em>모두 환영해요!</em>`,
+      html: `<em>그리고 새 이웃들</em>${rest.map((r) => `<span>${esc(r.handle)}</span>`).join('')}${more > 0 ? `<span>+${more}</span>` : ''}`,
     });
   }
   overlays.push(
     {
-      at: t3 + 0.2,
-      end: t4 - 0.1,
+      // 말풍선이 잘 보이게 컷 앞부분에만
+      at: t3 + 0.1,
+      end: t3 + 2.1,
+      cls: 'cine-card cine-square',
+      html: `<small>모두 모여요</small><b>마을 광장 💬</b>`,
+      sfx: 'chime',
+    },
+    {
+      at: t4 + 0.2,
+      end: t5 - 0.1,
       cls: 'cine-founder',
       html: `<i>★</i><b>창립 주민</b><span>처음 ${FOUNDER_MAX}명만</span><em>남은 자리 ${left}</em>`,
       sfx: 'pop',
     },
     {
-      at: t4 + 0.4,
-      end: t5 - 0.1,
+      at: t5 + 0.4,
+      end: t6 - 0.1,
       cls: 'cine-hook cine-series-hook',
       html: `내일은 <b>몇 채</b>가<br />될까요? 👀<small>팔로우하고 Day ${day + 1} 보기</small>`,
       sfx: 'chime',
     },
     {
-      at: t5 + 0.2,
+      at: t6 + 0.2,
       end: 99,
       cls: 'cine-cta',
       html: `<span>댓글에</span> <b>'입주'</b><em>다음 편엔 당신 집이 나와요 🏡</em>`,
@@ -757,7 +856,13 @@ function buildSeriesReel(data: SeriesData, day: number): Reel {
     voiceAt: A,
     caps: SERIES_LINES.map(([a, b, text]) => ({ at: A + a, end: A + b + 0.25, text })),
     overlays,
-    cleanup: () => pushHousesToScene(true),
+    tick,
+    cleanup: () => {
+      bubs.forEach((b) => b.remove());
+      bubs = [];
+      state.scene.setRemotePlayers([]);
+      pushHousesToScene(true);
+    },
   };
 }
 
@@ -798,7 +903,7 @@ export function startCinema(scene: IslandScene) {
     <div class="cine-panel">
       <h2>🎬 촬영 모드</h2>
       <p class="cine-lead">진짜 게임 화면에 카메라만 움직여요. 폰의 <b>화면 기록</b>을 켜고 고르세요.</p>
-      <button class="cine-go cine-series">📅 연재 릴스 <small>집이 늘어나는 섬, 약 28초</small></button>
+      <button class="cine-go cine-series">📅 연재 릴스 <small>집이 늘어나는 섬 + 광장 수다, 약 39초</small></button>
       <label class="cine-opt cine-day-row">연재 <b>Day</b> <input class="cine-day-in" type="number" min="1" inputmode="numeric" value="${seriesDay()}" /> <small>(날짜로 자동, 고칠 수 있어요)</small></label>
       <button class="cine-go cine-hookreel cine-go-sub2">🔥 첫 1초 릴스 <small>빈 집 → 내 집, 약 14초</small></button>
       <button class="cine-go cine-reel cine-go-sub2" disabled>📣 새 주민 릴스 <small class="cine-reel-who">찾는 중…</small></button>
@@ -850,6 +955,7 @@ export function startCinema(scene: IslandScene) {
   /** 릴스 글자들: t 는 첫 컷부터 지난 시간(초) */
   const drawReelText = (t: number) => {
     if (!reel) return;
+    reel.tick?.(t);
     reel.overlays.forEach((o, i) => {
       const on = t >= o.at && t < o.end;
       const el = ovlEls[i];

@@ -61,6 +61,7 @@ createIslandScene(canvas) → IslandScene
 - (2026-11-16 겨울) setBigYards(houseNos) : 마당 넓힌 집(7.2m, 나머지는 6m), setWinter(on) : 눈(나무는 늘, 밤에는 땅/빈 집 지붕), LED, 크리스마스 트리, 눈 내림
 - (2026-11-17 최적화) createIslandScene(canvas, options?: { graphics?: 'auto'|'normal'|'low', rememberLow? }), setGraphicsMode(mode), getGraphicsState() → { mode, low, weakDevice, quality }, onAutoLowSpec(cb). 앱은 설정 '화면 품질'(src/app/graphics.ts, localStorage ci_gfx)로 고른다. 기본은 '보통'(2026-11-18 사용자: 자동 기본 금지), '보통'은 해상도를 한 단계(0.82)까지만 낮춘다
 - (2026-11-18 꾸미기 시점) rotateView(step?), setTopView(on), getTopView(), resetView()
+- (2026-11-19 촬영) remoteScreenPos(id) : 걷기 모드가 아니어도 다른 유저 고양이 머리 위 화면 자리
 - (2026-11-15 소통) setDance(id|null), setSitting(on), catScreenPos(id|null) → {x,y}|null, onRemoteTap(cb(id)), RemotePlayer.dance. 따로 내보내는 것: townSquares(zones), benchNear(x,z), TOWN_SQUARE, walkCost(x,z,zones,hasHouse)
 - (작업 4에서 추가) enterHouse(houseNo, interior: InteriorItem[], wallpaper?, floor?), exitHouse(), setInteriorItems(items), onDoor(cb(houseNo|null)), onExitHouse(cb(houseNo)), setYardItemsFree(houseNo, items: PlacedItem[]), startPlacing(typeOrItemId?, houseNo?), stopPlacing(), rotatePlacing(step?), onPlace(cb(item)), onPick(cb(itemId)), setDrawings(drawings). 자세한 약속은 `src/scene/README-scene.md`
 - 위치 계산: `houseSlot(houseNo)` → { x, z, zone, neighborhood } (src/scene/layout.ts). 위치는 DB에 저장하지 않는다.
@@ -115,4 +116,4 @@ createIslandScene(canvas) → IslandScene
 - 촬영 모드 새 주민 릴스(최근 입주 집, ElevenLabs 나레이션, 자막, "댓글에 '입주'" 카드, `/api/newcomer`) (2026-11-18, Opus). README.md.
 - 촬영 모드 첫 1초 릴스(빈 집 → 내 집 변신, 창립 주민 남은 자리, "옆집 살 친구한테 보내고 댓글에 입주", ElevenLabs 나레이션) (2026-11-18, Opus). README.md.
 - 이사(첫 번 무료, 그다음 200츄르, 창립 주민은 1~100 안에서만), 꾸미기 시점(화면 돌리기/위에서 보기/확대, 씬 `rotateView` 등), 꾸미기 점수(프로필에서만, `src/shared/decorScore.ts`), 같은 가구 하나 더 (2026-11-18, Opus). README.md.
-- 촬영 모드 연재 릴스("팔로워 1명 = 집 1채, Day N", 약 28초, 집이 하나씩 늘어나는 장면, `/api/series`, 나레이션 길이에 맞춰 영상 늘리기) (2026-11-19, Opus). README.md.
+- 촬영 모드 연재 릴스("팔로워 1명 = 집 1채, Day N", 약 39초, 집이 하나씩 늘어나는 장면, 새 이웃 5집, 광장 고양이 수다, `/api/series`, 나레이션 길이에 맞춰 영상 늘리기) (2026-11-19, Opus). README.md.

@@ -222,6 +222,11 @@ export interface IslandScene {
    * 걷기 모드가 아니거나 화면 밖/안 보이면 null. 말풍선, 이모티콘을 띄울 때 매 프레임 부른다
    */
   catScreenPos(id: string | null): { x: number; y: number } | null;
+  /**
+   * (2026-11-19 촬영 모드) 다른 유저 고양이 머리 위의 화면 자리 (캔버스 기준 px). catScreenPos 와 같지만 걷기 모드가 아니어도 된다.
+   * 촬영 모드 광장 컷에서 말풍선을 띄울 때 쓴다. 안 보이면 null
+   */
+  remoteScreenPos(id: string): { x: number; y: number } | null;
   /** 다른 유저 고양이를 눌렀을 때 그 id 를 알린다 (프로필) */
   onRemoteTap(cb: (id: string) => void): void;
 
@@ -1587,6 +1592,10 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     catScreenPos(id) {
       if (!walking) return null;
       if (id === null) return project(walker.x, walker.y + PLAYER_SCALE * 1.05 + 0.1, walker.z);
+      const v = remotes.headOf(id, new THREE.Vector3());
+      return v ? project(v.x, v.y + 0.05, v.z) : null;
+    },
+    remoteScreenPos(id) {
       const v = remotes.headOf(id, new THREE.Vector3());
       return v ? project(v.x, v.y + 0.05, v.z) : null;
     },
