@@ -27,6 +27,10 @@ const clamp = (n: number) => Math.min(1, Math.max(0, Number.isFinite(n) ? n : 0)
 let settings = load();
 let ctx: AudioContext | null = null;
 let master: GainNode;
+/** 효과음+음악이 스피커로 나가기 직전 (자동 녹화가 여기서 소리를 받는다) */
+let mixOut: AudioNode | null = null;
+/** 자동 녹화 중이면 녹화로 가는 소리 출구 */
+let recDest: MediaStreamAudioDestinationNode | null = null;
 let bgmGain: GainNode;
 let sfxGain: GainNode;
 let musicTimer = 0;
@@ -97,6 +101,7 @@ function ensure(): AudioContext | null {
   soft.type = 'lowpass';
   soft.frequency.value = 5200;
   master.connect(soft).connect(ctx.destination);
+  mixOut = soft;
   bgmGain = ctx.createGain();
   sfxGain = ctx.createGain();
   bgmGain.connect(master);
@@ -589,6 +594,7 @@ export function playCineVoice(buf: AudioBuffer, delay: number): () => void {
   g.gain.value = 1;
   // 목소리는 음악용 부드럽게 깎는 필터를 거치지 않고 바로 낸다 (또렷하게)
   src.connect(g).connect(c.destination);
+  if (recDest) g.connect(recDest);
   const at = c.currentTime + Math.max(0, delay);
   src.start(at);
   musicDuck = 0.4;
@@ -610,3 +616,25 @@ export function playCineVoice(buf: AudioBuffer, delay: number): () => void {
     end();
   };
 }
+
+/** (2026-11-19 촬영 자동 녹화) 지금 나는 소리(음악, 효과음, 나레이션)를 녹화용 스트림으로도 보낸다. 소리를 못 쓰면 null */
+export function startRecordAudio(): MediaStream | null {
+  const c = ensure();
+  if (!c || !mixOut || typeof c.createMediaStreamDestination !== 'function') return null;
+  if (!recDest) {
+    recDest = c.createMediaStreamDestination();
+    mixOut.connect(recDest);
+  }
+  return recDest.stream;
+}
+
+export function stopRecordAudio() {
+  if (!recDest) return;
+  try {
+    mixOut?.disconnect(recDest);
+  } catch {
+    /* 이미 끊김 */
+  }
+  recDest = null;
+}
+

@@ -8,10 +8,11 @@
 import { dockArea, GROUND_Y, houseSlot, neighborhoodArea, townSquares, TOWN_SQUARE, type CinemaCamera, type IslandScene } from '../scene';
 import { FOUNDER_MAX, NEIGHBORHOOD_SIZE, REGIONS } from '../shared/config';
 import type { House, RegionId, RemotePlayer } from '../shared/types';
-import { loadCineVoice, playCine, playCineVoice, unlockSound, type CineSfx } from './audio/sound';
+import { loadCineVoice, playCine, playCineVoice, startRecordAudio, stopRecordAudio, unlockSound, type CineSfx } from './audio/sound';
 import hookVoiceUrl from './reels/hook-voice.mp3?url';
 import newcomerVoiceUrl from './reels/newcomer-voice.mp3?url';
 import seriesVoiceUrl from './reels/series-voice.mp3?url';
+import { canRecord, startRecording, videoFileName, type Recording } from './reelRecorder';
 import { pushHousesToScene, state } from './state';
 import { withEmptyLots } from './village';
 
@@ -706,9 +707,10 @@ function buildSeriesReel(data: SeriesData, day: number): Reel {
     const r = 1.25 + (i % 2) * 0.45;
     const x = gx + Math.sin(a) * r;
     const z = gz + Math.cos(a) * r;
-    // 뒤쪽 고양이는 가운데(=카메라 쪽)를, 앞쪽 고양이는 옆 친구를 본다 (등만 보이지 않게 옆모습)
-    const toC = Math.atan2(gx - x, gz - z) + Math.PI; // 씬의 rotY 는 이 방향이 반대다 (촬영 화면으로 확인)
-    const rotY = z > gz ? toC + (x > gx ? -1.25 : 1.25) : toC;
+    // 뒤쪽 고양이는 가운데(=카메라 쪽)를 보고, 앞쪽 고양이는 카메라 쪽으로 몸을 틀어 옆 친구를 본다 (등만 보이지 않게).
+    // rotY = atan2(dx, dz) 가 (dx, dz) 쪽을 보는 방향이다. 카메라는 +z 쪽에 있다
+    const toC = Math.atan2(gx - x, gz - z);
+    const rotY = z > gz ? (x > gx ? -0.7 : 0.7) : toC;
     return { id: `cine-sq${i}`, houseNo: h.houseNo, handle: h.igHandle!, x, z, rotY, cat: h.cat, ...ACTS[i % ACTS.length] };
   });
   // 말풍선: 광장 컷 동안 고양이들이 돌아가며 한마디씩 (머리 위를 따라다닌다)
@@ -873,6 +875,60 @@ function withMine(mine: House): House[] {
   return withEmptyLots([...list.values()], state.unlockedZones);
 }
 
+/** 무늬별 기본 고양이 (섬에 그 무늬 주민이 없을 때) */
+const THUMB_CATS: NonNullable<House['cat']>[] = [
+  { pattern: 'cheese', fur: '#f4a650', eyeColor: '#5fbf6a' },
+  { pattern: 'white', fur: '#fffaf2', eyeColor: '#6fb7e8' },
+  { pattern: 'tuxedo', fur: '#35323a', eyeColor: '#7ac36a' },
+  { pattern: 'gray', fur: '#a9adb8', eyeColor: '#f2c94c' },
+  { pattern: 'black', fur: '#34313a', eyeColor: '#f2c94c' },
+  { pattern: 'calico', fur: '#f0a04b', eyeColor: '#6fb7e8' },
+];
+
+/** 썸네일: 가장 최근 입주한 집 앞 길에 무늬가 다른 고양이 6마리 (뒷줄 3, 앞줄 3), 집이 뒤로 보이게 */
+function buildThumbShot(): { pose: Pose; cats: RemotePlayer[] } {
+  const G = GROUND_Y;
+  const residents = [...state.houses.values()].filter((h) => !h.isNpc && h.igHandle);
+  const heroNo = residents.sort((a, b) => b.houseNo - a.houseNo)[0]?.houseNo ?? 1;
+  const hs = houseSlot(heroNo);
+  const fx = Math.sin(hs.rot);
+  const fz = Math.cos(hs.rot);
+  const rx = Math.cos(hs.rot);
+  const rz = -Math.sin(hs.rot);
+  // 무늬마다 주민 고양이 하나 (없으면 기본)
+  const cats = THUMB_CATS.map((def) => residents.find((h) => h.cat?.pattern === def.pattern)?.cat ?? def);
+  const lookD = 4.2;
+  const camD = lookD + Math.cos(0.24) * 10.5;
+  const camX = hs.x + fx * camD;
+  const camZ = hs.z + fz * camD;
+  const spots: [number, number][] = [
+    [-1.1, 4.4],
+    [0, 4.25],
+    [1.1, 4.4],
+    [-0.75, 5.5],
+    [0.2, 5.7],
+    [1.0, 5.45],
+  ];
+  const players: RemotePlayer[] = spots.map(([side, d], i) => {
+    const x = hs.x + fx * d + rx * side;
+    const z = hs.z + fz * d + rz * side;
+    return {
+      id: `cine-thumb${i}`,
+      houseNo: null,
+      handle: '',
+      x,
+      z,
+      rotY: Math.atan2(camX - x, camZ - z) + (i % 2 ? 0.25 : -0.2),
+      anim: i === 1 || i === 4 ? 'sit' : 'idle',
+      cat: cats[i],
+    };
+  });
+  return {
+    pose: { x: hs.x + fx * lookD, y: G + 1.0, z: hs.z + fz * lookD, yaw: hs.rot, pitch: 0.24, dist: 10.5, fov: 40 },
+    cats: players,
+  };
+}
+
 const FADE = 0.45;
 
 /** 나레이션이 끝나기 전에 영상이 끝나지 않게 마지막 컷을 늘린다 (목소리 끝 + 1.6초는 마지막 화면을 보여 준다) */
@@ -902,9 +958,11 @@ export function startCinema(scene: IslandScene) {
     <div class="cine-black"></div>
     <div class="cine-panel">
       <h2>🎬 촬영 모드</h2>
-      <p class="cine-lead">진짜 게임 화면에 카메라만 움직여요. 폰의 <b>화면 기록</b>을 켜고 고르세요.</p>
-      <button class="cine-go cine-series">📅 연재 릴스 <small>집이 늘어나는 섬 + 광장 수다, 약 39초</small></button>
+      <p class="cine-lead">진짜 게임 화면에 카메라만 움직여요. <b>자동 녹화</b>가 켜져 있으면 화면 기록 없이 끝나자마자 영상 파일이 나와요.</p>
+      <div class="cine-result" hidden></div>
+      <button class="cine-go cine-series">📅 연재 릴스 <small>약 39초</small></button>
       <label class="cine-opt cine-day-row">연재 <b>Day</b> <input class="cine-day-in" type="number" min="1" inputmode="numeric" value="${seriesDay()}" /> <small>(날짜로 자동, 고칠 수 있어요)</small></label>
+      <button class="cine-go cine-go-sub cine-thumb">🖼️ 썸네일 사진 <small>고양이 6마리, 글자 없이</small></button>
       <button class="cine-go cine-hookreel cine-go-sub2">🔥 첫 1초 릴스 <small>빈 집 → 내 집, 약 14초</small></button>
       <button class="cine-go cine-reel cine-go-sub2" disabled>📣 새 주민 릴스 <small class="cine-reel-who">찾는 중…</small></button>
       <p class="cine-reel-note">나레이션 목소리가 함께 나와요. 소리를 켜고 찍으세요.</p>
@@ -912,6 +970,7 @@ export function startCinema(scene: IslandScene) {
       <div class="cine-shots">
         ${shots.map((s, i) => `<button class="cine-shot" data-i="${i}">${s.label}</button>`).join('')}
       </div>
+      <label class="cine-opt"><input type="checkbox" data-o="rec" ${canRecord() ? 'checked' : 'disabled'} /> 🔴 자동 녹화 <small>${canRecord() ? '(끝나면 영상 파일로 저장)' : '(이 브라우저는 안 돼요. 화면 기록을 쓰세요)'}</small></label>
       <label class="cine-opt"><input type="checkbox" data-o="caps" checked /> 자막 넣기 <small>(새 주민 릴스)</small></label>
       <label class="cine-opt"><input type="checkbox" data-o="tags" checked /> 집 이름표 보이기</label>
       <label class="cine-opt"><input type="checkbox" data-o="max" checked /> 아주 선명하게 <small>(끊기면 끄세요)</small></label>
@@ -940,6 +999,14 @@ export function startCinema(scene: IslandScene) {
   let showCaps = true;
   let stopVoice: (() => void) | null = null;
   let lastCap = '';
+  // 자동 녹화 (2026-11-19)
+  const sceneCanvas = document.getElementById('scene') as HTMLCanvasElement;
+  const resultBox = $('.cine-result');
+  let recWanted = false;
+  let recording: Recording | null = null;
+  let recLabel = 'reel';
+  let resultUrl: string | null = null;
+  let thumbPose: Pose | null = null;
 
   void findNewcomer().then((n) => {
     newcomer = n;
@@ -984,6 +1051,10 @@ export function startCinema(scene: IslandScene) {
 
   const frame = (now: number) => {
     requestAnimationFrame(frame);
+    if (thumbPose) {
+      scene.setCinemaCamera(toCamera(thumbPose, 0));
+      return;
+    }
     if (!playing) {
       // 기다리는 동안: 섬 전체 컷을 아주 천천히 돌려 둔다 (패널 뒤로 보인다)
       const idle = shots[shots.length - 1];
@@ -996,6 +1067,12 @@ export function startCinema(scene: IslandScene) {
       setBlack(1);
       return;
     }
+    // 자동 녹화: 앞의 검은 화면은 빼고 여기서부터 찍는다
+    if (recWanted && !recording) {
+      recWanted = false;
+      recording = startRecording(scene, sceneCanvas, root);
+      if (!recording) stopRecordAudio();
+    }
     drawReelText(t);
     let i = 0;
     while (i < playlist.length && t >= playlist[i].dur) {
@@ -1003,8 +1080,9 @@ export function startCinema(scene: IslandScene) {
       i++;
     }
     if (i >= playlist.length) {
-      // 끝: 검게 두었다가 패널을 다시 보인다
+      // 끝: 검게 두었다가 패널을 다시 보인다 (녹화는 마지막 컷이 끝난 순간 멈춘다)
       setBlack(1);
+      if (recording) finishRecording();
       if (t > 0.9) stop();
       return;
     }
@@ -1049,11 +1127,112 @@ export function startCinema(scene: IslandScene) {
     setBlack(1);
     // 검은 화면 1.5초 (해 지는 중이던 하늘이 돌아오고, 고화질 그림자가 준비될 시간. 편집할 때 잘라 낸다)
     t0 = performance.now() + 1500;
+    // 자동 녹화: 소리 길은 지금 열어 둔다 (곧 틀 나레이션도 녹화로 가게). 영상은 검은 화면이 끝나면 시작
+    recording?.cancel();
+    recording = null;
+    recWanted = ($('[data-o="rec"]') as HTMLInputElement).checked && canRecord();
+    if (recWanted) startRecordAudio();
+    resultBox.hidden = true;
     if (withReel && voice) stopVoice = playCineVoice(voice, 1.5 + withReel.voiceAt);
     playing = true;
   };
 
+  const finishRecording = () => {
+    const rec = recording;
+    recording = null;
+    if (!rec) return;
+    const label = recLabel;
+    void rec.stop().then((blob) => showResult(blob, label));
+  };
+
+  /** 녹화한 영상: 미리 보기 + 사진에 저장(공유) + 내려받기 */
+  const showResult = (blob: Blob | null, label: string) => {
+    if (resultUrl) URL.revokeObjectURL(resultUrl);
+    resultUrl = null;
+    if (!blob) {
+      resultBox.innerHTML = '<p class="cine-lead">녹화가 안 됐어요. 폰의 화면 기록으로 찍어 주세요.</p>';
+      resultBox.hidden = false;
+      return;
+    }
+    const name = videoFileName(blob, label);
+    resultUrl = URL.createObjectURL(blob);
+    const file = new File([blob], name, { type: blob.type });
+    const canShare = typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
+    resultBox.innerHTML = `
+      <p class="cine-result-h">🎬 녹화 완료 <small>${(blob.size / 1048576).toFixed(1)}MB · ${blob.type.includes('mp4') ? 'MP4' : 'WebM'}</small></p>
+      <video src="${resultUrl}" controls playsinline muted></video>
+      <div class="cine-result-btns">
+        ${canShare ? '<button class="cine-go cine-save">📲 사진에 저장 / 공유</button>' : ''}
+        <a class="cine-go cine-go-sub cine-down" href="${resultUrl}" download="${name}">⬇ 내려받기</a>
+      </div>
+      ${blob.type.includes('mp4') ? '' : '<p class="cine-reel-note">WebM 파일이에요. 인스타에 안 올라가면 폰(사파리)에서 다시 찍으면 MP4 로 나와요.</p>'}`;
+    resultBox.hidden = false;
+    resultBox.querySelector('.cine-save')?.addEventListener('click', () => {
+      void navigator.share({ files: [file] }).catch(() => {});
+    });
+    panel.scrollTop = 0;
+  };
+
+  // ── 썸네일 사진 (2026-11-19): 집 앞에 무늬가 다른 고양이 6마리. 글자는 사용자가 따로 넣는다 ──
+  const thumbBtn = $<HTMLButtonElement>('.cine-thumb');
+  thumbBtn.addEventListener('click', () => {
+    if (playing) return;
+    thumbBtn.disabled = true;
+    const shot = buildThumbShot();
+    const max = ($('[data-o="max"]') as HTMLInputElement).checked;
+    scene.setCinemaQuality(max ? 'max' : 'high');
+    scene.setNameTags(false);
+    scene.setTimeOfDay('day');
+    scene.setRemotePlayers(shot.cats);
+    panel.hidden = true;
+    resultBox.hidden = true;
+    thumbPose = shot.pose;
+    // 고양이가 나타나고 그림자가 자리 잡을 때까지 기다렸다가 한 장
+    setTimeout(() => {
+      scene.onAfterRender(() => {
+        scene.onAfterRender(null);
+        const c = document.createElement('canvas');
+        c.width = sceneCanvas.width;
+        c.height = sceneCanvas.height;
+        c.getContext('2d')?.drawImage(sceneCanvas, 0, 0);
+        c.toBlob((blob) => {
+          thumbPose = null;
+          scene.setRemotePlayers([]);
+          scene.setNameTags(true);
+          panel.hidden = false;
+          thumbBtn.disabled = false;
+          showPhoto(blob);
+        }, 'image/png');
+      });
+    }, 2200);
+  });
+
+  const showPhoto = (blob: Blob | null) => {
+    if (resultUrl) URL.revokeObjectURL(resultUrl);
+    resultUrl = null;
+    if (!blob) return;
+    resultUrl = URL.createObjectURL(blob);
+    const d = new Date(Date.now() + 9 * 3600_000).toISOString();
+    const name = `goyangi_thumb_${d.slice(0, 10)}_${d.slice(11, 13)}${d.slice(14, 16)}.png`;
+    const file = new File([blob], name, { type: 'image/png' });
+    const canShare = typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
+    resultBox.innerHTML = `
+      <p class="cine-result-h">🖼️ 썸네일 사진 <small>${sceneCanvas.width}×${sceneCanvas.height}</small></p>
+      <img src="${resultUrl}" alt="썸네일 사진" />
+      <div class="cine-result-btns">
+        ${canShare ? '<button class="cine-go cine-save">📲 사진에 저장 / 공유</button>' : ''}
+        <a class="cine-go cine-go-sub cine-down" href="${resultUrl}" download="${name}">⬇ 내려받기</a>
+      </div>
+      <p class="cine-reel-note">위쪽 하늘/길 자리에 글자를 넣으세요. 프로필 격자에서는 가운데 3:4 만 보여요.</p>`;
+    resultBox.hidden = false;
+    resultBox.querySelector('.cine-save')?.addEventListener('click', () => {
+      void navigator.share({ files: [file] }).catch(() => {});
+    });
+    panel.scrollTop = 0;
+  };
+
   const stop = () => {
+    if (recording) finishRecording();
     playing = false;
     stopVoice?.();
     stopVoice = null;
@@ -1081,6 +1260,7 @@ export function startCinema(scene: IslandScene) {
   reelBtn.addEventListener('click', () => {
     if (!newcomer) return;
     const n = newcomer;
+    recLabel = 'newcomer';
     startReel(reelBtn, () => buildNewcomerReel(n.houseNo, n.handle, n.region));
   });
   const seriesBtn = $<HTMLButtonElement>('.cine-series');
@@ -1091,14 +1271,24 @@ export function startCinema(scene: IslandScene) {
     const day = Math.max(1, Math.floor(Number(dayIn.value)) || seriesDay());
     void fetchSeries().then((data) => {
       seriesBtn.disabled = false;
+      recLabel = `day${day}`;
       startReel(seriesBtn, () => buildSeriesReel(data, day));
     });
   });
   const hookBtn = $<HTMLButtonElement>('.cine-hookreel');
-  hookBtn.addEventListener('click', () => startReel(hookBtn, () => buildHookReel(newcomer?.houseNo ?? null)));
-  $('.cine-all').addEventListener('click', () => play(shots));
+  hookBtn.addEventListener('click', () => {
+    recLabel = 'hook';
+    startReel(hookBtn, () => buildHookReel(newcomer?.houseNo ?? null));
+  });
+  $('.cine-all').addEventListener('click', () => {
+    recLabel = 'island';
+    play(shots);
+  });
   root.querySelectorAll<HTMLButtonElement>('.cine-shot').forEach((btn) => {
-    btn.addEventListener('click', () => play([shots[Number(btn.dataset.i)]]));
+    btn.addEventListener('click', () => {
+      recLabel = 'shot';
+      play([shots[Number(btn.dataset.i)]]);
+    });
   });
 
   scene.setNameTags(true);

@@ -286,6 +286,8 @@ export interface IslandScene {
    * 'max': 같은데 해상도를 기기 비율 최대 3 까지 (화면 기록이 선명해지지만 폰이 더 버거워한다). 'off': 원래대로.
    */
   setCinemaQuality(mode: 'off' | 'high' | 'max'): void;
+  /** (2026-11-19 촬영 자동 녹화) 섬을 한 장 그린 바로 뒤에 부른다 (그림이 지워지기 전이라 캔버스를 그대로 복사할 수 있다). null 이면 끈다 */
+  onAfterRender(cb: (() => void) | null): void;
 
   /** 캔버스 크기가 바뀌면 부른다 */
   resize(): void;
@@ -410,6 +412,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
   // 계단 현상 지우기(antialias)는 만들 때만 정할 수 있다. 저사양으로 시작하면 끈다 (기기 비율 2 이상이면 거의 티가 안 난다)
   const preWeak = guessWeakDevice(null);
   const startLow = graphicsMode === 'low' || (graphicsMode === 'auto' && (preWeak || !!options.rememberLow));
+  let afterRenderCb: (() => void) | null = null;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !startLow, powerPreference: startLow ? 'default' : 'high-performance' });
   const weakDevice = preWeak || guessWeakDevice(renderer.getContext());
   /** 'auto' 에서 저사양으로 바뀌었는지 */
@@ -1193,6 +1196,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     npcs.update(dt, npcView);
 
     renderer.render(scene, camera);
+    afterRenderCb?.();
     cpuMs = cpuMs * 0.9 + (performance.now() - t0) * 0.1;
   };
   raf = requestAnimationFrame(frame);
@@ -1546,6 +1550,9 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     },
     setNameTags(on) {
       houses.setNameTags(on);
+    },
+    onAfterRender(cb) {
+      afterRenderCb = cb;
     },
     setCinemaQuality(mode) {
       if (mode === cineQuality) return;
