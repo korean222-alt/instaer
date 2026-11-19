@@ -117,6 +117,8 @@ export class WalkControls {
     on(this.jumpBtn, 'pointerleave', release);
     on<KeyboardEvent>(window, 'keydown', (e) => {
       if (!this.active || e.metaKey || e.ctrlKey || e.altKey) return;
+      // 2026-11-19: 글자를 쓰는 중(채팅, 게시판, 소원 칸)에는 스페이스/방향키를 가로채지 않는다 (띄어쓰기하면 점프하던 문제)
+      if (e.isComposing || typingIn(e.target)) return;
       if (e.code === 'Space') {
         this.jump = true;
         e.preventDefault();
@@ -126,6 +128,10 @@ export class WalkControls {
       }
     });
     on<KeyboardEvent>(window, 'keyup', (e) => this.held.delete(e.code));
+    // 글자 칸을 누르면 들고 있던 방향키를 놓는다 (고양이가 혼자 계속 걷지 않게)
+    on<FocusEvent>(window, 'focusin', (e) => {
+      if (typingIn(e.target)) this.held.clear();
+    });
     on(window, 'blur', () => this.held.clear());
     on(window, 'resize', () => this.layout());
   }
@@ -342,4 +348,12 @@ export class WalkControls {
     this.stickMX = (e.clientX - this.stickX) * k;
     this.stickMY = -(e.clientY - this.stickY) * k;
   }
+}
+
+/** 글자를 쓰는 칸인지 (input, textarea, 직접 고치는 글) */
+function typingIn(t: EventTarget | null): boolean {
+  if (!(t instanceof HTMLElement)) return false;
+  if (t.isContentEditable || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return true;
+  if (t instanceof HTMLInputElement) return !['button', 'checkbox', 'radio', 'range', 'submit', 'reset', 'color', 'file'].includes(t.type);
+  return false;
 }

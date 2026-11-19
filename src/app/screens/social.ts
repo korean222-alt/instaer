@@ -66,7 +66,7 @@ export const boardScreen: Screen = {
     let posts: Post[] | null = null;
     const draw = () => {
       root.innerHTML = `
-        <a class="btn wish-link" href="#/wish">⭐ 소원 비는 곳 <small>고양이섬에 생겼으면 하는 것</small></a>
+        <a class="btn wish-link" href="#/wish">⭐ 소원 비는 곳 <small>마음속 소원 빌기</small></a>
         ${
           state.me
             ? `<form class="chat-form board-form"><input class="chat-in" maxlength="${BOARD_MAX}" placeholder="마을 고양이들에게 한마디 (${BOARD_MAX}자)" autocomplete="off" enterkeyhint="send" /><button class="btn small primary">붙이기</button></form>

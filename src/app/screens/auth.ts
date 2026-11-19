@@ -173,7 +173,7 @@ export const reportScreen: Screen = {
   },
 };
 
-// ── 소원 비는 곳: 앞으로 생겼으면 하는 것 ──
+// ── 소원 비는 곳: 내 소원 빌기 (2026-11-19 사용자: 섬에 생겼으면 하는 것이 아니라 개인 소원) ──
 export const wishScreen: Screen = {
   id: 'wish',
   title: '소원 비는 곳',
@@ -181,8 +181,8 @@ export const wishScreen: Screen = {
     let wishes: Wish[] | null = null;
     const draw = () => {
       root.innerHTML = `
-        <p class="lead">고양이섬에 생겼으면 하는 것을 빌어 주세요 ✨<br /><small>운영자가 하나씩 읽고 다음에 만들 것을 정해요.</small></p>
-        <form class="chat-form wish-form"><input class="chat-in" maxlength="${WISH_MAX}" placeholder="예) 고양이랑 같이 타는 배 (${WISH_MAX}자)" autocomplete="off" enterkeyhint="send" /><button class="btn small primary">빌기</button></form>
+        <p class="lead">마음속 소원을 하나 빌어 보세요 ✨<br /><small>섬 고양이들이 같이 빌어 줄게요.</small></p>
+        <form class="chat-form wish-form"><input class="chat-in" maxlength="${WISH_MAX}" placeholder="예) 이번 시험 꼭 붙게 해 주세요 (${WISH_MAX}자)" autocomplete="off" enterkeyhint="send" /><button class="btn small primary">빌기</button></form>
         <p class="chat-note">하루 ${WISH_PER_DAY}번까지 빌 수 있어요. 모두에게 보여요.</p>
         ${
           wishes === null

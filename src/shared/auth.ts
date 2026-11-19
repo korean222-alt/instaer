@@ -43,7 +43,7 @@ export const REPORT_KINDS: Array<{ id: ReportKind; label: string }> = [
 export const isReportKind = (v: unknown): v is ReportKind => v === 'stolen' || v === 'house' || v === 'other';
 export const REPORT_MAX = 300;
 
-// ── 소원 비는 곳: 앞으로 생겼으면 하는 것 적기 ──
+// ── 소원 비는 곳: 개인 소원 빌기 (2026-11-19 바꿈, 전에는 섬에 생겼으면 하는 것) ──
 export const WISH_MAX = 100;
 export const WISH_PER_DAY = 3;
 export const WISH_SHOW = 60;
