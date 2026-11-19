@@ -6,14 +6,14 @@ import { CURRENCY, FREE_ROOM_MAX_BIG } from '../../shared/economy';
 import type { Drawing, HouseDecor, PlacedItem } from '../../shared/types';
 import { loadMyDrawings, myDrawingList, pinDrawings, surfaceDrawing } from '../art';
 import { play } from '../audio/sound';
-import { ApiError, saveDecor } from '../net/api';
+import { ApiError, buyItem, saveDecor } from '../net/api';
 import { markGuide } from './guide';
 import { go } from '../router';
 import { state } from '../state';
 import { drawingThumb } from '../ui/drawingThumb';
 import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
-import { applyWallet, hasItem } from '../wallet';
+import { applyWallet, coins, hasItem } from '../wallet';
 import { openDrawEditor } from '../screens/draw';
 import type { Explore } from './explore';
 
@@ -40,6 +40,12 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
   let picked: string | null = null;
   let panel: Panel = null;
   let saving = false;
+  /** 아래 줄: 내 가구 / 상점 (2026-11-19 사용자: "가구가 많아져서 한 줄은 어렵다, 가진 것과 살 것을 따로") */
+  let dockTab: 'mine' | 'shop' = 'mine';
+  /** 상점 줄에서 누른, 살지 묻는 아이템 */
+  let buyType: string | null = null;
+  let buying = false;
+  let drawnTab: 'mine' | 'shop' | null = null;
 
   // 위: 제목, 저장/취소, 고른 아이템 할 일 / 아래: 아이템 그림 줄 (2026-11-15, 엄지로 고르기 쉽게)
   const bar = document.createElement('div');
@@ -185,15 +191,67 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
           : ''
       }
       ${panelHtml}`;
-    dock.innerHTML = `<div class="decor-strip">
-        ${shown
-          .map((d) => {
-            const own = hasItem(d.type);
-            const on = it?.type === d.type || pendingType === d.type;
-            return `<button class="strip-item${own ? '' : ' locked'}${on ? ' on' : ''}" data-type="${d.type}">${pic(d.type)}<span>${esc(d.label)}</span>${own ? '' : `<small>${d.price} ${CURRENCY}</small>`}</button>`;
-          })
-          .join('')}
-      </div>`;
+    const mine = shown.filter((d) => hasItem(d.type));
+    const forSale = shown.filter((d) => !hasItem(d.type) && d.price !== null);
+    const buyDef = buyType ? decorItem(buyType) : null;
+    const strip =
+      dockTab === 'mine'
+        ? mine.length
+          ? mine
+              .map((d) => {
+                const on = it?.type === d.type || pendingType === d.type;
+                return `<button class="strip-item${on ? ' on' : ''}" data-type="${d.type}">${pic(d.type)}<span>${esc(d.label)}</span></button>`;
+              })
+              .join('')
+          : '<p class="strip-empty">아직 놓을 가구가 없어요. 옆의 상점에서 사 보세요.</p>'
+        : forSale.length
+          ? forSale
+              .map((d) => `<button class="strip-item shop${buyType === d.type ? ' on' : ''}" data-buy="${d.type}">${pic(d.type)}<span>${esc(d.label)}</span><small>${d.price} ${CURRENCY}</small></button>`)
+              .join('')
+          : '<p class="strip-empty">상점 가구를 다 가졌어요!</p>';
+    // 다시 그려도 보던 자리를 지킨다 (같은 탭일 때)
+    const keepScroll = drawnTab === dockTab ? (dock.querySelector('.decor-strip')?.scrollLeft ?? 0) : 0;
+    drawnTab = dockTab;
+    dock.innerHTML = `
+      ${
+        buyDef && dockTab === 'shop'
+          ? `<div class="decor-buy">${pic(buyDef.type)}<div>${esc(buyDef.label)}<small>${buyDef.price} ${CURRENCY} · 사면 바로 놓을 수 있어요</small></div>
+              <button class="pill btn-pill primary" data-act="buy" ${buying || coins() < (buyDef.price ?? 0) ? 'disabled' : ''}>${buying ? '사는 중' : coins() < (buyDef.price ?? 0) ? `${(buyDef.price ?? 0) - coins()} 모자라요` : '사기'}</button>
+              <button class="pill btn-pill" data-act="nobuy">닫기</button></div>`
+          : ''
+      }
+      <div class="dock-tabs">
+        <button data-tab="mine" class="${dockTab === 'mine' ? 'on' : ''}">내 가구 ${mine.length}</button>
+        <button data-tab="shop" class="${dockTab === 'shop' ? 'on' : ''}">상점 ${forSale.length}</button>
+        <span class="coins">${coins().toLocaleString()} ${CURRENCY}</span>
+      </div>
+      <div class="decor-strip">${strip}</div>`;
+    dock.querySelector('.decor-strip')!.scrollLeft = keepScroll;
+  }
+
+  /** 꾸미는 자리에서 바로 사고, 산 가구를 바로 놓을 준비를 한다 */
+  async function buyHere(type: string) {
+    if (buying || !where) return;
+    buying = true;
+    draw();
+    try {
+      const res = await buyItem(type);
+      applyWallet(res.wallet, { item: res.bought });
+      buyType = null;
+      dockTab = 'mine';
+      if (where && items.length < max()) {
+        picked = null;
+        panel = null;
+        pendingType = type;
+        scene.startPlacing(type, where === 'yard' ? houseNo : undefined);
+        toast(`${decorItem(type)?.label ?? ''} 구입! 놓을 곳을 눌러요`);
+      }
+    } catch (e) {
+      play('error');
+      toast(e instanceof ApiError ? e.message : '사지 못했어요');
+    }
+    buying = false;
+    draw();
   }
 
   async function save() {
@@ -235,11 +293,33 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
     const t = (e.target as HTMLElement).closest<HTMLElement>('button');
     if (!t || !where) return;
     const it = picked ? items.find((i) => i.id === picked) : null;
+    if (t.dataset.tab) {
+      dockTab = t.dataset.tab === 'shop' ? 'shop' : 'mine';
+      buyType = null;
+      play('tap');
+      draw();
+      return;
+    }
+    if (t.dataset.buy) {
+      buyType = buyType === t.dataset.buy ? null : t.dataset.buy;
+      play('tap');
+      draw();
+      return;
+    }
+    if (t.dataset.act === 'nobuy') {
+      buyType = null;
+      play('close');
+      draw();
+      return;
+    }
+    if (t.dataset.act === 'buy' && buyType) {
+      void buyHere(buyType);
+      return;
+    }
     if (t.dataset.type) {
       const type = t.dataset.type;
       if (!hasItem(type)) {
         play('tap');
-        toast(`${decorItem(type)?.label} 은(는) 상점이나 퀘스트로 얻어요`);
         go('shop');
         return;
       }
@@ -346,6 +426,8 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
       picked = null;
       pendingType = null;
       panel = null;
+      buyType = null;
+      dockTab = 'mine';
       document.body.classList.add('decorating');
       scene.startPlacing(null, w === 'yard' ? houseNo : undefined);
       pushScene();

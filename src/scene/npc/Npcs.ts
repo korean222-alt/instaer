@@ -32,6 +32,8 @@ export interface SceneNpc {
    * true 면 걷는 중, false 면 멈춰 있다(잠시 뒤 앉는다).
    */
   moving?: boolean;
+  /** (2026-11-19 산책냥 부탁) true 면 머리 위에 노란 "!" 를 띄운다 (줄 부탁이 있다) */
+  mark?: boolean;
 }
 
 /** 한 번에 그리는 주민 수 */
@@ -233,6 +235,10 @@ class Rec {
   lookKey = '';
   tagSlot = -1;
   tagAlpha = 0;
+  /** 머리 위 "!" (SceneNpc.mark) */
+  mark = false;
+  markSlot = -1;
+  markAlpha = 0;
   /** 앱이 자리를 옮겨 주는 주민 (SceneNpc.moving), 걷는 중인지, 멈춘 지 얼마나 됐는지 */
   follow = false;
   goalWalk = false;
@@ -263,6 +269,8 @@ export class Npcs {
 
   private readonly flock: CatFlock;
   private readonly tags = new NameTags({ prefix: '', bg: 'rgba(96, 148, 66, 0.9)', fg: '#fffdf2' });
+  private readonly marks = new NameTags({ prefix: '', bg: 'rgba(255, 184, 48, 0.97)', fg: '#5a3510' });
+  private markTime = 0;
   private readonly material: THREE.MeshLambertMaterial;
   private readonly worn = new Map<string, Batch>();
   private readonly props = new Map<string, Batch>();
@@ -279,7 +287,7 @@ export class Npcs {
     this.flock = new CatFlock(model, POOL, 'low');
     this.flock.mesh.visible = false;
     this.material = createGlowLambert(shared, { instanced: false });
-    this.group.add(this.flock.mesh, this.tags.mesh);
+    this.group.add(this.flock.mesh, this.tags.mesh, this.marks.mesh);
   }
 
   /** 지금 보여 줄 주민 전체. 목록에서 빠진 주민은 스르르 사라진다 */
@@ -307,6 +315,7 @@ export class Npcs {
         r.tagSlot = -1;
       }
       r.role = n.role ?? '';
+      r.mark = n.mark === true;
       const yaw = Number.isFinite(n.rotY) ? n.rotY : 0;
       if (typeof n.moving === 'boolean') {
         const first = Number.isNaN(r.givenX);
@@ -354,7 +363,10 @@ export class Npcs {
 
   /** 모두 바로 지운다 (집 안팎을 오갈 때) */
   clear() {
-    for (const r of this.recs) this.tags.give(r.tagSlot);
+    for (const r of this.recs) {
+      this.tags.give(r.tagSlot);
+      this.marks.give(r.markSlot);
+    }
     this.recs.length = 0;
     this.byId.clear();
   }
@@ -378,6 +390,8 @@ export class Npcs {
     for (const b of this.worn.values()) b.n = 0;
     for (const b of this.props.values()) b.n = 0;
     this.tags.begin();
+    this.marks.begin();
+    this.markTime += dt;
     const visible = view.dist < 300;
     let n = 0;
     let nTags = 0;
@@ -386,6 +400,7 @@ export class Npcs {
       r.show = r.alive ? Math.min(1, r.show + dt / 0.38) : r.show - dt / 0.28;
       if (r.show <= 0 && !r.alive) {
         this.tags.give(r.tagSlot);
+        this.marks.give(r.markSlot);
         this.byId.delete(r.id);
         this.recs.splice(i, 1);
         continue;
@@ -422,6 +437,19 @@ export class Npcs {
       const dx = r.x - view.focusX;
       const dz = r.z - view.focusZ;
       r.d2 = dx * dx + dz * dz;
+      // 부탁이 있는 주민 머리 위 "!" (이름표보다 멀리서도 보이고 통통 튄다)
+      const wantMark = r.alive && r.mark && r.d2 < 40 * 40;
+      r.markAlpha = wantMark ? Math.min(1, r.markAlpha + dt / 0.25) : Math.max(0, r.markAlpha - dt / 0.25);
+      if (r.markAlpha <= 0) {
+        if (r.markSlot >= 0) {
+          this.marks.give(r.markSlot);
+          r.markSlot = -1;
+        }
+      } else {
+        if (r.markSlot < 0) r.markSlot = this.marks.take('!');
+        const bob = Math.abs(Math.sin(this.markTime * 3.2 + r.phase * 0.1)) * 0.14;
+        this.marks.push(r.markSlot, r.x, r.groundY + SCALE * 1.02 + 0.62 - 0.08 * r.sit + bob, r.z, 1.35, r.markAlpha * Math.min(1, r.show * 1.4));
+      }
       const range = view.walking ? TAG_RANGE : Math.max(TAG_RANGE, view.dist * 0.55);
       const want = r.alive && !!r.name && r.d2 < range * range;
       r.tagAlpha = want ? Math.min(1, r.tagAlpha + dt / 0.22) : Math.max(0, r.tagAlpha - dt / 0.22);
@@ -444,6 +472,7 @@ export class Npcs {
       nTags++;
     }
     this.tags.end(view.viewportW, view.viewportH);
+    this.marks.end(view.viewportW, view.viewportH);
     this.flock.count = n;
     this.flock.mesh.visible = n > 0;
     for (const b of this.worn.values()) this.flush(b);
@@ -455,6 +484,7 @@ export class Npcs {
   dispose() {
     this.flock.dispose();
     this.tags.dispose();
+    this.marks.dispose();
     for (const b of [...this.worn.values(), ...this.props.values()]) {
       b.mesh.geometry.dispose();
       b.mesh.dispose();

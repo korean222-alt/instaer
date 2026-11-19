@@ -16,6 +16,7 @@ import {
   FISH,
   NPC_INFO,
   ORES,
+  parseWanderId,
   questValue,
   STORY_QUESTS,
   storyQuest,
@@ -30,6 +31,7 @@ import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
 import { applyWallet, coins, refreshWallet } from '../wallet';
 import { coinIcon } from './shop';
+import { wanderName } from '../play/wanderers';
 import type { Screen } from './types';
 
 const bar = (v: number, target: number) => `<span class="q-bar"><b style="width:${Math.min(100, (v / target) * 100)}%"></b></span><span class="q-n">${Math.min(v, target)}/${target}</span>`;
@@ -53,6 +55,22 @@ function dailyRow(q: DailyQuestDef, withAsk: boolean): string {
     <div class="q-main"><b>${esc(q.label)}</b><small>${sub} · ${q.coins} ${CURRENCY}</small>
       ${accepted && !claimed ? `<div class="q-prog">${bar(v, q.target)}</div>` : ''}</div>
     ${action}</li>`;
+}
+
+/** 산책냥 부탁 한 줄 (받아 둔 count 부탁, 2026-11-19) */
+export function wanderRow(id: string): string {
+  const w = state.wallet!;
+  const p = parseWanderId(id);
+  if (!p || p.def.kind !== 'count') return '';
+  const d = w.data.daily;
+  const claimed = d.claimed.includes(id);
+  const v = questValue(w.data, { id, key: p.def.key! });
+  const t = p.def.target!;
+  const ready = !claimed && v >= t;
+  return `<li class="q-row wander${claimed ? ' done' : ''}">
+    <div class="q-main"><b>${esc(p.def.label)} <em class="tag wander">산책냥</em></b><small>${esc(wanderName(p.walker))}의 부탁 · ${esc(p.def.hint)} · ${p.def.coins} ${CURRENCY}</small>
+      ${claimed ? '' : `<div class="q-prog">${bar(v, t)}</div>`}</div>
+    ${claimed ? '<span class="badge ok">완료</span>' : `<button class="btn small${ready ? ' primary' : ''}" data-claim="${esc(id)}" ${ready ? '' : 'disabled'}>받기</button>`}</li>`;
 }
 
 /** 특별 부탁 한 줄 (한 번만, 아이템 보상) */
@@ -145,6 +163,7 @@ export const questsScreen: Screen = {
       const doneCount = d.claimed.filter((c) => !!dailyQuest(c)).length;
       const bonusDone = d.claimed.includes(DAILY_ALL_ID);
       const stories = w.data.storyTaken.map((id) => storyQuest(id)).filter((q): q is StoryQuestDef => !!q);
+      const wanders = Object.keys(d.accepted).filter((id) => parseWanderId(id)?.def.kind === 'count');
       const notYet = (Object.keys(NPC_INFO) as NpcRole[]).filter((role) => {
         const q = w.daily.map((id) => dailyQuest(id)).find((x) => x?.npc === role);
         return q && !(q.id in d.accepted);
@@ -153,13 +172,13 @@ export const questsScreen: Screen = {
         <div class="coin-card">${coinIcon()}<b>${coins().toLocaleString()}</b><span>${CURRENCY}</span><a class="link" href="#/shop">상점</a></div>
         <h3 class="sec">받은 부탁 <small>한국 시간 자정에 새로 바뀌어요</small></h3>
         ${
-          accepted.length || stories.length
-            ? `<ul class="q-list">${accepted.map((q) => dailyRow(q, false)).join('')}${stories.map((q) => storyRow(q, false)).join('')}
+          accepted.length || stories.length || wanders.length
+            ? `<ul class="q-list">${accepted.map((q) => dailyRow(q, false)).join('')}${wanders.map(wanderRow).join('')}${stories.map((q) => storyRow(q, false)).join('')}
               <li class="q-row bonus${bonusDone ? ' done' : ''}">
                 <div class="q-main"><b>오늘 부탁 ${DAILY_COUNT}개 끝내기</b><small>보너스 ${DAILY_ALL_COINS} ${CURRENCY}</small><div class="q-prog">${bar(doneCount, DAILY_COUNT)}</div></div>
                 ${bonusDone ? '<span class="badge ok">받음</span>' : `<button class="btn small${doneCount >= DAILY_COUNT ? ' primary' : ''}" data-claim="${DAILY_ALL_ID}" ${doneCount >= DAILY_COUNT ? '' : 'disabled'}>받기</button>`}
               </li></ul>`
-            : '<p class="empty small">아직 받은 부탁이 없어요.<br />걷기를 눌러 섬 모서리의 주민들에게 말을 걸어 보세요.</p>'
+            : '<p class="empty small">아직 받은 부탁이 없어요.<br />걷기를 눌러 섬 모서리의 주민들에게 말을 걸어 보세요.<br />머리 위에 <b>!</b> 가 뜬 산책냥 옆을 지나가도 부탁을 해요.</p>'
         }
         ${
           notYet.length

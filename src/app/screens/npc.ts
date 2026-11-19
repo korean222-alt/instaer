@@ -6,6 +6,7 @@ import { ApiError, sellItems } from '../net/api';
 import { ctl } from '../play/ctl';
 import { MAYOR_NAME, npcLook, npcName } from '../play/npcs';
 import { WANDER_TALK } from '../play/wanderers';
+import { takeWanderFromSheet, wanderOfferHtml } from '../play/wanderOffer';
 import { markNewsSeen, newsHtml } from './social';
 import { state } from '../state';
 import { catSvg } from '../ui/catSvg';
@@ -100,13 +101,21 @@ export const npcScreen: Screen = {
       return;
     }
     if (p.startsWith('walker-')) {
-      // 산책냥 (2026-11-19): 섬을 돌아다니는 주민. 부탁은 없고 인사만
+      // 산책냥 (2026-11-19): 섬을 돌아다니는 주민. 인사, 그리고 "!" 가 떠 있으면 작은 부탁 (wanderOffer.ts)
       const id = Number(p.slice(7)) || 0;
       ctx.setTitle(npcName('wanderer', id));
       root.innerHTML = `
         <div class="npc-head">${face(npcLook('wanderer', id), `w${id}`)}
           <p class="bubble">${esc(WANDER_TALK[(id + new Date().getDate()) % WANDER_TALK.length])}</p></div>
-        <p class="note">산책냥은 마을 광장과 동네 여기저기를 천천히 돌아다녀요. 작은 지도에서 노란 점으로 보여요.</p>`;
+        ${wanderOfferHtml(id)}
+        <p class="note">산책냥은 마을 광장과 동네 여기저기를 천천히 돌아다녀요. 작은 지도에서 노란 점으로 보여요. 머리 위에 <b>!</b> 가 뜬 산책냥은 하루 한 번 작은 부탁을 해요.</p>`;
+      root.addEventListener('click', async (e) => {
+        const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-wander]');
+        if (!b) return;
+        b.disabled = true;
+        await takeWanderFromSheet(id);
+        ctx.close();
+      });
       return;
     }
     if (p.startsWith('resident-')) {

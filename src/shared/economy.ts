@@ -554,3 +554,77 @@ export const HOME_ROLES: readonly HomeRole[] = ['explorer', 'resident', 'painter
 export const STALL_ROLES: readonly NpcRole[] = ['shop', 'arcade'];
 /** 주민 집 번호(구역 * 8 + 순번) → 주인 역할 */
 export const homeRole = (homeId: number): HomeRole => HOME_ROLES[((homeId % HOME_ROLES.length) + HOME_ROLES.length) % HOME_ROLES.length];
+
+// ── 산책냥 부탁 (2026-11-19 사용자: "주민들이 멀리 있으니 지나가면서 자연스럽게 퀘스트를 주면 좋겠다, 머리 위에 느낌표") ──
+// 섬을 돌아다니는 산책냥(app/play/wanderers.ts, 구역마다 셋)이 하루에 한 마리당 부탁 하나를 들고 다닌다(머리 위 "!").
+// 옆을 지나가면 말을 걸어 온다. 둘 중 하나:
+//   give : 가방에 그 종류(물고기/광석/곤충)가 있으면 바로 하나 건네고 그 자리에서 츄르를 받는다 (팔 때보다 후하다)
+//   count: 오늘의 부탁처럼 받은 뒤에 한 만큼 센다. 다 하면 산책냥을 다시 찾을 필요 없이 퀘스트에서 받는다
+// 퀘스트 id 는 `w<산책냥 번호>:<부탁 id>` (예: w4:wg_fish). 그날 그 산책냥이 든 부탁만 받을 수 있다. 하루 WANDER_DAILY_MAX 개까지.
+
+export interface WanderQuestDef {
+  id: string;
+  kind: 'give' | 'count';
+  label: string;
+  ask: string;
+  /** give: 건네줄 가방 물건 종류 */
+  bag?: 'fish' | 'ore' | 'bug';
+  /** count: 셀 값과 목표 */
+  key?: QuestKey;
+  target?: number;
+  coins: number;
+  hint: string;
+}
+
+export const WANDER_QUESTS: readonly WanderQuestDef[] = [
+  { id: 'wg_fish', kind: 'give', bag: 'fish', label: '물고기 한 마리 건네주기', ask: '배가 너무 고프다냥... 가방에 물고기 있으면 한 마리만 줄래냥?', coins: 25, hint: '연못이나 부두에서 낚은 물고기' },
+  { id: 'wg_ore', kind: 'give', bag: 'ore', label: '광석 하나 건네주기', ask: '반짝이는 돌을 모으고 있다냥! 광석 하나만 나눠 줄래냥?', coins: 30, hint: '동굴에서 캔 광석' },
+  { id: 'wg_bug', kind: 'give', bag: 'bug', label: '곤충 한 마리 건네주기', ask: '곤충 친구를 사귀고 싶다냥. 가방에 곤충 있으면 한 마리 보여 줄래냥?', coins: 25, hint: '걷다가 "잡기"로 잡은 곤충' },
+  { id: 'wc_fish2', kind: 'count', key: 'fish', target: 2, label: '물고기 2마리 낚기', ask: '오늘 저녁은 생선 구이다냥! 2마리만 낚아 주면 고맙겠다냥.', coins: 20, hint: '연못이나 부두에서 낚시' },
+  { id: 'wc_bug2', kind: 'count', key: 'bug', target: 2, label: '곤충 2마리 잡기', ask: '산책하다 나비를 놓쳤다냥... 곤충 2마리만 잡아 줄래냥?', coins: 20, hint: '날아다니는 곤충 옆에서 "잡기"' },
+  { id: 'wc_mine2', kind: 'count', key: 'mine', target: 2, label: '광석 2개 캐기', ask: '동굴에 같이 가고 싶은데 무섭다냥. 광석 2개만 캐 와 줄래냥?', coins: 22, hint: '섬 북서쪽 산의 동굴에서 "캐기"' },
+  { id: 'wc_like1', kind: 'count', key: 'like', target: 1, label: '이웃 집에 예뻐요 1번', ask: '이 동네에 예쁜 집이 많다냥! 마음에 드는 집에 예뻐요 하나 눌러 주자냥.', coins: 12, hint: '집을 누르고 예뻐요' },
+  { id: 'wc_sell3', kind: 'count', key: 'sold', target: 3, label: '물건 3개 팔기', ask: '잡화점 보리가 손님을 기다린다냥. 물건 3개만 팔아 주자냥!', coins: 15, hint: '마을 광장 잡화점 보리에게 "팔기"' },
+];
+export const WANDER_DAILY_MAX = 5;
+/** 산책냥 번호 상한 (구역 수 * 3 보다 넉넉히) */
+export const WANDER_ID_MAX = 60;
+export const wanderQuestDef = (id: string) => WANDER_QUESTS.find((q) => q.id === id);
+
+/** 그날 그 집에게 그 산책냥이 든 부탁 (날짜, 번지, 산책냥 번호로 항상 같다) */
+export function wanderQuestFor(day: string, houseNo: number, walker: number): WanderQuestDef {
+  const seed = houseNo * 17 + [...day].reduce((s, c) => s * 31 + c.charCodeAt(0), 11);
+  return WANDER_QUESTS[mix(seed + walker * 7919) % WANDER_QUESTS.length];
+}
+export const wanderQuestId = (walker: number, def: WanderQuestDef) => `w${walker}:${def.id}`;
+/** `w4:wg_fish` → 산책냥 번호와 부탁 (모양이 틀리면 null. 오늘 그 산책냥 부탁인지는 따로 본다) */
+export function parseWanderId(id: string): { walker: number; def: WanderQuestDef } | null {
+  const m = /^w(\d{1,3}):([a-z0-9_]+)$/.exec(id);
+  if (!m) return null;
+  const walker = Number(m[1]);
+  const def = wanderQuestDef(m[2]);
+  return def && walker < WANDER_ID_MAX ? { walker, def } : null;
+}
+/** 오늘 받거나 끝낸 산책냥 부탁 수 */
+export const wanderTakenToday = (data: WalletData) =>
+  new Set([...Object.keys(data.daily.accepted), ...data.daily.claimed].filter((id) => parseWanderId(id))).size;
+/** 가방에서 그 종류 물건 중 가장 싼 것 (건네줄 것, 잡동사니는 빼고). 없으면 null */
+export function cheapestInBag(data: WalletData, kind: 'fish' | 'ore' | 'bug'): string | null {
+  let best: string | null = null;
+  let bestPrice = Infinity;
+  for (const [id, n] of Object.entries(data.bag)) {
+    const d = n > 0 ? bagDef(id) : null;
+    if (d && d.kind === kind && d.rarity !== 'junk' && d.price < bestPrice) {
+      best = id;
+      bestPrice = d.price;
+    }
+  }
+  return best;
+}
+/** 지금 이 산책냥이 나에게 줄 부탁이 남았는가 (머리 위 "!") */
+export function wanderHasQuest(data: WalletData, houseNo: number, walker: number): boolean {
+  const def = wanderQuestFor(data.day, houseNo, walker);
+  const id = wanderQuestId(walker, def);
+  if (id in data.daily.accepted || data.daily.claimed.includes(id)) return false;
+  return wanderTakenToday(data) < WANDER_DAILY_MAX;
+}

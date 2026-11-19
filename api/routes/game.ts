@@ -16,7 +16,12 @@ import {
   MINE_MIN_SEC,
   MINE_PER_REPORT,
   oreDef,
+  parseWanderId,
   questBase,
+  cheapestInBag,
+  wanderQuestFor,
+  wanderTakenToday,
+  WANDER_DAILY_MAX,
   ARCADE_MAX_SCORE,
   ARCADE_PAID_PLAYS,
   ARCADE_PRIZE_SCORE,
@@ -114,6 +119,27 @@ export const accept = (request: Request, env: Env) =>
       if (!(id in w.data.daily.accepted)) w.data.daily.accepted[id] = questBase(w.data, dq.key);
       return { accepted: id };
     }
+    // 산책냥 부탁 (2026-11-19): give 는 받자마자 가방에서 하나 건네고 바로 츄르
+    const wq = parseWanderId(id);
+    if (wq) {
+      if (wanderQuestFor(w.data.day, houseNo, wq.walker).id !== wq.def.id) return error(400, 'not_today', '오늘 이 산책냥의 부탁이 아니에요');
+      const d = w.data.daily;
+      if (d.claimed.includes(id)) return error(400, 'claimed', '오늘은 이미 들어준 부탁이에요');
+      if (id in d.accepted) return { accepted: id };
+      if (wanderTakenToday(w.data) >= WANDER_DAILY_MAX) return error(400, 'limit', `산책냥 부탁은 하루 ${WANDER_DAILY_MAX}개까지예요`);
+      if (wq.def.kind === 'give') {
+        const item = cheapestInBag(w.data, wq.def.bag!);
+        const word = wq.def.bag === 'fish' ? '물고기가' : wq.def.bag === 'ore' ? '광석이' : '곤충이';
+        if (!item) return error(400, 'no_item', `가방에 ${word} 없어요`);
+        w.data.bag[item] -= 1;
+        if (w.data.bag[item] <= 0) delete w.data.bag[item];
+        d.claimed.push(id);
+        w.coins += wq.def.coins;
+        return { accepted: id, coins: wq.def.coins, gave: item };
+      }
+      d.accepted[id] = questBase(w.data, wq.def.key!);
+      return { accepted: id };
+    }
     const sq = storyQuest(id);
     if (sq) {
       if (w.data.story.includes(id)) return error(400, 'claimed', '이미 끝낸 부탁이에요');
@@ -144,6 +170,15 @@ export const claim = (request: Request, env: Env) =>
       d.claimed.push(id);
       w.coins += dq.coins;
       return { coins: dq.coins };
+    }
+    const wq = parseWanderId(id);
+    if (wq && wq.def.kind === 'count') {
+      if (d.claimed.includes(id)) return error(400, 'claimed', '이미 받았어요');
+      if (!(id in d.accepted)) return error(400, 'not_accepted', '먼저 산책냥에게 부탁을 받아 주세요');
+      if (questValue(w.data, { id, key: wq.def.key! }) < wq.def.target!) return error(400, 'not_done', '아직 다 못 했어요');
+      d.claimed.push(id);
+      w.coins += wq.def.coins;
+      return { coins: wq.def.coins };
     }
     const sq = storyQuest(id);
     if (sq) {

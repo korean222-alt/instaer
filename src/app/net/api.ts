@@ -192,7 +192,7 @@ export const buyItem = (type: string) => call<WithWallet<{ bought: string }>>('P
 /** 우편함 편지 읽기 (든 츄르를 받는다) */
 export const openMail = (id: string) => call<WithWallet<{ coins: number; item?: string | null }>>('POST', '/api/mail/open', { id });
 export const claimQuest = (id: string) => call<WithWallet<{ coins: number; item?: string }>>('POST', '/api/quest/claim', { id });
-export const acceptQuest = (id: string) => call<WithWallet<{ accepted: string }>>('POST', '/api/quest/accept', { id });
+export const acceptQuest = (id: string) => call<WithWallet<{ accepted: string; coins?: number; gave?: string }>>('POST', '/api/quest/accept', { id });
 export const reportFish = (catches: Array<{ id: string; cm: number }>) =>
   call<WithWallet<{ counted: number; coins: number; full?: boolean }>>('POST', '/api/game/fish', { catches });
 export const reportBugs = (bugs: Array<{ id: string }>) => call<WithWallet<{ counted: number; full?: boolean }>>('POST', '/api/game/bug', { bugs });

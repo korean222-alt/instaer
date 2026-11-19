@@ -509,6 +509,7 @@ body.decorating .walk-zoom, body.playing .walk-zoom { display: none !important; 
 .bag-cell b { font-size: 12px; }
 .q-row.special { background: #eef6ff; }
 .q-row .tag { font-style: normal; font-size: 10px; background: #7cc4f2; color: #fff; border-radius: 999px; padding: 1px 6px; vertical-align: 2px; }
+.q-row .tag.wander { background: #f2b33d; }
 .empty.small { font-size: 13px; padding: 10px 0; }
 
 .decor-dock {
@@ -873,3 +874,38 @@ body.decorating .guide-walk, body.playing .guide-walk, body:has(.sheet.open) .gu
 .gb-more { font-size: 12px; color: var(--ink-soft); margin: 0 0 8px; }
 .gb-card .row-btns { display: flex; gap: 8px; justify-content: flex-end; }
 @keyframes gb-pop { from { transform: scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* 산책냥 부탁 말풍선 (2026-11-19): 지나가면 위에 뜨는 카드 */
+.wander-offer {
+  position: absolute; left: 50%; transform: translateX(-50%); top: calc(186px + env(safe-area-inset-top, 0px)); z-index: 13;
+  width: min(360px, calc(100% - 32px)); background: var(--card-solid); border-radius: 18px; padding: 10px 12px 12px;
+  box-shadow: 0 6px 22px var(--shadow); border: 2px solid #ffc04d; animation: wo-pop 0.28s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.wander-offer[hidden], body.decorating .wander-offer, body.playing .wander-offer, body:has(.sheet.open) .wander-offer { display: none !important; }
+.wander-offer b { font-size: 13px; }
+.wander-offer b em { font-style: normal; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #ffb830; color: #5a3510; font-size: 12px; margin-left: 2px; }
+.wander-offer p { margin: 4px 0 6px; font-size: 13.5px; line-height: 1.5; }
+.wander-offer small { display: block; font-size: 11.5px; color: var(--ink-soft); font-weight: 700; margin-bottom: 6px; }
+.wo-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.wo-acts .hint-line { flex: 1; min-width: 0; }
+@keyframes wo-pop { from { transform: translateX(-50%) scale(0.85); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+.wander-ask { margin: 4px 0 10px; display: flex; flex-direction: column; gap: 8px; }
+
+/* 판 바깥 (2026-11-19 사용자: "뒷 배경 누르면 꺼지게"): 판이 열리면 섬을 살짝 가리고 누르면 닫힌다 */
+.sheet-scrim { position: absolute; left: 0; right: 0; top: 0; bottom: var(--tabbar-h); background: rgba(40, 30, 20, 0.14); display: none; touch-action: none; }
+body:has(.sheet.open) .sheet-scrim { display: block; }
+body:has(.sheet.open) .view-pad { display: none; }
+.sheet-grip { width: 40px; height: 5px; border-radius: 999px; background: rgba(90, 70, 50, 0.22); margin: 8px auto -6px; flex: none; }
+.sheet.dragging { transition: none; }
+
+/* 꾸미기 아래 줄: 내 가구 / 상점 (2026-11-19) */
+.dock-tabs { display: flex; gap: 6px; margin-bottom: 6px; }
+.dock-tabs button { appearance: none; border: 0; cursor: pointer; border-radius: 999px; padding: 6px 12px; font: 800 13px var(--font); background: var(--field); color: var(--ink-soft); }
+.dock-tabs button.on { background: var(--accent); color: var(--accent-ink); }
+.dock-tabs .coins { margin-left: auto; align-self: center; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.decor-strip .strip-empty { font-size: 12.5px; color: var(--ink-soft); font-weight: 700; padding: 18px 6px; white-space: normal; }
+.decor-dock .strip-item.shop small { color: var(--accent); font-weight: 800; font-size: 11px; }
+.decor-buy { display: flex; align-items: center; gap: 8px; background: #fff3e6; border-radius: 12px; padding: 8px; margin-bottom: 6px; }
+.decor-buy img { width: 40px; height: 40px; object-fit: contain; flex: none; }
+.decor-buy div { flex: 1; min-width: 0; font-size: 13px; font-weight: 800; }
+.decor-buy div small { display: block; font-size: 11px; color: var(--ink-soft); font-weight: 700; }

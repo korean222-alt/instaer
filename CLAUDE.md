@@ -123,3 +123,4 @@ createIslandScene(canvas) → IslandScene
 - 방명록 친구 아니어도 쓰기, 만든 고양이 울음 삭제 (2026-11-19, Opus). README.md.
 - 진짜 고양이 울음 5개(`public/sfx/meow1~5.mp3`), 방명록 새 글 알림창(`/api/me/guestbook`), 새 가구 20개, 곤충 채집(곤충 11종, 도감, 씬 `setBugs`, `/api/game/bug`) (2026-11-19, Opus). README.md.
 - 다른 고양이 걸음 부드럽게(보낸 사람 시간줄에 점 놓기, 화면 쪽만, 서버 부담 그대로) (2026-11-19, Opus). README.md.
+- 산책냥 부탁(머리 위 "!", 지나가면 말풍선, give/count, 하루 5개), 꾸미기 아래 줄 내 가구/상점 탭(바로 사기), 판 바깥 누르기/끌어 내리기로 닫기, 판 열 때 화면 돌리기 버튼 숨김 (2026-11-19, Opus). README.md.

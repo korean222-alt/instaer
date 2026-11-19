@@ -1,6 +1,6 @@
 // 내 지갑(츄르, 가진 아이템, 퀘스트)을 들고 있고, 서버 응답이 올 때마다 바꾼다.
 import { decorItem, STARTER_ITEMS } from '../shared/config';
-import { CURRENCY, DAILY_ALL_ID, DAILY_COUNT, dailyQuest, kstDay, normalizeWallet, owns, questValue, storyQuest, upgradeDef } from '../shared/economy';
+import { CURRENCY, DAILY_ALL_ID, DAILY_COUNT, dailyQuest, kstDay, normalizeWallet, owns, parseWanderId, questValue, storyQuest, upgradeDef } from '../shared/economy';
 import { play } from './audio/sound';
 import { fetchWallet, type WalletView } from './net/api';
 import { setWallet, state } from './state';
@@ -53,6 +53,11 @@ export function claimableCount(): number {
   for (const id of data.storyTaken) {
     const q = storyQuest(id);
     if (q && data.life[q.key] >= q.target) n++;
+  }
+  // 산책냥 부탁 (2026-11-19)
+  for (const id of Object.keys(data.daily.accepted)) {
+    const p = parseWanderId(id);
+    if (p?.def.kind === 'count' && !data.daily.claimed.includes(id) && questValue(data, { id, key: p.def.key! }) >= p.def.target!) n++;
   }
   return n;
 }

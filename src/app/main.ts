@@ -7,6 +7,7 @@ import { isWinter } from '../shared/config';
 import { kstDay } from '../shared/economy';
 import { fetchMe } from './net/api';
 import { createRealtime } from './net/realtime';
+import { wanderers } from './play/wanderers';
 import { currentRoute, go, onRoute, type Route, type ScreenId } from './router';
 import { decorateScreen } from './screens/decorate';
 import { houseScreen, openHouse } from './screens/house';
@@ -163,7 +164,9 @@ app.innerHTML = `
   <button class="walk-btn" id="btn-walk" aria-pressed="false">${icon('walk')}<span>걷기</span></button>
   <button class="walk-end" id="btn-walk-end" hidden>${icon('close')}<span>걷기 끝</span></button>
   <button class="walk-zoom" id="btn-zoom" hidden aria-label="시야 넓히기">${icon('zoom')}<span>보통</span></button>
+  <div class="sheet-scrim" id="sheet-scrim" aria-hidden="true"></div>
   <section class="sheet" id="sheet" aria-hidden="true" role="dialog" aria-labelledby="sheet-title">
+    <div class="sheet-grip" aria-hidden="true"></div>
     <div class="sheet-head">
       <h2 id="sheet-title"></h2>
       <button class="close" id="sheet-close" aria-label="닫기">${icon('close')}</button>
@@ -217,6 +220,72 @@ function show(route: Route) {
 }
 
 $('sheet-close').addEventListener('click', () => go('map'));
+// 2026-11-19 사용자: "스와이프? 뒷 배경 누르면 꺼지게". 그림 그리는 판은 실수로 닫히지 않게 뺀다
+const sheetLocked = () => currentRoute().id === 'draw';
+$('sheet-scrim').addEventListener('click', () => {
+  if (!sheetLocked()) go('map');
+});
+{
+  // 판을 아래로 끌어 내리면 닫힌다: 머리(제목 줄)는 언제나, 내용은 맨 위까지 올려 본 상태에서 아래로 끌 때
+  let y0 = 0;
+  let x0 = 0;
+  let dy = 0;
+  let t0 = 0;
+  let mode: 'none' | 'maybe' | 'drag' = 'none';
+  sheet.addEventListener(
+    'touchstart',
+    (e) => {
+      if (e.touches.length !== 1 || !sheet.classList.contains('open')) return;
+      const t = e.target as HTMLElement;
+      const inHead = !!t.closest('.sheet-head, .sheet-grip') && !t.closest('button');
+      if (!inHead && (sheetLocked() || sheetBody.scrollTop > 0 || t.closest('input, textarea, select, canvas, .art-row, .decor-strip'))) return;
+      y0 = e.touches[0].clientY;
+      x0 = e.touches[0].clientX;
+      t0 = performance.now();
+      dy = 0;
+      mode = 'maybe';
+    },
+    { passive: true },
+  );
+  sheet.addEventListener(
+    'touchmove',
+    (e) => {
+      if (mode === 'none') return;
+      const d = e.touches[0].clientY - y0;
+      const dx = e.touches[0].clientX - x0;
+      if (mode === 'maybe') {
+        if (Math.abs(d) < 8 && Math.abs(dx) < 8) return;
+        if (d <= 0 || Math.abs(dx) > Math.abs(d) || sheetBody.scrollTop > 0) {
+          mode = 'none';
+          return;
+        }
+        mode = 'drag';
+        sheet.classList.add('dragging');
+      }
+      e.preventDefault();
+      dy = Math.max(0, d);
+      sheet.style.transform = `translateY(${dy}px)`;
+    },
+    { passive: false },
+  );
+  const end = () => {
+    if (mode !== 'drag') {
+      mode = 'none';
+      return;
+    }
+    mode = 'none';
+    sheet.classList.remove('dragging');
+    const fast = dy / Math.max(1, performance.now() - t0) > 0.6;
+    if (dy > Math.min(120, sheet.offsetHeight * 0.25) || (fast && dy > 40)) {
+      // 끌던 자리에서 그대로 내려가게 (닫힌 자리로 바로 보내고, 다 내려가면 손 뗀 값을 지운다)
+      sheet.style.transform = 'translateY(calc(100% + var(--tabbar-h)))';
+      go('map');
+      setTimeout(() => (sheet.style.transform = ''), 320);
+    } else sheet.style.transform = '';
+  };
+  sheet.addEventListener('touchend', end);
+  sheet.addEventListener('touchcancel', end);
+}
 $('btn-search').addEventListener('click', () => go('search'));
 $('btn-settings').addEventListener('click', () => go('settings'));
 onRoute(show);
@@ -426,7 +495,7 @@ ctl.arcade = () => {
 };
 ctl.fishing = () => fishHere(explore.fishSpot() ?? 'pond');
 // 확인용 (콘솔에서 __catIsland.realtime.debug())
-(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state, ctl, play, playAmbientMeow, place: (x: number, z: number) => debugPlaceWalker(scene, x, z), moveTo: (x: number, z: number) => scene.setLocalPosition(x, z), local: () => scene.getLocalState(), npcs: () => townNpcs(state.unlockedZones), ponds: () => pondsOf(state.unlockedZones), mailbox: (no: number) => mailboxPos(no) };
+(window as unknown as { __catIsland: unknown }).__catIsland = { realtime, state, ctl, play, playAmbientMeow, place: (x: number, z: number) => debugPlaceWalker(scene, x, z), moveTo: (x: number, z: number) => scene.setLocalPosition(x, z), local: () => scene.getLocalState(), npcs: () => townNpcs(state.unlockedZones), ponds: () => pondsOf(state.unlockedZones), mailbox: (no: number) => mailboxPos(no), walkers: () => wanderers() };
 
 $('btn-walk').addEventListener('click', () => explore.setWalking(true));
 

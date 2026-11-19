@@ -1,5 +1,6 @@
 // 걷는 동안 받은 퀘스트 보기 (2026-11-16 사용자 요청). 오른쪽 위 "퀘스트" 버튼 → 받은 부탁과 진행도를 작게 띄운다.
-import { dailyQuest, kstDay, normalizeWallet, NPC_INFO, questValue, storyQuest } from '../../shared/economy';
+import { dailyQuest, kstDay, normalizeWallet, NPC_INFO, parseWanderId, questValue, storyQuest } from '../../shared/economy';
+import { wanderName } from './wanderers';
 import { play } from '../audio/sound';
 import { go } from '../router';
 import { state } from '../state';
@@ -31,6 +32,13 @@ export function createWalkQuests(icon: (name: string) => string) {
       const v = questValue(data, q);
       out.push(`<li><b>${esc(q.label)}</b><small>${esc(NPC_INFO[q.npc].title)} ${esc(NPC_INFO[q.npc].name)} · ${esc(q.hint)}</small>${v >= q.target ? '<span class="ok">다 했어요! 퀘스트에서 받기</span>' : bar(v, q.target)}</li>`);
     }
+    for (const id of Object.keys(data.daily.accepted)) {
+      const p = parseWanderId(id);
+      if (!p || p.def.kind !== 'count' || data.daily.claimed.includes(id)) continue;
+      const v = questValue(data, { id, key: p.def.key! });
+      const t = p.def.target!;
+      out.push(`<li><b>${esc(p.def.label)}</b><small>${esc(wanderName(p.walker))} · ${esc(p.def.hint)}</small>${v >= t ? '<span class="ok">다 했어요! 퀘스트에서 받기</span>' : bar(v, t)}</li>`);
+    }
     for (const id of data.storyTaken) {
       const q = storyQuest(id);
       if (!q) continue;
@@ -52,7 +60,7 @@ export function createWalkQuests(icon: (name: string) => string) {
   }
   function draw(list = rows()) {
     peek.innerHTML = `<h4>받은 퀘스트</h4>${
-      list.length ? `<ul>${list.join('')}</ul>` : '<p class="empty">받은 부탁이 없어요. 주민에게 말을 걸어 부탁을 받아 보세요.</p>'
+      list.length ? `<ul>${list.join('')}</ul>` : '<p class="empty">받은 부탁이 없어요. 주민에게 말을 걸거나 머리 위에 ! 가 뜬 산책냥 옆을 지나가 보세요.</p>'
     }<button class="btn small" data-all>퀘스트 전체 보기</button>`;
   }
   btn.addEventListener('click', () => {

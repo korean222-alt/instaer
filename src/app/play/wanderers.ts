@@ -4,6 +4,7 @@
 // (그만큼 이 화면에서만 조금 늦어진다). 걷는 길은 지도 길 안내와 같은 길 찾기(route.ts)로 만든다.
 import { neighborhoodArea, townSquares, walkCost } from '../../scene';
 import { NEIGHBORHOOD_SIZE, ZONE_CAPACITY } from '../../shared/config';
+import { kstDay, normalizeWallet, wanderHasQuest } from '../../shared/economy';
 import type { CatLook } from '../../shared/types';
 import { state } from '../state';
 import type { Npc } from './npcs';
@@ -177,6 +178,8 @@ export function wanderers(me?: Pt | null): Array<Npc & { moving: boolean }> {
     lastTick = now;
   }
   const out: Array<Npc & { moving: boolean }> = [];
+  // 줄 부탁이 남은 산책냥은 머리 위에 "!" (2026-11-19)
+  const data = state.me && state.wallet ? normalizeWallet(state.wallet.data, kstDay()) : null;
   for (const w of ensure()) {
     let p = posOf(w, now);
     if (me && dt > 0 && Math.hypot(p.x - me.x, p.z - me.z) < WAIT_NEAR) {
@@ -185,7 +188,7 @@ export function wanderers(me?: Pt | null): Array<Npc & { moving: boolean }> {
       p.moving = false;
       p.rotY = Math.atan2(me.x - p.x, me.z - p.z);
     }
-    out.push({ id: `walker-${w.id}`, role: 'wanderer', name: wanderName(w.id), x: p.x, z: p.z, rotY: p.rotY, cat: wanderLook(w.id), homeId: w.id, moving: p.moving });
+    out.push({ id: `walker-${w.id}`, role: 'wanderer', name: wanderName(w.id), x: p.x, z: p.z, rotY: p.rotY, cat: wanderLook(w.id), homeId: w.id, moving: p.moving, ...(data && wanderHasQuest(data, state.me!.houseNo, w.id) ? { mark: true } : {}) });
   }
   return out;
 }

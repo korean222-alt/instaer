@@ -18,6 +18,7 @@ import { toast } from '../ui/toast';
 import { applyWallet } from '../wallet';
 import { toSceneNpc, townHomes, townNpcs, type Home, type Npc } from './npcs';
 import { wanderers } from './wanderers';
+import { updateWanderOffer } from './wanderOffer';
 
 export interface ExploreHooks {
   onWalking(on: boolean): void;
@@ -208,6 +209,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
   /** force: 집 안팎을 오갈 때 (씬이 주민을 모두 지우므로 목록이 같아도 다시 넘긴다) */
   function updateNpcs(force = false) {
     if (!walking) {
+      updateWanderOffer(null, null);
       bugField.update(0, 0, false);
       nearBug = null;
       if (shownNpcs.length) {
@@ -227,6 +229,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
         .sort((a, b) => a.d - b.d)
         .slice(0, 8)
         .map((e) => e.n);
+    updateWanderOffer(inside === null && !cave && !riding ? list : null, me);
     bugField.update(me.x, me.z, inside === null && !cave);
     const bug = inside === null && !cave && !riding ? bugField.near(me.x, me.z) : null;
     if (bug?.id !== nearBug?.id) {

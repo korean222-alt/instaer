@@ -24,6 +24,8 @@ export interface Npc {
   homeId: number;
   /** 산책냥처럼 앱이 자리를 계속 옮겨 주는 주민 */
   moving?: boolean;
+  /** 머리 위 "!" (줄 부탁이 있는 산책냥, 2026-11-19) */
+  mark?: boolean;
 }
 
 export interface Home {
@@ -108,4 +110,4 @@ export function homeNpc(homeId: number): Npc {
   return { id: `npc-in-${homeId}`, role, name: npcName(role, homeId), x: 1.5, z: -1.2, rotY: -0.4, cat: npcLook(role, homeId), homeId };
 }
 
-export const toSceneNpc = (n: Npc): SceneNpc => ({ id: n.id, name: n.name, x: n.x, z: n.z, rotY: n.rotY, cat: n.cat, role: n.role, ...(n.moving !== undefined ? { moving: n.moving } : {}) });
+export const toSceneNpc = (n: Npc): SceneNpc => ({ id: n.id, name: n.name, x: n.x, z: n.z, rotY: n.rotY, cat: n.cat, role: n.role, ...(n.moving !== undefined ? { moving: n.moving } : {}), ...(n.mark ? { mark: true } : {}) });
