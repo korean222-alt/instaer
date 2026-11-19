@@ -173,7 +173,7 @@ export async function houseSocial(houseNo: number, request: Request, env: Env): 
   return json({ guestbook, friendState: state, friendCount: (cnt.results[0] as { n: number } | undefined)?.n ?? 0, decorScore: score });
 }
 
-/** POST /api/house/:no/guestbook {text} : 친구(또는 집 주인)만 */
+/** POST /api/house/:no/guestbook {text} : 입주한 누구나 (2026-11-19: 친구가 아니어도) */
 export async function postGuestbook(houseNo: number, request: Request, env: Env): Promise<Response> {
   const mine = await writeGate(request, env);
   if (mine instanceof Response) return mine;
@@ -182,8 +182,6 @@ export async function postGuestbook(houseNo: number, request: Request, env: Env)
   const body = await readJson<{ text?: unknown }>(request, 2048);
   const text = typeof body?.text === 'string' ? cleanChat(body.text, GUESTBOOK_MAX) : '';
   if (!text) return error(400, 'bad_text', '쓸 수 없는 글이에요');
-  if (house.id !== mine.house.id && stateOf(mine.house.id, await pairOf(env.DB, mine.house.id, house.id)) !== 'friends')
-    return error(403, 'not_friend', '친구가 되면 방명록을 쓸 수 있어요');
   const since = Math.floor(Date.now() / 1000) - 86400;
   const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM guestbook WHERE author_id = ? AND house_id = ? AND created_at > ?').bind(mine.house.id, house.id, since).first<{ n: number }>();
   if ((n?.n ?? 0) >= 3) return error(400, 'limit', '한 집에는 하루 3번까지 쓸 수 있어요');

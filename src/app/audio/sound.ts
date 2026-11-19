@@ -281,90 +281,6 @@ function stopMusic() {
   if (ctx && waves) waves.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.2);
 }
 
-// ── 고양이 소리 (2026-11-18): 목소리(톱니파)를 입 모양 필터(포먼트)에 통과시켜 "미-아-오" 로 바꾼다 ──
-interface MeowOpts {
-  /** 기본 목소리 높이 (Hz) */
-  pitch: number;
-  /** 길이 (초) */
-  dur: number;
-  vol: number;
-  /** 멀리서 들리면 더 먹먹하게 (0~1) */
-  far?: number;
-}
-function meowVoice(out: AudioNode, at: number, o: MeowOpts) {
-  const c = ctx!;
-  const end = at + o.dur;
-  const src = c.createOscillator();
-  src.type = 'sawtooth';
-  // 높이: 살짝 올라갔다가 길게 내려온다
-  src.frequency.setValueAtTime(o.pitch * 0.82, at);
-  src.frequency.linearRampToValueAtTime(o.pitch * 1.12, at + o.dur * 0.3);
-  src.frequency.linearRampToValueAtTime(o.pitch * 1.05, at + o.dur * 0.55);
-  src.frequency.exponentialRampToValueAtTime(o.pitch * 0.7, end);
-  // 떨림
-  const vib = c.createOscillator();
-  vib.frequency.value = 5.5 + Math.random() * 2;
-  const vibAmt = c.createGain();
-  vibAmt.gain.value = o.pitch * 0.015;
-  vib.connect(vibAmt).connect(src.frequency);
-  // 입 모양 (포먼트 둘): "ㅁ"(닫힘) → "이" → "아" → "오/우"
-  const mix = c.createGain();
-  const formants: Array<[number[], number, number]> = [
-    // [시간별 중심 주파수 (시작, 30%, 60%, 끝)], Q, 크기
-    [[350, 700, 1000, 520], 6, 1],
-    [[2300, 1900, 1500, 900], 9, 0.55],
-    [[3100, 2900, 2600, 2300], 12, 0.18],
-  ];
-  for (const [f, q, g] of formants) {
-    const bp = c.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.Q.value = q;
-    bp.frequency.setValueAtTime(f[0], at);
-    bp.frequency.linearRampToValueAtTime(f[1], at + o.dur * 0.25);
-    bp.frequency.linearRampToValueAtTime(f[2], at + o.dur * 0.55);
-    bp.frequency.linearRampToValueAtTime(f[3], end);
-    const gg = c.createGain();
-    gg.gain.value = g;
-    src.connect(bp).connect(gg).connect(mix);
-  }
-  // 숨소리 조금
-  const nb = c.createBuffer(1, Math.ceil(c.sampleRate * o.dur), c.sampleRate);
-  const nd = nb.getChannelData(0);
-  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
-  const ns = c.createBufferSource();
-  ns.buffer = nb;
-  const nf = c.createBiquadFilter();
-  nf.type = 'bandpass';
-  nf.frequency.value = 2600;
-  nf.Q.value = 1.5;
-  const ng = c.createGain();
-  ng.gain.value = 0.05;
-  ns.connect(nf).connect(ng).connect(mix);
-  // 크기: 입을 열며 커지고 끝에서 닫힌다
-  const env = c.createGain();
-  env.gain.setValueAtTime(0.0001, at);
-  env.gain.exponentialRampToValueAtTime(o.vol * 0.5, at + Math.min(0.06, o.dur * 0.15));
-  env.gain.linearRampToValueAtTime(o.vol, at + o.dur * 0.35);
-  env.gain.linearRampToValueAtTime(o.vol * 0.75, at + o.dur * 0.75);
-  env.gain.exponentialRampToValueAtTime(0.0001, end);
-  let tail: AudioNode = env;
-  if (o.far) {
-    const lp = c.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 4200 - o.far * 2800;
-    env.connect(lp);
-    tail = lp;
-  }
-  mix.connect(env);
-  tail.connect(out);
-  src.start(at);
-  vib.start(at);
-  ns.start(at);
-  src.stop(end + 0.05);
-  vib.stop(end + 0.05);
-  ns.stop(end + 0.05);
-}
-
 /** 가르릉: 낮은 떨림(초당 25번)을 숨 들이쉬고 내쉬듯 두 번 */
 function purr(out: AudioNode, at: number, vol: number) {
   const c = ctx!;
@@ -417,8 +333,9 @@ const SFX: Record<Sfx, (t: number) => void> = {
     tone(sfxGain, 220, t, 0.14, 0.12, 'triangle');
     tone(sfxGain, 185, t + 0.12, 0.2, 0.12, 'triangle');
   },
-  meow: (t) => meowVoice(sfxGain, t, { pitch: vary(430, 560), dur: vary(0.45, 0.7), vol: 0.95 }),
-  mew: (t) => meowVoice(sfxGain, t, { pitch: vary(640, 780), dur: vary(0.22, 0.32), vol: 0.8 }),
+  // 2026-11-19 사용자: 만든 울음 소리가 기괴하다 → 진짜 녹음 파일(public/sfx/meow.mp3)이 있을 때만 울고, 없으면 조용히
+  meow: (t) => meowFile(t, vary(0.95, 1.08), 0.9, 0),
+  mew: (t) => meowFile(t, vary(1.2, 1.35), 0.75, 0),
   purr: (t) => purr(sfxGain, t, 0.3),
   ding: (t) => tone(sfxGain, midi(88), t, 0.5, 0.08, 'sine', 0.003),
   jump: (t) => tone(sfxGain, 300, t, 0.18, 0.1, 'sine', 0.005, 620),
@@ -434,12 +351,51 @@ export function playAmbientMeow(distance: number) {
   if (!ctx || settings.sfx <= 0 || ctx.state !== 'running') return;
   const far = Math.min(1, Math.max(0, (distance - 3) / 20));
   const kitten = Math.random() < 0.3;
-  meowVoice(sfxGain, ctx.currentTime + 0.01, {
-    pitch: kitten ? vary(620, 760) : vary(400, 560),
-    dur: kitten ? vary(0.22, 0.34) : vary(0.4, 0.75),
-    vol: 0.6 * (1 - far * 0.8),
-    far,
-  });
+  meowFile(ctx.currentTime + 0.01, kitten ? vary(1.2, 1.35) : vary(0.92, 1.08), 0.6 * (1 - far * 0.8), far);
+}
+
+// ── 진짜 고양이 울음 (녹음 파일) ──
+// public/sfx/meow.mp3 를 처음 소리가 켜질 때 한 번 받아 둔다. 파일이 없거나 못 읽으면 울음은 그냥 나지 않는다.
+const MEOW_URL = '/sfx/meow.mp3';
+let meowBuf: AudioBuffer | null = null;
+let meowLoading = false;
+function loadMeow() {
+  if (!ctx || meowBuf || meowLoading) return;
+  meowLoading = true;
+  const c = ctx;
+  fetch(MEOW_URL)
+    .then((r) => (r.ok && !(r.headers.get('content-type') ?? '').includes('text/html') ? r.arrayBuffer() : Promise.reject(new Error('no file'))))
+    .then((b) => c.decodeAudioData(b))
+    .then((buf) => {
+      meowBuf = buf;
+    })
+    .catch(() => {
+      /* 파일 없음: 조용히 */
+    });
+}
+/** rate: 높이(빠르기), far: 0~1 멀수록 먹먹하게 */
+function meowFile(at: number, rate: number, vol: number, far: number) {
+  if (!ctx) return;
+  if (!meowBuf) {
+    loadMeow();
+    return;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = meowBuf;
+  src.playbackRate.value = rate;
+  const g = ctx.createGain();
+  g.gain.value = vol;
+  let node: AudioNode = src;
+  if (far > 0) {
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 5000 - far * 3800;
+    node.connect(lp);
+    node = lp;
+  }
+  node.connect(g);
+  g.connect(sfxGain);
+  src.start(at);
 }
 
 export function getSoundSettings(): SoundSettings {
@@ -466,7 +422,10 @@ export function initSound() {
   const unlock = () => {
     const c = ensure();
     if (!c) return;
-    c.resume().then(() => startMusic());
+    c.resume().then(() => {
+      startMusic();
+      loadMeow();
+    });
     window.removeEventListener('pointerdown', unlock, true);
     window.removeEventListener('keydown', unlock, true);
   };

@@ -166,7 +166,7 @@ export const friendsScreen: Screen = {
         <h3 class="sub">내 친구 ${data.friends.length}</h3>
         ${data.friends.length ? list(data.friends, 'friend') : '<p class="note">아직 친구가 없어요. 걷다가 지나가는 고양이를 누르거나, 집을 눌러 프로필에서 친구 신청을 해 보세요.</p>'}
         ${data.outgoing.length ? `<h3 class="sub">보낸 신청 ${data.outgoing.length}</h3>${list(data.outgoing, 'out')}` : ''}
-        <p class="chat-note">친구가 되면 서로의 집 방명록에 글을 남길 수 있어요.</p>`;
+        <p class="chat-note">방명록은 친구가 아니어도 누구나 남길 수 있어요.</p>`;
     };
     const load = () =>
       fetchFriends()
@@ -225,7 +225,7 @@ export function mountHouseSocial(box: HTMLElement, houseNo: number) {
   let book: Post[] | null = null;
   const draw = () => {
     const mine = st === 'self';
-    const canWrite = mine || st === 'friends';
+    const canWrite = !!state.me;
     box.innerHTML = `
       <div class="friend-row">
         <span class="badge">친구 ${count}명</span>
@@ -235,8 +235,8 @@ export function mountHouseSocial(box: HTMLElement, houseNo: number) {
       <h3 class="sub">방명록</h3>
       ${
         canWrite
-          ? `<form class="chat-form gb-form"><input class="chat-in" maxlength="${GUESTBOOK_MAX}" placeholder="${mine ? '내 방명록에 한마디' : '친구에게 한마디'}" autocomplete="off" enterkeyhint="send" /><button class="btn small primary">남기기</button></form>`
-          : `<p class="chat-note">${state.me ? '친구가 되면 방명록을 쓸 수 있어요.' : '입주하고 친구가 되면 방명록을 쓸 수 있어요.'}</p>`
+          ? `<form class="chat-form gb-form"><input class="chat-in" maxlength="${GUESTBOOK_MAX}" placeholder="${mine ? '내 방명록에 한마디' : '방명록에 한마디'}" autocomplete="off" enterkeyhint="send" /><button class="btn small primary">남기기</button></form>`
+          : `<p class="chat-note">입주하면 방명록을 쓸 수 있어요.</p>`
       }
       ${
         book === null
