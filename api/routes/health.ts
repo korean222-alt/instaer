@@ -37,3 +37,21 @@ export async function newcomer(env: Env): Promise<Response> {
   if (!row) return json({ house: null });
   return json({ house: { houseNo: row.house_no, handle: publicHandle(row), region: row.region, at: row.created_at } });
 }
+
+/**
+ * GET /api/series : 촬영 모드 "연재 릴스" (2026-11-19). 지금 입주 수, 최근 24시간에 들어온 집들(새것부터, 최대 30).
+ * 화면은 "어제 N채 → 오늘 M채" 로 숫자를 올리고 새 집을 하나씩 세운다. 호출은 촬영할 때만이라 가볍다.
+ */
+export async function series(env: Env): Promise<Response> {
+  const since = Math.floor(Date.now() / 1000) - 86400;
+  const [total, recent] = await Promise.all([
+    env.DB.prepare('SELECT COUNT(*) AS n FROM houses').first<{ n: number }>(),
+    env.DB.prepare('SELECT house_no, ig_handle, hide_handle, region FROM houses WHERE created_at >= ? ORDER BY created_at DESC, id DESC LIMIT 30')
+      .bind(since)
+      .all<{ house_no: number; ig_handle: string; hide_handle: number; region: string }>(),
+  ]);
+  return json({
+    total: total?.n ?? 0,
+    recent: (recent.results ?? []).map((r) => ({ houseNo: r.house_no, handle: publicHandle(r), region: r.region })),
+  });
+}

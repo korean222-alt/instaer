@@ -829,3 +829,21 @@ body.decorating .guide-walk, body.playing .guide-walk, body:has(.sheet.open) .gu
 .view-pad button[data-view="top"], .view-pad button[data-view="reset"] { font-size: 13px; }
 .view-pad button.on { background: var(--accent); color: var(--accent-ink); }
 .view-pad button:active { transform: scale(0.92); }
+
+/* 연재 릴스 (2026-11-19): 왼쪽 위 Day 배지, 숫자 올라가는 카드, 새 이웃 이름들 */
+.cine-day-row input { width: 64px; height: 32px; padding: 0 8px; border: 1.5px solid #e2d3c0; border-radius: 10px; font: 800 16px var(--font); color: #4a3424; background: #fff; }
+.cine-day { top: calc(env(safe-area-inset-top, 0px) + 5.5%); left: 14px; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: rgba(255, 250, 240, .95); color: #4a3424; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); }
+.cine-day b { padding: 4px 10px; border-radius: 999px; background: #f0775a; color: #fff; font-size: 15px; font-weight: 900; }
+.cine-day span { font-size: 16px; font-weight: 900; }
+.cine-day i { font-style: normal; }
+.cine-hook.cine-series-hook { top: calc(env(safe-area-inset-top, 0px) + 14%); font-size: 31px; }
+.cine-series-hook small { display: block; margin-top: 6px; font-size: 17px; font-weight: 800; color: #8a705c; }
+.cine-count { top: calc(env(safe-area-inset-top, 0px) + 14%); left: 50%; --tx: -50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; min-width: 220px; padding: 12px 26px 16px; border-radius: 26px; background: rgba(255, 250, 240, .97); color: #4a3424; text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, .22); animation: cine-pop .5s cubic-bezier(.2, 1.5, .4, 1) both; }
+.cine-count small { font-size: 17px; font-weight: 800; color: #8a705c; }
+.cine-count b { font-size: 64px; font-weight: 900; line-height: 1.05; color: #f0775a; font-variant-numeric: tabular-nums; }
+.cine-count em { margin-top: 4px; padding: 4px 14px; border-radius: 999px; background: #ffe7a3; color: #7a5200; font-style: normal; font-size: 18px; font-weight: 900; }
+.cine-names { top: calc(env(safe-area-inset-top, 0px) + 31%); left: 14px; right: 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.cine-names span { padding: 6px 11px; border-radius: 999px; background: rgba(255, 250, 240, .95); color: #4a3424; font-size: 14.5px; font-weight: 900; box-shadow: 0 4px 12px rgba(0, 0, 0, .16); animation: cine-pop .4s cubic-bezier(.2, 1.5, .4, 1) both; }
+.cine-names em { flex-basis: 100%; text-align: center; font-style: normal; font-size: 17px; font-weight: 900; color: #fff; text-shadow: 0 2px 6px rgba(0, 0, 0, .45); }
+.cine-cta em { display: block; margin-top: 6px; font-style: normal; font-size: 20px; }
+.cine-card { max-width: calc(100% - 48px); } .cine-card b { word-break: keep-all; overflow-wrap: anywhere; }

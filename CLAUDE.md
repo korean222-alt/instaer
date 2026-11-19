@@ -115,3 +115,4 @@ createIslandScene(canvas) → IslandScene
 - 촬영 모드 새 주민 릴스(최근 입주 집, ElevenLabs 나레이션, 자막, "댓글에 '입주'" 카드, `/api/newcomer`) (2026-11-18, Opus). README.md.
 - 촬영 모드 첫 1초 릴스(빈 집 → 내 집 변신, 창립 주민 남은 자리, "옆집 살 친구한테 보내고 댓글에 입주", ElevenLabs 나레이션) (2026-11-18, Opus). README.md.
 - 이사(첫 번 무료, 그다음 200츄르, 창립 주민은 1~100 안에서만), 꾸미기 시점(화면 돌리기/위에서 보기/확대, 씬 `rotateView` 등), 꾸미기 점수(프로필에서만, `src/shared/decorScore.ts`), 같은 가구 하나 더 (2026-11-18, Opus). README.md.
+- 촬영 모드 연재 릴스("팔로워 1명 = 집 1채, Day N", 약 28초, 집이 하나씩 늘어나는 장면, `/api/series`, 나레이션 길이에 맞춰 영상 늘리기) (2026-11-19, Opus). README.md.
