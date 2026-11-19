@@ -139,6 +139,8 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
     d: number;
     c: number;
     w: string;
+    /** 마지막 점의 시각 (보낸 사람 시간줄을 이 화면 시각으로 옮긴 값) */
+    tEnd: number;
   }
   const tracks = new Map<string, Track>();
   let visibleIds: string[] = [];
@@ -274,7 +276,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
         if (!info.has(id)) continue;
         visibleIds.push(id);
         let tr = tracks.get(id);
-        if (!tr) tracks.set(id, (tr = { q: -2, pts: [], a, f, d, c: cc, w: cw }));
+        if (!tr) tracks.set(id, (tr = { q: -2, pts: [], a, f, d, c: cc, w: cw, tEnd: 0 }));
         tr.a = a;
         tr.f = f;
         tr.d = d;
@@ -283,11 +285,24 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
         if (q === tr.q) continue;
         tr.q = q;
         const n = step ? Math.floor(p.length / 3) : 0;
-        // 처음 보는 유저는 지난 묶음 없이 지금 자리에서 시작
+        // 2026-11-19 (끊겨 보이던 것): 받은 때가 아니라 보낸 사람의 시간줄에 점을 놓는다.
+        // 보낸 사람은 SAMPLE_MS 마다 찍어 묶어 보내므로, 이어지는 묶음은 앞 묶음 마지막 점 바로 뒤에 붙인다.
+        // 그래야 네트워크가 들쭉날쭉해도 걸음 속도가 늘었다 줄었다 하지 않는다. 받은 때와 많이 어긋나면(멈췄다 다시 걷기) 받은 때로 맞춘다.
+        const gap = step || SAMPLE_MS;
         const fresh = tr.pts.length === 0;
-        for (let k = 0; k < n && !fresh; k++) tr.pts.push({ t: now - (n - k) * step, x: p[k * 3], z: p[k * 3 + 1], r: p[k * 3 + 2] });
-        tr.pts.push({ t: now, x, z, r });
-        tr.pts.sort((u, v) => u.t - v.t);
+        let tNew = now;
+        if (!fresh && tr.tEnd) {
+          const cont = tr.tEnd + (n + 1) * gap;
+          if (Math.abs(now - cont) < 1000) tNew = cont + (now - cont) * 0.08;
+        }
+        // 처음 보는 유저는 지난 묶음 없이 지금 자리에서 시작
+        for (let k = 0; k < n && !fresh; k++) {
+          const t = tNew - (n - k) * gap;
+          if (t > (tr.pts[tr.pts.length - 1]?.t ?? -Infinity)) tr.pts.push({ t, x: p[k * 3], z: p[k * 3 + 1], r: p[k * 3 + 2] });
+        }
+        if (tNew <= (tr.pts[tr.pts.length - 1]?.t ?? -Infinity)) tNew = tr.pts[tr.pts.length - 1].t + 1;
+        tr.pts.push({ t: tNew, x, z, r });
+        tr.tEnd = tNew;
         if (tr.pts.length > 40) tr.pts.splice(0, tr.pts.length - 40);
       }
       for (const id of [...tracks.keys()]) if (!visibleIds.includes(id)) tracks.delete(id);
@@ -375,7 +390,8 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
 
   /** 되감기: 지금보다 (보내기 간격 + 여유) 만큼 앞선 때의 자리를 계산해서 씬에 넘긴다 */
   function playback() {
-    const at = performance.now() - (sendMs + 350);
+    // 묶음 간격(sendMs) + 찍는 간격 + 네트워크 들쭉날쭉 여유만큼 늦게 보여 준다 (그 사이를 이어 그려서 멈칫하지 않게)
+    const at = performance.now() - (sendMs + SAMPLE_MS + 300);
     const list: RemotePlayer[] = [];
     const mine = hooks.myHouseNo?.() ?? null;
     for (const id of visibleIds) {
@@ -494,7 +510,7 @@ export function createRealtime(scene: IslandScene, hooks: RealtimeHooks = {}): R
       }, SAMPLE_MS);
       playTimer = window.setInterval(() => {
         if (visibleIds.length) playback();
-      }, 100);
+      }, 66);
     },
     stop() {
       running = false;

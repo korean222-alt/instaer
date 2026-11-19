@@ -122,3 +122,4 @@ createIslandScene(canvas) → IslandScene
 - 미니지도에 다른 사람 화살표(구역 레이더 3초마다, 지도 밖이면 가장자리 화살표, 집 방향), 섬을 돌아다니는 산책냥(구역마다 3마리, 시계로 정한 자리, 씬 `SceneNpc.moving`) (2026-11-19, Opus). README.md.
 - 방명록 친구 아니어도 쓰기, 만든 고양이 울음 삭제 (2026-11-19, Opus). README.md.
 - 진짜 고양이 울음 5개(`public/sfx/meow1~5.mp3`), 방명록 새 글 알림창(`/api/me/guestbook`), 새 가구 20개, 곤충 채집(곤충 11종, 도감, 씬 `setBugs`, `/api/game/bug`) (2026-11-19, Opus). README.md.
+- 다른 고양이 걸음 부드럽게(보낸 사람 시간줄에 점 놓기, 화면 쪽만, 서버 부담 그대로) (2026-11-19, Opus). README.md.
