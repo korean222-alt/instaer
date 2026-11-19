@@ -334,8 +334,8 @@ const SFX: Record<Sfx, (t: number) => void> = {
     tone(sfxGain, 185, t + 0.12, 0.2, 0.12, 'triangle');
   },
   // 2026-11-19 사용자: 만든 울음 소리가 기괴하다 → 진짜 녹음 파일(public/sfx/meow.mp3)이 있을 때만 울고, 없으면 조용히
-  meow: (t) => meowFile(t, vary(0.95, 1.08), 0.9, 0),
-  mew: (t) => meowFile(t, vary(1.2, 1.35), 0.75, 0),
+  meow: (t) => meowFile(t, vary(0.96, 1.05), 0.9, 0),
+  mew: (t) => meowFile(t, vary(1.02, 1.12), 0.8, 0, true),
   purr: (t) => purr(sfxGain, t, 0.3),
   ding: (t) => tone(sfxGain, midi(88), t, 0.5, 0.08, 'sine', 0.003),
   jump: (t) => tone(sfxGain, 300, t, 0.18, 0.1, 'sine', 0.005, 620),
@@ -351,37 +351,47 @@ export function playAmbientMeow(distance: number) {
   if (!ctx || settings.sfx <= 0 || ctx.state !== 'running') return;
   const far = Math.min(1, Math.max(0, (distance - 3) / 20));
   const kitten = Math.random() < 0.3;
-  meowFile(ctx.currentTime + 0.01, kitten ? vary(1.2, 1.35) : vary(0.92, 1.08), 0.6 * (1 - far * 0.8), far);
+  meowFile(ctx.currentTime + 0.01, vary(0.94, 1.06), 0.6 * (1 - far * 0.8), far, kitten);
 }
 
-// ── 진짜 고양이 울음 (녹음 파일) ──
-// public/sfx/meow.mp3 를 처음 소리가 켜질 때 한 번 받아 둔다. 파일이 없거나 못 읽으면 울음은 그냥 나지 않는다.
-const MEOW_URL = '/sfx/meow.mp3';
-let meowBuf: AudioBuffer | null = null;
+// ── 진짜 고양이 울음 (녹음 파일, 2026-11-19 사용자가 올린 Pixabay 울음 5개) ──
+// public/sfx/meow1~5.mp3 를 처음 소리가 켜질 때 받아 둔다. 울 때마다 하나를 고른다(아기 울음은 2번 귀여운 울음 위주).
+// 못 받은 파일은 빼고, 하나도 없으면 울음은 그냥 나지 않는다.
+const MEOW_URLS = [1, 2, 3, 4, 5].map((n) => `/sfx/meow${n}.mp3`);
+const KITTEN = new Set([1, 3, 4]);
+const meowBufs: Array<AudioBuffer | null> = MEOW_URLS.map(() => null);
 let meowLoading = false;
+let lastMeow = -1;
 function loadMeow() {
-  if (!ctx || meowBuf || meowLoading) return;
+  if (!ctx || meowLoading) return;
   meowLoading = true;
   const c = ctx;
-  fetch(MEOW_URL)
-    .then((r) => (r.ok && !(r.headers.get('content-type') ?? '').includes('text/html') ? r.arrayBuffer() : Promise.reject(new Error('no file'))))
-    .then((b) => c.decodeAudioData(b))
-    .then((buf) => {
-      meowBuf = buf;
-    })
-    .catch(() => {
-      /* 파일 없음: 조용히 */
-    });
+  MEOW_URLS.forEach((url, i) =>
+    fetch(url)
+      .then((r) => (r.ok && !(r.headers.get('content-type') ?? '').includes('text/html') ? r.arrayBuffer() : Promise.reject(new Error('no file'))))
+      .then((b) => c.decodeAudioData(b))
+      .then((buf) => {
+        meowBufs[i] = buf;
+      })
+      .catch(() => {
+        /* 파일 없음: 그 울음만 뺀다 */
+      }),
+  );
 }
-/** rate: 높이(빠르기), far: 0~1 멀수록 먹먹하게 */
-function meowFile(at: number, rate: number, vol: number, far: number) {
+/** rate: 높이(빠르기), far: 0~1 멀수록 먹먹하게, kitten: 아기 고양이 울음 쪽에서 고른다 */
+function meowFile(at: number, rate: number, vol: number, far: number, kitten = false) {
   if (!ctx) return;
-  if (!meowBuf) {
-    loadMeow();
-    return;
-  }
+  loadMeow();
+  let pool = meowBufs.map((b, i) => (b && KITTEN.has(i) === kitten ? i : -1)).filter((i) => i >= 0);
+  if (!pool.length) pool = meowBufs.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
+  if (!pool.length) return;
+  // 같은 울음이 연달아 나지 않게
+  if (pool.length > 1) pool = pool.filter((i) => i !== lastMeow);
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  lastMeow = pick;
+  const buf = meowBufs[pick]!;
   const src = ctx.createBufferSource();
-  src.buffer = meowBuf;
+  src.buffer = buf;
   src.playbackRate.value = rate;
   const g = ctx.createGain();
   g.gain.value = vol;

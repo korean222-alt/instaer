@@ -4,6 +4,8 @@ import { decorItem } from '../../shared/config';
 import {
   bagCount,
   bagDef,
+  BUGS,
+  bugDef,
   BAG_MAX,
   CURRENCY,
   DAILY_ALL_COINS,
@@ -117,7 +119,7 @@ export function bagHtml(): string {
     .map(([id, n]) => {
       const d = bagDef(id);
       if (!d) return '';
-      return `<div class="bag-cell">${d.kind === 'fish' ? fishSvg(d.color, 40) : oreSvg(d.color, 34)}<span>${esc(d.label)}</span><b>×${n}</b></div>`;
+      return `<div class="bag-cell">${bagPic(d, 40)}<span>${esc(d.label)}</span><b>×${n}</b></div>`;
     })
     .join('')}</div>`;
 }
@@ -174,6 +176,13 @@ export const questsScreen: Screen = {
             return `<div class="dex-cell${got ? '' : ' unknown'}">${fishSvg(got ? f.color : '#d8cfc2', 44)}<span>${got ? esc(f.label) : '???'}</span></div>`;
           }).join('')}
         </div>
+        <h3 class="sec">곤충 도감 <small>${w.data.dex.filter((id) => BUGS.some((b) => b.id === id)).length}/${BUGS.length} · 걷다가 "잡기"</small></h3>
+        <div class="dex">
+          ${BUGS.map((b) => {
+            const got = w.data.dex.includes(b.id);
+            return `<div class="dex-cell${got ? '' : ' unknown'}">${bugSvg(got ? b.color : '#d8cfc2', 38, b.kind)}<span>${got ? esc(b.label) : '???'}</span></div>`;
+          }).join('')}
+        </div>
         <h3 class="sec">광석 도감 <small>${w.data.dex.filter((id) => ORES.some((o) => o.id === id)).length}/${ORES.length}</small></h3>
         <div class="dex">
           ${ORES.map((o) => {
@@ -191,6 +200,16 @@ export const questsScreen: Screen = {
 /** 간단한 물고기 그림 */
 export const fishSvg = (color: string, size: number) =>
   `<svg viewBox="0 0 48 32" width="${size}" height="${(size * 2) / 3}" aria-hidden="true"><path d="M4 16c6-9 18-12 28-6l8-6v24l-8-6C22 28 10 25 4 16z" fill="${color}"/><circle cx="12" cy="14" r="2.2" fill="#3a2e26"/><path d="M20 10q4 6 0 12" stroke="rgba(0,0,0,.18)" stroke-width="2" fill="none"/></svg>`;
+/** 간단한 곤충 그림 (나비 / 딱정벌레 / 반딧불이, 2026-11-19) */
+export const bugSvg = (color: string, size: number, kind: 'fly' | 'ground' | 'glow' = 'fly') =>
+  kind === 'ground'
+    ? `<svg viewBox="0 0 32 32" width="${size}" height="${size}" aria-hidden="true"><path d="M9 9 6 5M23 9l3-4M8 17H4M24 17h4M9 23l-3 3M23 23l3 3" stroke="#3a302a" stroke-width="1.6" stroke-linecap="round"/><circle cx="16" cy="9" r="4" fill="#3a302a"/><ellipse cx="16" cy="19" rx="8" ry="9" fill="${color}"/><path d="M16 11v17" stroke="rgba(0,0,0,.3)" stroke-width="1.2"/><circle cx="12.5" cy="17" r="1.6" fill="rgba(0,0,0,.25)"/><circle cx="19.5" cy="21" r="1.6" fill="rgba(0,0,0,.25)"/></svg>`
+    : kind === 'glow'
+      ? `<svg viewBox="0 0 32 32" width="${size}" height="${size}" aria-hidden="true"><circle cx="16" cy="18" r="11" fill="${color}" opacity=".35"/><ellipse cx="16" cy="13" rx="3" ry="5" fill="#3a302a"/><ellipse cx="16" cy="21" rx="3.4" ry="4" fill="${color}"/><path d="M13 12 7 9M19 12l6-3" stroke="#a8b0c0" stroke-width="2.4" stroke-linecap="round"/></svg>`
+      : `<svg viewBox="0 0 32 32" width="${size}" height="${size}" aria-hidden="true"><path d="M15 15C11 5 3 4 3 10s6 7 12 6zM17 15c4-10 12-11 12-5s-6 7-12 6zM15 17c-5 0-9 3-8 7s6 1 8-5zM17 17c5 0 9 3 8 7s-6 1-8-5z" fill="${color}" stroke="rgba(0,0,0,.25)" stroke-width="1"/><rect x="15" y="9" width="2" height="16" rx="1" fill="#3a302a"/><path d="M15.5 9 13 5M16.5 9 19 5" stroke="#3a302a" stroke-width="1.2" stroke-linecap="round"/></svg>`;
+/** 가방/팔기에서 물건 하나의 그림 */
+export const bagPic = (d: { id: string; kind: 'fish' | 'ore' | 'bug'; color: string }, size: number) =>
+  d.kind === 'fish' ? fishSvg(d.color, size) : d.kind === 'bug' ? bugSvg(d.color, size * 0.85, bugDef(d.id)?.kind) : oreSvg(d.color, size * 0.85);
 /** 간단한 광석 그림 */
 export const oreSvg = (color: string, size: number) =>
   `<svg viewBox="0 0 32 32" width="${size}" height="${size}" aria-hidden="true"><path d="M5 24 9 12l7-6 8 5 3 13-11 4z" fill="#8f8276"/><path d="M11 13l5-5 5 4-2 8-7 1z" fill="${color}"/><path d="M16 8l5 4-5 2z" fill="#fff" opacity=".45"/></svg>`;

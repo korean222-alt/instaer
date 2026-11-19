@@ -4,6 +4,7 @@
 서버, DB, 화면 UI(버튼, 카드, 순위표)는 여기서 만들지 않아요. 씬은 서버를 직접 부르지 않고, 데이터는 항상 함수로 받아요.
 
 ## 현재 상태
+- 2026-11-19 (Opus): 곤충 채집. `setBugs(bugs: SceneBug[])`, `bugPos(id)` 추가, `SceneBug = { id, kind: 'fly'|'ground'|'glow', x, z, color, size? }` (`src/scene/bugs/Bugs.ts`). fly 는 준 자리 둘레 1.3m 를 날개 파닥이며 둥실둥실, ground 는 0.45m 원을 기어 다님, glow 는 밤에 빛나는 알 + 빛무리(가산 혼합). 섬 장면에만 있고 집 안/동굴에서는 안 그린다. InstancedMesh 5개(몸통, 날개, 등껍질, 빛, 빛무리), 16마리까지. 새 가구 20개(`free/catalog.ts`, `cylR` 은 돌린 다음 옮기는 원기둥).
 - 2026-11-19 (Opus): 산책냥. `SceneNpc.moving?: boolean` 추가 (기존 함수 그대로). 값이 있으면 그 주민은 혼자 돌아다니지 않고 앱이 0.2초마다 주는 자리를 부드럽게 따라 걷는다(`Npcs.follow`, 6m 넘게 튀면 순간이동). false 로 멈추고 1.5초 지나면 앉는다. 역할 `wanderer` 옷: 민트 띠 밀짚모자 + 노란 목도리, 놓인 소품 없음. 앱이 걷기 중 주민 목록을 6 → 8명까지 넘긴다 (POOL 16 안).
 - 2026-11-19 (Opus): 촬영 모드 연재 릴스 광장 수다용 `remoteScreenPos(id)` 추가 (`catScreenPos` 와 같지만 걷기 모드가 아니어도 된다). 걷지 않을 때도 다른 유저 고양이는 카메라 거리 45 안이면 보인다. 참고: `RemotePlayer.rotY = atan2(dx, dz)` 이면 (dx, dz) 쪽을 본다 (촬영 화면으로 확인). 같은 날 `onAfterRender(cb|null)` 추가: 섬을 그린 바로 뒤에 불러 촬영 자동 녹화/썸네일이 캔버스를 복사한다.
 - 2026-11-18 (Opus): 꾸미기 시점. `rotateView(step?)`, `setTopView(on)`, `getTopView()`, `resetView()` 추가. 집 안(`Interior.yaw/tilt/zoomView`, 돌리는 범위 `ROOM_YAW_MIN`~`ROOM_YAW_MAX` = 0~1.35, 벽이 두 면뿐이라), 섬 카메라(`CameraRig.yaw/tilt/twist`, 꾸미는 동안 두 손가락 비틀기), 걷기 카메라(`WalkCamera.tilt/zoomMul`). 꾸미는 동안 `WalkControls.lookOnly`: 조이스틱 없이 빈 곳 끌기 = 돌리기(좌우)/기울이기(위아래), 두 손가락 = 확대. 집 안 걷기 방향은 `interior.yaw` 를 따른다. 꾸미기가 끝나면 기울기/확대는 원래대로(섬 카메라는 정면으로). `getViewYaw` 는 걷지 않을 때 섬 카메라 방향.

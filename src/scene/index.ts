@@ -19,6 +19,7 @@ import type { Drawing, InteriorItem, PlacedItem } from './free/types';
 import { Interior, ROOM_EXIT, ROOM_START, ROOM_WALK } from './interior/Interior';
 import { ROOM_HALF, ROOM_HALF_BIG } from './free/space';
 import { Npcs, type SceneNpc } from './npc/Npcs';
+import { Bugs, type SceneBug } from './bugs/Bugs';
 import { CarLayer, CAR_SEAT_Y, CAR_SPEED, seatOffset } from './car/CatCar';
 import { RemotePlayers } from './remote/RemotePlayers';
 import { danceMotion } from './cat/dance';
@@ -66,6 +67,7 @@ export type { FishingSpot } from './layout';
 export { GROUND_Y } from './world/constants';
 export type { FishingState } from './fishing/FishingRig';
 export type { SceneNpc } from './npc/Npcs';
+export type { SceneBug } from './bugs/Bugs';
 export type { CatPreviewOptions } from './cat/catPreview';
 export type { CaveNode } from './cave/Cave';
 export { CAVE_DEEPER } from './cave/Cave';
@@ -206,6 +208,10 @@ export interface IslandScene {
   onExitCave(cb: () => void): void;
   /** 동굴 안에서 (x, z) 둘레 reach 안의 가장 가까운 광석 바위 id */
   caveNodeNear(reach?: number): string | null;
+  /** (2026-11-19 곤충 채집) 섬에 보일 곤충 전체. 빠진 곤충은 작아지며 사라진다. 집 안/동굴에서는 안 보인다 */
+  setBugs(bugs: SceneBug[]): void;
+  /** 그 곤충이 지금 그려진 자리 (둘레를 날아다니므로 앱이 준 자리와 조금 다르다). 없으면 null */
+  bugPos(id: string): { x: number; z: number } | null;
   /** 걷기 시야 넓히기 0(기본) ~ 1(가장 넓게). 카메라가 조금 더 멀고 높아진다 */
   setWalkZoom(amount: number): void;
   /** 꾸미기 아이템 하나를 그림으로 찍는다 (상점, 꾸미기 줄). 배경이 투명한 PNG data URL */
@@ -467,6 +473,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
   const remotes = new RemotePlayers(catModel, { shared: atmosphere.shared, target: fishTarget });
   // 주민(NPC) 고양이, 낚시 소품, 고양이 그림 찍기
   const npcs = new Npcs(catModel, atmosphere.shared);
+  const bugs = new Bugs();
   const fishRig = new FishingRig(atmosphere.shared);
   let fishing: FishingState | null = null;
   let fishYaw = 0;
@@ -524,7 +531,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
   /** 동굴에서 나오면 설 자리 (들어간 입구 앞) */
   const caveReturn = { x: 0, z: 0, yaw: 0 };
   let itemPreview: ItemPreview | null = null;
-  scene.add(world.group, houses.group, mark.group, player.mesh, remotes.group, npcs.group, fishRig.group, placer.group, myCar.mesh);
+  scene.add(world.group, houses.group, mark.group, player.mesh, remotes.group, npcs.group, fishRig.group, placer.group, myCar.mesh, bugs.group);
   placer.onChange = () => {
     if (inside !== null) interior?.redraw(placer.heldId);
     else houses.redrawFree(placer.heldId);
@@ -633,6 +640,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     walker.bridges = world.bridges;
     remotes.bridges = world.bridges;
     npcs.bridges = world.bridges;
+    bugs.bridges = world.bridges;
     const b = world.viewBounds;
     rig.setLimits({ bounds: { minX: b.minX + 6, maxX: b.maxX - 6, minZ: b.minZ + 4, maxZ: b.maxZ + 6 } });
   };
@@ -1194,6 +1202,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     npcView.viewportW = viewportW;
     npcView.viewportH = viewportH;
     npcs.update(dt, npcView);
+    bugs.update(dt, target.dist < 160);
 
     renderer.render(scene, camera);
     afterRenderCb?.();
@@ -1586,6 +1595,12 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     onAutoLowSpec(cb) {
       autoLowCb = cb;
     },
+    setBugs(list) {
+      bugs.set(Array.isArray(list) ? list : []);
+    },
+    bugPos(id) {
+      return bugs.posOf(id);
+    },
     setNpcs(list) {
       npcs.set(Array.isArray(list) ? list : []);
     },
@@ -1660,6 +1675,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
       player.dispose();
       remotes.dispose();
       npcs.dispose();
+      bugs.dispose();
       fishRig.dispose();
       preview?.dispose();
       placer.dispose();

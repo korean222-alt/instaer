@@ -99,6 +99,27 @@ export const DECOR_ITEMS = [
   { type: 'sofa', label: '소파', mount: 'floor', art: false, price: 160 },
   // 2026-11-16: 그림을 걸어 두는 캔버스 (누르면 크게 본다)
   { type: 'easel', label: '그림 캔버스', mount: 'floor', art: true, price: 80 },
+  // 2026-11-19: 새 가구 (사용자: "가구 더 추가, 동물의 숲 참고"). 이름/모양은 우리 것으로
+  { type: 'wall_clock', label: '벽시계', mount: 'wall', art: false, price: 60 },
+  { type: 'wall_shelf', label: '벽 선반', mount: 'wall', art: false, price: 70 },
+  { type: 'flower_bed', label: '꽃밭', mount: 'floor', art: false, price: 90 },
+  { type: 'desk', label: '책상', mount: 'floor', art: false, price: 110 },
+  { type: 'xmas_tree', label: '크리스마스 트리', mount: 'floor', art: false, price: 110 },
+  { type: 'tv', label: '레트로 TV', mount: 'floor', art: false, price: 120 },
+  { type: 'campfire', label: '모닥불', mount: 'floor', art: false, price: 120 },
+  { type: 'record_player', label: '축음기', mount: 'floor', art: false, price: 140 },
+  { type: 'grand_clock', label: '괘종시계', mount: 'floor', art: false, price: 150 },
+  { type: 'kotatsu', label: '코타츠', mount: 'floor', art: false, price: 150 },
+  { type: 'parasol', label: '파라솔 테이블', mount: 'floor', art: false, price: 150 },
+  { type: 'wardrobe', label: '옷장', mount: 'floor', art: false, price: 160 },
+  { type: 'aquarium', label: '어항', mount: 'floor', art: false, price: 170 },
+  { type: 'fridge', label: '냉장고', mount: 'floor', art: false, price: 180 },
+  { type: 'swing', label: '그네', mount: 'floor', art: false, price: 200 },
+  { type: 'bathtub', label: '욕조', mount: 'floor', art: false, price: 200 },
+  { type: 'kitchen', label: '부엌 조리대', mount: 'floor', art: false, price: 220 },
+  { type: 'arcade_machine', label: '오락기', mount: 'floor', art: false, price: 240 },
+  { type: 'fireplace', label: '벽난로', mount: 'floor', art: false, price: 260 },
+  { type: 'piano', label: '피아노', mount: 'floor', art: false, price: 300 },
   // 2026-11-16: 겨울 한정 눈사람. 팔지 않고 우편함 선물로만 받는다 (GIFT_ITEMS), 마당에만 놓는다 (YARD_ONLY_ITEMS)
   { type: 'snowman', label: '눈사람', mount: 'floor', art: false, price: null },
 ] as const;

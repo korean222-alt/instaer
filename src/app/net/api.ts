@@ -195,6 +195,7 @@ export const claimQuest = (id: string) => call<WithWallet<{ coins: number; item?
 export const acceptQuest = (id: string) => call<WithWallet<{ accepted: string }>>('POST', '/api/quest/accept', { id });
 export const reportFish = (catches: Array<{ id: string; cm: number }>) =>
   call<WithWallet<{ counted: number; coins: number; full?: boolean }>>('POST', '/api/game/fish', { catches });
+export const reportBugs = (bugs: Array<{ id: string }>) => call<WithWallet<{ counted: number; full?: boolean }>>('POST', '/api/game/bug', { bugs });
 export const reportMine = (ores: Array<{ id: string; level: number }>) =>
   call<WithWallet<{ counted: number; full?: boolean }>>('POST', '/api/game/mine', { ores });
 export const sellItems = (items: Record<string, number>) =>
@@ -231,4 +232,6 @@ export const friendAction = (houseNo: number, action: 'request' | 'accept' | 'de
 export const fetchHouseSocial = (houseNo: number) =>
   call<{ guestbook: Post[]; friendState: FriendState; friendCount: number; decorScore?: number }>('GET', `/api/house/${houseNo}/social`);
 export const postGuestbook = (houseNo: number, text: string) => call<{ ok: true }>('POST', `/api/house/${houseNo}/guestbook`, { text });
+/** 내 집 방명록의 새 글 (알림창, 2026-11-19) */
+export const fetchMyGuestbookNew = (after: number) => call<{ posts: Post[]; latest: number }>('GET', `/api/me/guestbook${after ? `?after=${after}` : ''}`);
 export const deleteGuestbook = (id: number) => call<{ ok: true }>('DELETE', `/api/guestbook/${id}`);

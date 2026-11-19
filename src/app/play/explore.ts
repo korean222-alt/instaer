@@ -8,7 +8,8 @@ import { hasItem } from '../wallet';
 import type { HouseDecor, InteriorItem, RemotePlayer } from '../../shared/types';
 import { pinDrawings, setArtCenter, surfaceDrawing } from '../art';
 import { play } from '../audio/sound';
-import { ApiError, fetchDecor, reportMine, reportVisit } from '../net/api';
+import { ApiError, fetchDecor, reportBugs, reportMine, reportVisit } from '../net/api';
+import { createBugField, type FieldBug } from './bugs';
 import type { Realtime } from '../net/realtime';
 import { go } from '../router';
 import { state } from '../state';
@@ -154,6 +155,10 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
   /** 가까이 있는, 뒷자리가 빈 남의 차 */
   let nearDriver: RemotePlayer | null = null;
   let mined: Array<{ id: string; level: number }> = [];
+  // 곤충 채집 (2026-11-19)
+  const bugField = createBugField(scene);
+  let nearBug: FieldBug | null = null;
+  let caughtBugs: Array<{ id: string }> = [];
   /** 서 있는 곳의 낚시터 */
   let nearFish: FishWhere | null = null;
   let net: RemotePlayer[] = [];
@@ -203,6 +208,8 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
   /** force: 집 안팎을 오갈 때 (씬이 주민을 모두 지우므로 목록이 같아도 다시 넘긴다) */
   function updateNpcs(force = false) {
     if (!walking) {
+      bugField.update(0, 0, false);
+      nearBug = null;
       if (shownNpcs.length) {
         shownNpcs = [];
         pushNpcs();
@@ -220,6 +227,13 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
         .sort((a, b) => a.d - b.d)
         .slice(0, 8)
         .map((e) => e.n);
+    bugField.update(me.x, me.z, inside === null && !cave);
+    const bug = inside === null && !cave && !riding ? bugField.near(me.x, me.z) : null;
+    if (bug?.id !== nearBug?.id) {
+      if (bug && !nearBug) play('ding');
+      nearBug = bug;
+      draw();
+    }
     const changed = list.length !== shownNpcs.length || list.some((n, i) => shownNpcs[i]?.id !== n.id);
     shownNpcs = list;
     // 산책냥은 자리가 계속 바뀌므로 보이는 동안 매번 넘긴다
@@ -300,6 +314,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     const btns: string[] = [];
     if (walking && !sheetOpen && !document.body.classList.contains('playing')) {
       if (riding === 'passenger') btns.push(`<button class="act-btn primary" data-act="getoff">${hooks.icon('close')}<span>차에서 내리기</span></button>`);
+      if (nearBug) btns.push(`<button class="act-btn primary" data-act="bug">${hooks.icon('net')}<span>${esc(nearBug.def.label)} 잡기</span></button>`);
       if (nearOre) btns.push(`<button class="act-btn primary hold" data-act="mine"><i class="hold-fill"></i>${hooks.icon('pick')}<span>꾹 눌러 캐기</span></button>`);
       if (nearDriver && !riding) btns.push(`<button class="act-btn primary" data-act="ride">${hooks.icon('cat')}<span>${esc(nearDriver.handle)} 차 뒷자리 타기</span></button>`);
       if (nearMail && !riding) {
@@ -355,6 +370,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       setCar(null);
       hooks.fish(nearFish);
     }
+    else if (act === 'bug' && nearBug) catchBug(nearBug);
     else if (act === 'enter' && doorNo !== null) void api.enter(doorNo);
     else if (act === 'home' && nearHome) api.enterHome(nearHome.id);
     else if (act === 'cave') enterCave(1);
@@ -438,6 +454,38 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     }
     draw();
   }
+
+  function catchBug(b: FieldBug) {
+    nearBug = null;
+    const ok = bugField.tryCatch(b);
+    if (ok) {
+      const rare = b.def.rarity === 'rare' || b.def.rarity === 'legend';
+      play(rare ? 'fanfare' : 'save');
+      toast(`${b.def.label}를 잡았어요!${rare ? ' 귀한 곤충이에요!' : ''}${state.me ? ' 가방에 넣었어요' : ' (입주하면 가방에 모여요)'}`, 2000);
+      if (state.me) {
+        caughtBugs.push({ id: b.def.id });
+        if (caughtBugs.length >= 4) void flushBugs();
+      }
+    } else {
+      play('close');
+      toast(`앗, ${b.def.label}가 날아가 버렸어요!`, 1600);
+    }
+    draw();
+  }
+
+  async function flushBugs() {
+    if (!caughtBugs.length || !state.me) return;
+    const list = caughtBugs.splice(0, caughtBugs.length);
+    try {
+      const res = await reportBugs(list);
+      applyWallet(res.wallet, { silent: true });
+      if (res.full) toast('가방이 가득 찼어요. 잡화점에 팔아 주세요', 2600);
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : '곤충을 알리지 못했어요');
+    }
+  }
+  // 걷다가 멈춰 있어도 20초마다 잡은 곤충을 알린다 (가방, 도감, 부탁 진행이 바로 보이게)
+  window.setInterval(() => void flushBugs(), 20_000);
 
   async function flushMine() {
     if (!mined.length || !state.me) return;
@@ -523,6 +571,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
         tick = window.setInterval(updateNpcs, 200);
       } else {
         setCar(null);
+        void flushBugs();
         if (inside !== null) leftHouse();
         if (cave) leftCave();
         scene.setWalkMode(false);

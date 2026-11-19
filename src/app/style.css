@@ -859,3 +859,17 @@ body.decorating .guide-walk, body.playing .guide-walk, body:has(.sheet.open) .gu
 .cine-result-btns { display: grid; gap: 8px; margin-top: 10px; }
 .cine-down { display: grid; place-items: center; text-decoration: none; }
 .cine-result img { display: block; width: 100%; max-height: 42vh; border-radius: 12px; object-fit: contain; background: #eee; }
+
+/* 방명록 알림창 (2026-11-19) */
+.gb-alert { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px; background: rgba(40, 30, 20, 0.28); }
+.gb-alert[hidden] { display: none; }
+.gb-card { width: min(340px, 100%); background: var(--card-solid); border-radius: 22px; padding: 16px; box-shadow: 0 10px 30px var(--shadow); animation: gb-pop .28s cubic-bezier(.2,1.4,.4,1); }
+.gb-head { display: flex; align-items: center; gap: 8px; font-size: 16px; margin-bottom: 10px; }
+.gb-icon { font-size: 26px; }
+.gb-card ul { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+.gb-card li { background: #fff3e2; border-radius: 12px; padding: 8px 10px; display: grid; gap: 2px; }
+.gb-card li b { font-size: 13px; color: var(--accent); }
+.gb-card li span { font-size: 14px; word-break: break-word; }
+.gb-more { font-size: 12px; color: var(--ink-soft); margin: 0 0 8px; }
+.gb-card .row-btns { display: flex; gap: 8px; justify-content: flex-end; }
+@keyframes gb-pop { from { transform: scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }

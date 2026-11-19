@@ -35,6 +35,7 @@ import { startFishing } from './play/fishing';
 import { pondsOf, townNpcs } from './play/npcs';
 import { createPlacement } from './play/placement';
 import { createMinimap } from './play/minimap';
+import { initGuestbookAlert } from './play/guestbookAlert';
 import { createSocial, type Social } from './play/social';
 import { claimableCount, coins, refreshWallet } from './wallet';
 import { initSound, play, playAmbientMeow, setMusicMood } from './audio/sound';
@@ -73,6 +74,8 @@ const ICON: Record<string, string> = {
   door: '<path d="M6 21V4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21"/><path d="M4 21h16M14.5 12.5h.01"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
   pick: '<path d="M4 20 14 10"/><path d="M9.5 5.5c4-2.5 8.5-1.5 11 1-3-.8-6.5 0-9 2.5"/><path d="m12.5 7.5 4 4"/>',
+  // 잠자리채 (곤충 잡기, 2026-11-19)
+  net: '<circle cx="15.5" cy="8.5" r="5"/><path d="M11.8 12.2 3.5 20.5"/><path d="M12 6.5c1.5 1 3 2.5 4 4M14.5 4c.5 2 1.5 4 4.5 5.5"/>',
   zoom: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   cat: '<path d="M5 20v-8l-1-7 4.5 3h7L20 5l-1 7v8z"/><path d="M9.5 13h.01M14.5 13h.01"/>',
   friends: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3 19.5c.6-3.4 3-5.3 6-5.3s5.4 1.9 6 5.3"/><circle cx="17" cy="9.5" r="2.5"/><path d="M16 14.4c2.6.1 4.4 1.8 5 4.6"/>',
@@ -441,6 +444,9 @@ setInterval(() => {
 }, 3000);
 $('btn-walk-end').addEventListener('click', () => explore.setWalking(false));
 
+// 방명록 알림창 (2026-11-19)
+const gbAlert = initGuestbookAlert();
+
 // ── 데이터 불러오기 ──
 async function boot() {
   const [meRes] = await Promise.allSettled([fetchMe(), refreshVillage()]);
@@ -453,6 +459,7 @@ async function boot() {
     setArtCenter(s.x, s.z);
     void refreshWallet();
     void loadMyDrawings().then(syncArt);
+    setTimeout(() => void gbAlert.check(), 2500);
   }
   syncArt();
   ready = true;

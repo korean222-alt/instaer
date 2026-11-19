@@ -180,15 +180,64 @@ export function rollOre(level: number, rand: () => number = Math.random): string
   return pool[0].id;
 }
 
+// ── 곤충 채집 (2026-11-19 사용자: "컨텐츠 더 추가") ──
+// 걷는 동안 섬 여기저기에 곤충이 나타난다 (화면이 시간과 자리로 정한다). 가까이 가서 "잡기" → 가방에 들어가고 잡화점에서 판다.
+// fly: 날아다니는 것(나비, 잠자리), ground: 땅에 있는 것(무당벌레, 사슴벌레), glow: 밤에만 빛나는 반딧불이.
+export interface BugDef {
+  id: string;
+  label: string;
+  rarity: FishRarity;
+  weight: number;
+  price: number;
+  color: string;
+  kind: 'fly' | 'ground' | 'glow';
+  /** 나오는 때: 낮만, 밤만, 아무 때나 */
+  time: 'day' | 'night' | 'any';
+  /** 크기 배율 */
+  size: number;
+  /** 잡힐 확률 (0~1, 나머지는 놓쳐서 날아간다) */
+  catchRate: number;
+}
+export const BUGS: readonly BugDef[] = [
+  { id: 'cabbage_white', label: '배추흰나비', rarity: 'common', weight: 26, price: 3, color: '#f7f4ea', kind: 'fly', time: 'day', size: 1, catchRate: 0.9 },
+  { id: 'yellow_butterfly', label: '노랑나비', rarity: 'common', weight: 20, price: 4, color: '#ffd84a', kind: 'fly', time: 'day', size: 1, catchRate: 0.88 },
+  { id: 'ladybug', label: '무당벌레', rarity: 'common', weight: 18, price: 5, color: '#e8463c', kind: 'ground', time: 'any', size: 0.8, catchRate: 0.95 },
+  { id: 'dragonfly', label: '고추잠자리', rarity: 'common', weight: 16, price: 8, color: '#ff6b3d', kind: 'fly', time: 'day', size: 1.15, catchRate: 0.75 },
+  { id: 'cricket', label: '귀뚜라미', rarity: 'common', weight: 14, price: 6, color: '#8a6a3c', kind: 'ground', time: 'night', size: 0.9, catchRate: 0.85 },
+  { id: 'firefly', label: '반딧불이', rarity: 'common', weight: 24, price: 7, color: '#e6ff6b', kind: 'glow', time: 'night', size: 0.8, catchRate: 0.85 },
+  { id: 'swallowtail', label: '호랑나비', rarity: 'rare', weight: 5, price: 28, color: '#ffbf3a', kind: 'fly', time: 'day', size: 1.3, catchRate: 0.6 },
+  { id: 'stag_beetle', label: '사슴벌레', rarity: 'rare', weight: 4, price: 35, color: '#5a3a28', kind: 'ground', time: 'night', size: 1.2, catchRate: 0.6 },
+  { id: 'rhino_beetle', label: '장수풍뎅이', rarity: 'rare', weight: 4, price: 40, color: '#3d2a22', kind: 'ground', time: 'any', size: 1.3, catchRate: 0.55 },
+  { id: 'blue_morpho', label: '파랑 나비', rarity: 'rare', weight: 3, price: 45, color: '#4aa8ff', kind: 'fly', time: 'any', size: 1.3, catchRate: 0.55 },
+  { id: 'golden_stag', label: '황금 사슴벌레', rarity: 'legend', weight: 1, price: 100, color: '#ffcf3f', kind: 'ground', time: 'any', size: 1.4, catchRate: 0.4 },
+];
+export const bugDef = (id: string) => BUGS.find((b) => b.id === id);
+/** 지금 때(낮/밤)에 나오는 곤충 중 하나 (r: 0~1) */
+export function rollBug(r: number, night: boolean): BugDef {
+  const pool = BUGS.filter((b) => b.time === 'any' || (b.time === 'night') === night);
+  const total = pool.reduce((s, b) => s + b.weight, 0);
+  let x = r * total;
+  for (const b of pool) {
+    x -= b.weight;
+    if (x < 0) return b;
+  }
+  return pool[0];
+}
+/** 곤충 하나 잡는 데 걸리는 최소 시간(초)과 한 번에 알릴 수 있는 수 */
+export const BUG_MIN_SEC = 3;
+export const BUG_PER_REPORT = 10;
+
 /** 가방 한 칸에 담을 수 있는 수, 가방 전체 */
 export const BAG_STACK = 99;
 export const BAG_MAX = 300;
 /** 가방에 든 것 (물고기 또는 광석) */
-export const bagDef = (id: string): { id: string; label: string; price: number; color: string; kind: 'fish' | 'ore'; rarity: FishRarity } | null => {
+export const bagDef = (id: string): { id: string; label: string; price: number; color: string; kind: 'fish' | 'ore' | 'bug'; rarity: FishRarity } | null => {
   const f = fishDef(id);
   if (f) return { id, label: f.label, price: f.price, color: f.color, kind: 'fish', rarity: f.rarity };
   const o = oreDef(id);
   if (o) return { id, label: o.label, price: o.price, color: o.color, kind: 'ore', rarity: o.rarity };
+  const b = bugDef(id);
+  if (b) return { id, label: b.label, price: b.price, color: b.color, kind: 'bug', rarity: b.rarity };
   return null;
 };
 export const bagCount = (bag: Record<string, number>) => Object.values(bag).reduce((s, n) => s + n, 0);
@@ -237,6 +286,8 @@ export interface WalletDaily {
   /** 오늘 캔 광석 수, 판 물건 수 */
   mine: number;
   sold: number;
+  /** 오늘 잡은 곤충 수 (2026-11-19) */
+  bug: number;
   /** 오늘 주민에게 받은 퀘스트: id → 받을 때의 진행값 (그 뒤로 한 만큼만 친다) */
   accepted: Record<string, number>;
 }
@@ -248,6 +299,7 @@ export interface WalletLife {
   draw: number;
   mine: number;
   sold: number;
+  bug: number;
 }
 export interface WalletData {
   /** daily 가 어느 날 것인지 (한국 시간) */
@@ -268,6 +320,8 @@ export interface WalletData {
   dex: string[];
   /** 마지막으로 물고기를 알린 시각 (unix 초) */
   lastFish: number;
+  /** 마지막으로 곤충을 알린 시각 (unix 초) */
+  lastBug: number;
   /** 우편함 편지 (새것이 앞) */
   mail: MailItem[];
 }
@@ -291,6 +345,7 @@ const emptyDaily = (): WalletDaily => ({
   prize: false,
   mine: 0,
   sold: 0,
+  bug: 0,
   accepted: {},
 });
 
@@ -325,13 +380,14 @@ export function normalizeWallet(raw: unknown, today = kstDay()): WalletData {
         prize: d.prize === true,
         mine: num(d.mine),
         sold: num(d.sold),
+        bug: num(d.bug),
         accepted: numMap(d.accepted, true),
       }
     : emptyDaily();
   return {
     day: today,
     daily,
-    life: { fish: num(l.fish), rare: num(l.rare), visits: num(l.visits), arcadeBest: num(l.arcadeBest), draw: num(l.draw), mine: num(l.mine), sold: num(l.sold) },
+    life: { fish: num(l.fish), rare: num(l.rare), visits: num(l.visits), arcadeBest: num(l.arcadeBest), draw: num(l.draw), mine: num(l.mine), sold: num(l.sold), bug: num(l.bug) },
     owned: strs(o.owned),
     story: strs(o.story),
     storyTaken: strs(o.storyTaken),
@@ -339,6 +395,7 @@ export function normalizeWallet(raw: unknown, today = kstDay()): WalletData {
     dex: strs(o.dex),
     lastFish: num(o.lastFish),
     lastMine: num(o.lastMine),
+    lastBug: num(o.lastBug),
     mail: Array.isArray(o.mail)
       ? (o.mail as Array<Record<string, unknown>>)
           .filter((m) => m && typeof m.id === 'string')
@@ -371,7 +428,7 @@ export function prizeItem(data: WalletData, rand: () => number = Math.random, ma
 // 주민마다 하루에 부탁 하나(오늘의 부탁)를 준다. 받으면 퀘스트 탭에 뜨고, 받은 뒤에 한 만큼만 친다.
 // 한국 시간 자정에 모두 새로 바뀐다. 이야기 부탁(아이템 보상)은 한 번만 하는 특별 부탁이고 역시 받아야 시작된다.
 
-export type QuestKey = 'fish' | 'rare' | 'arcadeBest' | 'visits' | 'like' | 'draw' | 'decorate' | 'mine' | 'sold';
+export type QuestKey = 'fish' | 'rare' | 'arcadeBest' | 'visits' | 'like' | 'draw' | 'decorate' | 'mine' | 'sold' | 'bug';
 
 /** 주민 역할. resident 는 그냥 이웃 (부탁은 없고 방문만) */
 export type NpcRole = 'shop' | 'arcade' | 'fisher' | 'gardener' | 'explorer' | 'painter' | 'mailman';
@@ -404,6 +461,8 @@ export const DAILY_QUESTS: readonly DailyQuestDef[] = [
   { id: 'd_visit3', npc: 'mailman', label: '이웃 집 3곳 들르기', ask: '오늘은 소포까지 있다냥. 이웃 세 집만 같이 돌자냥!', key: 'visits', target: 3, coins: 35, hint: '섬 모서리의 주민 집 문 앞에서 "들어가기"' },
   { id: 'd_decorate', npc: 'gardener', label: '내 집 꾸미기 저장하기', ask: '집 앞을 예쁘게 꾸미면 동네가 환해진다냥! 같이 꾸미자냥.', key: 'decorate', target: 1, coins: 20, hint: '꾸미기 탭' },
   { id: 'd_like2', npc: 'gardener', label: '다른 집에 예뻐요 2번', ask: '예쁜 집을 보면 칭찬해 주자냥. 두 집만!', key: 'like', target: 2, coins: 25, hint: '집을 누르고 예뻐요' },
+  { id: 'd_bug3', npc: 'gardener', label: '곤충 3마리 잡기', ask: '꽃밭에 놀러 온 곤충들을 보고 싶다냥. 3마리만 잡아 와 줘냥!', key: 'bug', target: 3, coins: 30, hint: '걷다가 날아다니는 곤충 옆에서 "잡기"' },
+  { id: 'd_bug6', npc: 'gardener', label: '곤충 6마리 잡기', ask: '곤충 도감을 만들고 있다냥! 6마리 잡아 오자냥.', key: 'bug', target: 6, coins: 45, hint: '밤에는 반딧불이와 사슴벌레가 나온다냥' },
   { id: 'd_draw', npc: 'painter', label: '그림 한 장 그리기', ask: '오늘은 영감이 안 떠오른다냥... 그림 하나 그려 줄래냥?', key: 'draw', target: 1, coins: 25, hint: '꾸미기 탭 → 그림 그리기' },
   { id: 'd_draw2', npc: 'painter', label: '그림 두 장 그리기', ask: '전시회를 열 거다냥! 그림 두 장만 그려 주자냥.', key: 'draw', target: 2, coins: 40, hint: '꾸미기 탭 → 그림 그리기' },
   { id: 'd_mine3', npc: 'explorer', label: '광석 3개 캐기', ask: '동굴에 반짝이는 바위가 있다냥. 3개만 캐 오자냥!', key: 'mine', target: 3, coins: 30, hint: '섬 북서쪽 산의 동굴에서 "캐기" 꾹 누르기' },
@@ -465,6 +524,8 @@ export const STORY_QUESTS: readonly StoryQuestDef[] = [
   { id: 's_shop_window', npc: 'shop', label: '물건 15개 팔기', ask: '단골이 되어 줘냥! 15개 팔면 창문을 하나 준다냥.', key: 'sold', target: 15, item: 'window', coins: 10 },
   { id: 's_arcade_tower', npc: 'arcade', label: '생선 받기 40점', ask: '40점을 넘기면 내 캣타워를 준다냥. 해 보자냥!', key: 'arcadeBest', target: 40, item: 'cat_tower', coins: 20 },
   { id: 's_explorer_shelf', npc: 'explorer', label: '광석 20개 캐기', ask: '동굴 지도를 만들고 있다냥. 광석 20개를 캐 오면 책장을 준다냥.', key: 'mine', target: 20, item: 'bookshelf', coins: 20 },
+  { id: 's_garden_bugs', npc: 'gardener', label: '곤충 15마리 잡기', ask: '곤충을 15마리 잡아 오면 내 꽃밭 하나를 떼어 준다냥!', key: 'bug', target: 15, item: 'flower_bed', coins: 20 },
+  { id: 's_explorer_bug', npc: 'explorer', label: '곤충 40마리 잡기', ask: '동굴 밖 숲에도 보물이 있다냥. 곤충 40마리를 잡으면 모닥불을 준다냥!', key: 'bug', target: 40, item: 'campfire', coins: 30 },
   { id: 's_painter_easel', npc: 'painter', label: '그림 3장 그리기', ask: '그림 세 장을 그려 오면 내 캔버스를 하나 준다냥. 그림을 걸어 두고 자랑하자냥!', key: 'draw', target: 3, item: 'easel', coins: 15 },
   { id: 's_mailman_bench', npc: 'mailman', label: '주민 집 6곳 방문', ask: '우편 배달을 도와주면 쉬어 갈 의자를 준다냥. 주민 집 6곳만 들르자냥!', key: 'visits', target: 6, item: 'sofa', coins: 20 },
 ];

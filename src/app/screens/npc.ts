@@ -12,7 +12,7 @@ import { catSvg } from '../ui/catSvg';
 import { esc } from '../ui/dom';
 import { toast } from '../ui/toast';
 import { applyWallet, refreshWallet } from '../wallet';
-import { bindClaims, fishSvg, npcQuestHtml, oreSvg } from './quests';
+import { bagPic, bindClaims, npcQuestHtml } from './quests';
 import { renderShop } from './shop';
 import type { Screen } from './types';
 import type { CatLook } from '../../shared/types';
@@ -53,7 +53,7 @@ function renderSell(root: HTMLElement) {
             .map(([id, n]) => {
               const d = bagDef(id);
               if (!d) return '';
-              return `<li class="shop-row"><div class="shop-pic">${d.kind === 'fish' ? fishSvg(d.color, 46) : oreSvg(d.color, 38)}</div>
+              return `<li class="shop-row"><div class="shop-pic">${bagPic(d, 46)}</div>
                 <div><b>${esc(d.label)} ×${n}</b><small>하나에 ${d.price} ${CURRENCY}</small></div>
                 <div class="row-btns"><button class="btn small" data-sell="${id}" data-n="1">1개</button><button class="btn small primary" data-sell="${id}" data-n="${n}">모두</button></div></li>`;
             })
@@ -129,7 +129,7 @@ export const npcScreen: Screen = {
         ${role === 'arcade' ? '<button class="btn primary" data-act="arcade">생선 받기 한 판 (30초)</button><p class="note">15점 10츄르 · 30점 25츄르 · 50점 40츄르, 하루 처음 50점을 넘기면 선물 상자!</p>' : ''}
         ${role === 'fisher' ? '<p class="note">연못 둘레나 1구역 남쪽 부두 끝에 가면 "낚시하기" 버튼이 생겨요. 낚은 물고기는 가방에 모이고, 마을 광장 잡화점 보리에게 팔아요.</p>' : ''}
         ${role === 'explorer' ? '<p class="note">섬 북서쪽 큰 산에 동굴이 있다냥. 입구 앞에서 "동굴 들어가기", 반짝이는 바위 옆에서 "캐기" 버튼을 꾹 누르고 있으면 캐진다냥! 안쪽 굴로 더 들어가면 자수정, 금, 다이아도 나온다냥.</p>' : ''}
-        ${role === 'gardener' ? '<p class="note">꾸미기 탭에서 마당을 꾸며 보자냥. 예쁜 집에는 예뻐요도 눌러 주자냥!</p>' : ''}
+        ${role === 'gardener' ? '<p class="note">꾸미기 탭에서 마당을 꾸며 보자냥. 예쁜 집에는 예뻐요도 눌러 주자냥! 걷다 보면 나비랑 곤충이 보인다냥. 옆에 가서 "잡기"를 누르자냥. 밤에는 반딧불이가 나온다냥.</p>' : ''}
         ${role === 'painter' ? '<p class="note">꾸미기 탭에서 그림을 그리고, 그림 캔버스에 걸어 두자냥. 캔버스를 누르면 누구나 그림을 크게 볼 수 있다냥.</p>' : ''}
         ${role === 'mailman' ? '<p class="note">집 앞 우편함 옆에 서면 "우편함 열기"가 나온다냥. 섬 모서리 주민 집에 들르면 방문 보상도 있다냥.</p>' : ''}
         ${state.me ? npcQuestHtml(role) : '<p class="note">입주하면 부탁을 받을 수 있어요.</p>'}

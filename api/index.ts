@@ -11,8 +11,8 @@ import { realtimeConnect, realtimeUsage } from './routes/realtime';
 import { deleteDrawing, getDecor, getDrawings, getWallet, myDrawings, postDrawing, putDecor } from './routes/decor';
 import { adminAction, adminState, authInfo, getWishes, postWish, reclaimPoll, reclaimStart, report } from './routes/auth';
 import { cron } from './lib/insta';
-import { accept, arcade, buy, claim, fish, mine, openMail, sell, visit } from './routes/game';
-import { deleteBoard, deleteGuestbook, friendAction, getBoard, getFriends, houseSocial, postBoard, postGuestbook } from './routes/social';
+import { accept, arcade, bug, buy, claim, fish, mine, openMail, sell, visit } from './routes/game';
+import { deleteBoard, deleteGuestbook, friendAction, getBoard, getFriends, houseSocial, myGuestbookNew, postBoard, postGuestbook } from './routes/social';
 
 export { RealtimeRoom } from './realtime/RealtimeRoom';
 
@@ -54,6 +54,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
   if (method === 'GET' && path === '/api/wallet') return getWallet(request, env);
   if (method === 'GET' && path === '/api/me/drawings') return myDrawings(request, env);
+  if (method === 'GET' && path === '/api/me/guestbook') return myGuestbookNew(request, env);
   if (method === 'GET' && path === '/api/drawings') return getDrawings(url, env);
   if (method === 'POST' && path === '/api/drawings') return postDrawing(request, env);
   if (method === 'POST' && path === '/api/shop/buy') return buy(request, env);
@@ -62,6 +63,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (method === 'POST' && path === '/api/quest/accept') return accept(request, env);
   if (method === 'POST' && path === '/api/shop/sell') return sell(request, env);
   if (method === 'POST' && path === '/api/game/mine') return mine(request, env);
+  if (method === 'POST' && path === '/api/game/bug') return bug(request, env);
   if (method === 'POST' && path === '/api/me/rename') return rename(request, env);
   if (method === 'POST' && path === '/api/me/move') return moveHouse(request, env);
   if (method === 'POST' && path === '/api/game/fish') return fish(request, env);

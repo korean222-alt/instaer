@@ -5,6 +5,9 @@ import {
   BAG_MAX,
   BAG_STACK,
   bagCount,
+  BUG_MIN_SEC,
+  BUG_PER_REPORT,
+  bugDef,
   bagDef,
   CAVE_LEVELS,
   dailyQuest,
@@ -219,6 +222,28 @@ export const mine = (request: Request, env: Env) =>
       if (!putInBag(w, def.id)) full = true;
     }
     if (counted) w.data.lastMine = now;
+    return { counted, full };
+  });
+
+/** POST /api/game/bug {bugs: [{id}]} : 잡은 곤충을 모아서 알린다 (2026-11-19). 가방에 들어간다 */
+export const bug = (request: Request, env: Env) =>
+  withWallet(request, env, (w, body) => {
+    if (!Array.isArray(body.bugs) || !body.bugs.length) return error(400, 'bad_request', '잡은 곤충이 없어요');
+    const now = Math.floor(Date.now() / 1000);
+    const since = w.data.lastBug ? now - w.data.lastBug : 3600;
+    const allowed = Math.min(BUG_PER_REPORT, Math.floor(since / BUG_MIN_SEC));
+    let counted = 0;
+    let full = false;
+    for (const b of (body.bugs as Array<Record<string, unknown>>).slice(0, allowed)) {
+      const def = typeof b?.id === 'string' ? bugDef(b.id) : undefined;
+      if (!def) continue;
+      counted++;
+      w.data.daily.bug += 1;
+      w.data.life.bug += 1;
+      if (!w.data.dex.includes(def.id)) w.data.dex.push(def.id);
+      if (!putInBag(w, def.id)) full = true;
+    }
+    if (counted) w.data.lastBug = now;
     return { counted, full };
   });
 

@@ -198,6 +198,27 @@ export async function deleteGuestbook(id: number, request: Request, env: Env): P
   return json({ ok: true });
 }
 
+/**
+ * GET /api/me/guestbook?after=ID : 내 집 방명록에 다른 사람이 남긴 새 글 (2026-11-19 알림창).
+ * 어디까지 봤는지는 화면이 이 브라우저에 기억한다 (DB 쓰기 없음). after 가 없으면 최근 14일 글 중 마지막 5개.
+ */
+export async function myGuestbookNew(request: Request, env: Env): Promise<Response> {
+  const mine = await sessionHouse(env.DB, request);
+  if (!mine) return json({ posts: [], latest: 0 });
+  const after = Math.max(0, Math.floor(Number(new URL(request.url).searchParams.get('after')) || 0));
+  const since = Math.floor(Date.now() / 1000) - 14 * 86400;
+  const { results } = await env.DB.prepare(
+    `SELECT g.id, g.text, g.created_at, h.house_no, h.ig_handle, h.hide_handle, h.cat FROM guestbook g
+     JOIN houses h ON h.id = g.author_id
+     WHERE g.house_id = ? AND g.author_id != ? AND g.id > ? AND g.created_at > ?
+     ORDER BY g.id DESC LIMIT 5`,
+  )
+    .bind(mine.house.id, mine.house.id, after, since)
+    .all<PersonRow & { id: number; text: string; created_at: number }>();
+  const posts = results.map((r) => ({ id: r.id, text: r.text, at: r.created_at, ...person(r) }));
+  return json({ posts, latest: posts[0]?.id ?? after });
+}
+
 /** 받은 친구 신청 수 (/api/me 에 붙인다) */
 export async function incomingCount(db: D1Database, houseId: number): Promise<number> {
   const r = await db.prepare('SELECT COUNT(*) AS n FROM friends WHERE b = ? AND status = 0').bind(houseId).first<{ n: number }>();
