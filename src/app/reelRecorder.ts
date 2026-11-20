@@ -44,7 +44,13 @@ export function startRecording(scene: IslandScene, sceneCanvas: HTMLCanvasElemen
   if (!ctx) return null;
   const origin = sceneCanvas.getBoundingClientRect();
 
+  // 영상은 초당 30장이다. 섬은 초당 60번까지 그려지는데, 그때마다 복사하면(GPU 에서 읽어 오기 + 글자 상자 다시 재기)
+  // 폰이 버거워 화면이 끊긴다 (2026-11-20 사용자: "프레임이 너무 떨어져서 끊기는 것처럼 보여"). 30장 넘게는 복사하지 않는다.
+  let lastDraw = 0;
   const draw = () => {
+    const now = performance.now();
+    if (now - lastDraw < 30) return;
+    lastDraw = now;
     ctx.globalAlpha = 1;
     ctx.shadowColor = 'transparent';
     try {

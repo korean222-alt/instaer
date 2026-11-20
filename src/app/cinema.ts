@@ -1277,7 +1277,7 @@ export function startCinema(scene: IslandScene) {
       <label class="cine-opt"><input type="checkbox" data-o="rec" ${canRecord() ? 'checked' : 'disabled'} /> 🔴 자동 녹화 <small>${canRecord() ? '(끝나면 영상 파일로 저장)' : '(이 브라우저는 안 돼요. 화면 기록을 쓰세요)'}</small></label>
       <label class="cine-opt"><input type="checkbox" data-o="caps" checked /> 자막 넣기 <small>(릴스)</small></label>
       <label class="cine-opt"><input type="checkbox" data-o="tags" checked /> 집 이름표 보이기</label>
-      <label class="cine-opt"><input type="checkbox" data-o="max" checked /> 아주 선명하게 <small>(끊기면 끄세요)</small></label>
+      <label class="cine-opt"><input type="checkbox" data-o="max" /> 아주 선명하게 <small>(해상도 3배, 폰이 버거워 끊길 수 있어요)</small></label>
       <div class="cine-btns">
         <a class="cine-exit" href="./">나가기</a>
       </div>

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createGlowLambert, GLOW_ATTRS, type GlowShared } from '../core/glowLambert';
-import type { ItemGeometries } from '../free/catalog';
+import { itemDef, type ItemGeometries } from '../free/catalog';
 import type { DrawingStore } from '../free/drawings';
 import { FreeItems } from '../free/FreeItems';
 import { ROOM_HALF, roomSpace, WALL_HEIGHT, type Space } from '../free/space';
@@ -259,8 +259,20 @@ export class Interior {
   }
 
   setItems(items: readonly PlacedItem[]) {
-    this.list = items.filter((it) => it && typeof it.id === 'string' && typeof it.type === 'string').map((it) => ({ ...it }));
+    this.list = items.filter((it) => it && typeof it.id === 'string' && typeof it.type === 'string').map((it) => this.onWall({ ...it }));
     this.redraw(null);
+  }
+
+  /**
+   * 집을 넓히기 전에 건 벽걸이(창문, 액자 등)는 옛 벽 자리(4m)에 저장돼 있다. 넓힌 방(5.5m)에서는 새 벽으로 옮긴다
+   * (2026-11-20: 넓힌 집에서 창문과 액자가 벽 앞 공중에 떠 보이던 문제). 다시 저장하면 새 자리로 저장된다.
+   */
+  private onWall(it: PlacedItem): PlacedItem {
+    if (this.half <= ROOM_HALF || itemDef(it.type).mount !== 'wall') return it;
+    const EPS = 0.05;
+    if (Math.abs(it.z + ROOM_HALF) < EPS && Math.abs(Math.sin(it.rotY)) < 0.01 && Math.cos(it.rotY) > 0) it.z = -this.half;
+    else if (Math.abs(it.x + ROOM_HALF) < EPS && Math.abs(Math.cos(it.rotY)) < 0.01 && Math.sin(it.rotY) > 0) it.x = -this.half;
+    return it;
   }
 
   redraw(skipId: string | null) {
