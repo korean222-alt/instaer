@@ -1267,6 +1267,7 @@ export function startCinema(scene: IslandScene) {
       <button class="cine-go cine-go-sub cine-series">📅 연재 릴스 <small>약 39초</small></button>
       <label class="cine-opt cine-day-row">연재 <b>Day</b> <input class="cine-day-in" type="number" min="1" inputmode="numeric" value="${seriesDay()}" /> <small>(날짜로 자동, 고칠 수 있어요)</small></label>
       <button class="cine-go cine-go-sub cine-thumb">🖼️ 썸네일 사진 <small>고양이 6마리, 글자 없이</small></button>
+      <button class="cine-go cine-go-sub cine-decorthumb">🖼️ 꾸미기 썸네일 <small>입주 첫날 vs 지금, 글자 없이</small></button>
       <button class="cine-go cine-hookreel cine-go-sub2">🔥 첫 1초 릴스 <small>빈 집 → 내 집, 약 14초</small></button>
       <button class="cine-go cine-reel cine-go-sub2" disabled>📣 새 주민 릴스 <small class="cine-reel-who">찾는 중…</small></button>
       <p class="cine-reel-note">나레이션 목소리가 함께 나와요. 소리를 켜고 찍으세요.</p>
@@ -1512,13 +1513,91 @@ export function startCinema(scene: IslandScene) {
     }, 2200);
   });
 
-  const showPhoto = (blob: Blob | null) => {
+  // ── 꾸미기 썸네일 (2026-11-20): 같은 방을 같은 자리에서 두 번 찍어 위(빈 방 = 입주 첫날) / 아래(꾸민 방 = 지금)로 붙인다 ──
+  const decorThumbBtn = $<HTMLButtonElement>('.cine-decorthumb');
+  /** 다음 그림 한 장을 캔버스로 복사 */
+  const grab = () =>
+    new Promise<HTMLCanvasElement>((ok) => {
+      scene.onAfterRender(() => {
+        scene.onAfterRender(null);
+        const c = document.createElement('canvas');
+        c.width = sceneCanvas.width;
+        c.height = sceneCanvas.height;
+        c.getContext('2d')?.drawImage(sceneCanvas, 0, 0);
+        ok(c);
+      });
+    });
+  const wait = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+  decorThumbBtn.addEventListener('click', () => {
+    if (playing || thumbPose) return;
+    decorThumbBtn.disabled = true;
+    void (async () => {
+      const data = await fetchShowcase();
+      const r = data.rooms.find((x) => state.houses.has(x.houseNo));
+      if (!r) {
+        decorThumbBtn.disabled = false;
+        resultBox.innerHTML = '<p class="cine-lead">꾸민 집 안이 아직 없어요.</p>';
+        resultBox.hidden = false;
+        return;
+      }
+      const half = r.big ? 5.5 : 4;
+      const k = half / 4;
+      const max = ($('[data-o="max"]') as HTMLInputElement).checked;
+      scene.setCinemaQuality(max ? 'max' : 'high');
+      scene.setNameTags(false);
+      scene.setTimeOfDay('day');
+      panel.hidden = true;
+      resultBox.hidden = true;
+      pinDrawings([...r.room.map((i) => i.drawingId), surfaceDrawing(r.wallpaper), surfaceDrawing(r.floor)]);
+      // 방 전체가 화면 가운데 절반 높이 안에 들어오게 조금 멀리서 (절반씩 잘라 붙인다)
+      thumbPose = { x: 0.45 * k, y: 0.9, z: -0.35 * k, yaw: 0.6, pitch: 0.62, dist: 27 * k, fov: 40 };
+      const cat = { x: 0.2, z: half - 1.6, yaw: 0.5 };
+      // 입주 첫날: 빈 방 (기본 벽지, 바닥)
+      scene.setWalkMode(true, r.houseNo);
+      scene.enterHouse(r.houseNo, [], 'cream', 'wood', r.big);
+      scene.setLocalPosition(cat.x, cat.z, cat.yaw);
+      scene.setSitting(true);
+      await wait(1800);
+      const before = await grab();
+      // 지금: 같은 방, 같은 자리
+      scene.enterHouse(r.houseNo, r.room, r.wallpaper, r.floor, r.big);
+      scene.setLocalPosition(cat.x, cat.z, cat.yaw);
+      await wait(2600);
+      const after = await grab();
+      scene.setSitting(false);
+      scene.setWalkMode(false);
+      pinDrawings([]);
+      thumbPose = null;
+      scene.setNameTags(true);
+      panel.hidden = false;
+      decorThumbBtn.disabled = false;
+      // 붙이기: 각 캡처의 가운데 절반 높이를 잘라 위/아래에. 방이 가운데 줄 쪽으로 조금 모이게 (프로필 격자 3:4 에서 덜 잘리게)
+      const W = before.width;
+      const H = before.height;
+      const h = Math.round(H / 2);
+      const shift = Math.round(H * 0.035);
+      const out = document.createElement('canvas');
+      out.width = W;
+      out.height = H;
+      const ctx = out.getContext('2d');
+      if (!ctx) return;
+      const top0 = Math.round(H / 2 - h / 2);
+      ctx.drawImage(before, 0, top0 - shift, W, h, 0, 0, W, h);
+      ctx.drawImage(after, 0, top0 + shift, W, h, 0, h, W, H - h);
+      // 가운데 가르는 줄
+      ctx.fillStyle = '#fffaf0';
+      ctx.fillRect(0, h - Math.round(H * 0.004), W, Math.round(H * 0.008));
+      out.toBlob((blob) => showPhoto(blob, '위는 입주 첫날(빈 방), 아래는 지금(꾸민 방)이에요. 가운데 줄 근처나 위아래 끝에 "입주 첫날 → 지금" 같은 글자를 넣으세요. 프로필 격자에서는 가운데 3:4 만 보여요.', 'decorthumb'), 'image/png');
+    })();
+  });
+
+  const showPhoto = (blob: Blob | null, note = '위쪽 하늘/길 자리에 글자를 넣으세요. 프로필 격자에서는 가운데 3:4 만 보여요.', tag = 'thumb') => {
     if (resultUrl) URL.revokeObjectURL(resultUrl);
     resultUrl = null;
     if (!blob) return;
     resultUrl = URL.createObjectURL(blob);
     const d = new Date(Date.now() + 9 * 3600_000).toISOString();
-    const name = `goyangi_thumb_${d.slice(0, 10)}_${d.slice(11, 13)}${d.slice(14, 16)}.png`;
+    const name = `goyangi_${tag}_${d.slice(0, 10)}_${d.slice(11, 13)}${d.slice(14, 16)}.png`;
     const file = new File([blob], name, { type: 'image/png' });
     const canShare = typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
     resultBox.innerHTML = `
@@ -1528,7 +1607,7 @@ export function startCinema(scene: IslandScene) {
         ${canShare ? '<button class="cine-go cine-save">📲 사진에 저장 / 공유</button>' : ''}
         <a class="cine-go cine-go-sub cine-down" href="${resultUrl}" download="${name}">⬇ 내려받기</a>
       </div>
-      <p class="cine-reel-note">위쪽 하늘/길 자리에 글자를 넣으세요. 프로필 격자에서는 가운데 3:4 만 보여요.</p>`;
+      <p class="cine-reel-note">${note}</p>`;
     resultBox.hidden = false;
     resultBox.querySelector('.cine-save')?.addEventListener('click', () => {
       void navigator.share({ files: [file] }).catch(() => {});
