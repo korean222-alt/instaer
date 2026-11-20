@@ -100,14 +100,23 @@ function ensure(): AudioContext | null {
   const soft = ctx.createBiquadFilter();
   soft.type = 'lowpass';
   soft.frequency.value = 5200;
-  master.connect(soft).connect(ctx.destination);
-  mixOut = soft;
+  // 2026-11-20: 음악을 키우면서 여러 소리가 겹쳐도 찢어지지 않게 마지막에 살짝 눌러 준다
+  const limit = ctx.createDynamicsCompressor();
+  limit.threshold.value = -6;
+  limit.knee.value = 6;
+  limit.ratio.value = 8;
+  limit.attack.value = 0.003;
+  limit.release.value = 0.25;
+  master.connect(soft).connect(limit).connect(ctx.destination);
+  mixOut = limit;
   bgmGain = ctx.createGain();
   sfxGain = ctx.createGain();
   bgmGain.connect(master);
   sfxGain.connect(master);
   // 음악 잔향: 짧게 만든 잔향 소리(2.4초)를 섞는다
   musicBus = ctx.createGain();
+  // 2026-11-20 사용자: "브금이 안 들린다" → 고양이 울음보다 30dB 가까이 작아 폰 스피커로는 안 들렸다. 음악 전체를 키운다
+  musicBus.gain.value = 3.2;
   const dry = ctx.createGain();
   dry.gain.value = 0.8;
   const wet = ctx.createGain();
@@ -130,7 +139,7 @@ let musicDuck = 1;
 function applyVolume() {
   if (!ctx) return;
   // 사람 귀에 맞게 제곱으로
-  bgmGain.gain.setTargetAtTime(settings.bgm ** 2 * 0.95 * musicDuck, ctx.currentTime, musicDuck < 1 ? 0.35 : 0.1);
+  bgmGain.gain.setTargetAtTime(settings.bgm ** 1.6 * 0.95 * musicDuck, ctx.currentTime, musicDuck < 1 ? 0.35 : 0.1);
   sfxGain.gain.setTargetAtTime(settings.sfx ** 2 * 0.9, ctx.currentTime, 0.05);
 }
 
@@ -217,12 +226,12 @@ function startWaves() {
   lp.type = 'lowpass';
   lp.frequency.value = 520;
   const gain = c.createGain();
-  gain.gain.value = 0.05;
+  gain.gain.value = 0.12;
   // 9초에 한 번 밀려왔다 빠지는 느낌
   const lfo = c.createOscillator();
   lfo.frequency.value = 0.11;
   const depth = c.createGain();
-  depth.gain.value = 0.035;
+  depth.gain.value = 0.08;
   lfo.connect(depth).connect(gain.gain);
   src.connect(lp).connect(gain).connect(bgmGain);
   src.start();
@@ -252,7 +261,9 @@ function scheduleMusic() {
         tone(out, midi(root + 12 + iv), t, eighth * 8.6, 0.022, 'sine', 0.5);
         tone(out, midi(root + 12 + iv) * 1.003, t, eighth * 8.6, 0.012, 'triangle', 0.7);
       }
-      tone(out, midi(root - 12), t, eighth * 3.6, 0.14, 'sine', 0.03);
+      tone(out, midi(root - 12), t, eighth * 3.6, 0.1, 'sine', 0.03);
+      // 폰 스피커는 아주 낮은 음(80Hz 쯤)을 못 내서, 한 옥타브 위 부드러운 음을 겹쳐 낮은 음이 들리게
+      tone(out, midi(root), t, eighth * 3.6, 0.05, 'triangle', 0.03);
     }
     if (e === 4) tone(out, midi(root - 12 + 7), t, eighth * 3.4, 0.08, 'sine', 0.03);
     // 아르페지오: 낮에는 8분음 전부, 밤에는 4분음만
@@ -271,7 +282,7 @@ function startMusic() {
   if (!ctx || musicTimer) return;
   nextBeat = ctx.currentTime + 0.1;
   startWaves();
-  if (waves) waves.gain.gain.setTargetAtTime(0.05, ctx.currentTime, 0.5);
+  if (waves) waves.gain.gain.setTargetAtTime(0.12, ctx.currentTime, 0.5);
   musicTimer = window.setInterval(scheduleMusic, 250);
   scheduleMusic();
 }
