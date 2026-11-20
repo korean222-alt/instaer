@@ -116,7 +116,7 @@ function ensure(): AudioContext | null {
   // 음악 잔향: 짧게 만든 잔향 소리(2.4초)를 섞는다
   musicBus = ctx.createGain();
   // 2026-11-20 사용자: "브금이 안 들린다" → 고양이 울음보다 30dB 가까이 작아 폰 스피커로는 안 들렸다. 음악 전체를 키운다
-  musicBus.gain.value = 10;
+  musicBus.gain.value = 7;
   const dry = ctx.createGain();
   dry.gain.value = 0.8;
   const wet = ctx.createGain();

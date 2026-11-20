@@ -29,6 +29,30 @@ export interface Placement {
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
+// (2026-11-20 사용자: "상점 버튼이 누르는 버튼인 걸 알려주고 싶다") 상점 탭은 장바구니 그림 + 테두리 + ›,
+// 한 번도 안 눌러 봤으면 살짝 통통 튀고 "눌러서 가구 사기" 말풍선을 단다 (한 번 누르면 이 브라우저에서는 그만)
+const SHOP_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M3 4h2l2.2 10.2a1.5 1.5 0 0 0 1.5 1.2h8.6a1.5 1.5 0 0 0 1.5-1.1L21 8H6.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="19.5" r="1.6" fill="currentColor"/><circle cx="17" cy="19.5" r="1.6" fill="currentColor"/></svg>';
+const SHOP_SEEN_KEY = 'ci_shoptab_seen';
+let shopSeen: boolean | null = null;
+function shopTabSeen(): boolean {
+  if (shopSeen === null) {
+    try {
+      shopSeen = localStorage.getItem(SHOP_SEEN_KEY) === '1';
+    } catch {
+      shopSeen = false;
+    }
+  }
+  return shopSeen;
+}
+function markShopTabSeen() {
+  shopSeen = true;
+  try {
+    localStorage.setItem(SHOP_SEEN_KEY, '1');
+  } catch {
+    /* 저장이 막힌 브라우저 */
+  }
+}
+
 export function createPlacement(scene: IslandScene, explore: Explore): Placement {
   let where: Where | null = null;
   let houseNo = 0;
@@ -203,7 +227,7 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
                 return `<button class="strip-item${on ? ' on' : ''}" data-type="${d.type}">${pic(d.type)}<span>${esc(d.label)}</span></button>`;
               })
               .join('')
-          : '<p class="strip-empty">아직 놓을 가구가 없어요. 옆의 상점에서 사 보세요.</p>'
+          : '<p class="strip-empty">아직 놓을 가구가 없어요. <button class="strip-go-shop" data-tab="shop">상점 열기 ›</button></p>'
         : forSale.length
           ? forSale
               .map((d) => `<button class="strip-item shop${buyType === d.type ? ' on' : ''}" data-buy="${d.type}">${pic(d.type)}<span>${esc(d.label)}</span><small>${d.price} ${CURRENCY}</small></button>`)
@@ -222,7 +246,7 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
       }
       <div class="dock-tabs">
         <button data-tab="mine" class="${dockTab === 'mine' ? 'on' : ''}">내 가구 ${mine.length}</button>
-        <button data-tab="shop" class="${dockTab === 'shop' ? 'on' : ''}">상점 ${forSale.length}</button>
+        <button data-tab="shop" class="shop-tab${dockTab === 'shop' ? ' on' : ''}${!shopTabSeen() && dockTab !== 'shop' ? ' hint' : ''}">${SHOP_ICON}<span>상점 ${forSale.length}</span>${dockTab === 'shop' ? '' : '<i class="chev">›</i>'}${!shopTabSeen() && dockTab !== 'shop' ? '<em class="tap-hint">눌러서 가구 사기</em>' : ''}</button>
         <span class="coins">${coins().toLocaleString()} ${CURRENCY}</span>
       </div>
       <div class="decor-strip">${strip}</div>`;
@@ -295,6 +319,7 @@ export function createPlacement(scene: IslandScene, explore: Explore): Placement
     const it = picked ? items.find((i) => i.id === picked) : null;
     if (t.dataset.tab) {
       dockTab = t.dataset.tab === 'shop' ? 'shop' : 'mine';
+      if (dockTab === 'shop') markShopTabSeen();
       buyType = null;
       play('tap');
       draw();

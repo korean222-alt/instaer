@@ -86,6 +86,12 @@ export class Walker {
   holdSit = false;
   /** 빠르기 배수 (고양이 자동차를 타면 1보다 크다. 2026-11-16) */
   speedMul = 1;
+  /**
+   * (2026-11-20) 가구 위에 올라앉아 있는 자리. 조이스틱을 밀거나 점프를 누르면 앞쪽으로 폴짝 내려온다.
+   * 올라갈 때와 내려올 때는 hop 으로 짧게 뛰어오르는 모습을 그린다
+   */
+  perch: { id: string; x: number; z: number; y: number; yaw: number; exitX: number; exitZ: number } | null = null;
+  private hop: { fx: number; fz: number; fy: number; tx: number; tz: number; ty: number; t: number } | null = null;
 
   private vx = 0;
   private vz = 0;
@@ -103,6 +109,8 @@ export class Walker {
     this.vx = this.vz = this.vy = 0;
     this.speed = 0;
     this.air = 0;
+    this.perch = null;
+    this.hop = null;
     this.idle = 0;
     this.sit = this.yawn = this.walk = 0;
     this.yawnT = 1;
@@ -115,8 +123,81 @@ export class Walker {
    * @param mx, my  이동 입력 (카메라 기준. x 오른쪽, y 앞). 길이 0~1
    * @param camYaw  카메라가 고양이를 바라보는 방향의 각도 (0이면 카메라가 +z 쪽에 있다)
    */
+  /** (2026-11-20) 가구 위로 폴짝 올라앉는다 */
+  sitOn(p: { id: string; x: number; z: number; y: number; yaw: number; exitX: number; exitZ: number }) {
+    this.perch = { ...p };
+    this.startHop(p.x, p.z, p.y);
+  }
+
+  /** (2026-11-20) 가구에서 앞쪽으로 폴짝 내려온다 */
+  getDown() {
+    const p = this.perch;
+    if (!p) return;
+    this.perch = null;
+    this.idle = 0;
+    const ox = this.x;
+    const oz = this.z;
+    this.resolve(p.exitX, p.exitZ);
+    const tx = this.x;
+    const tz = this.z;
+    this.x = ox;
+    this.z = oz;
+    this.startHop(tx, tz, this.heightAt(tx, tz));
+  }
+
+  private startHop(tx: number, tz: number, ty: number) {
+    this.hop = { fx: this.x, fz: this.z, fy: this.groundY, tx, tz, ty, t: 0 };
+    this.vx = this.vz = this.vy = 0;
+    this.air = 0;
+  }
+
   update(dt: number, mx: number, my: number, camYaw: number, jump: boolean) {
     const m = Math.min(1, Math.hypot(mx, my));
+    // 가구에 올라가고 내려오는 중: 입력은 듣지 않고 짧은 포물선으로 뛴다
+    if (this.hop) {
+      const h = this.hop;
+      h.t = Math.min(1, h.t + dt / 0.42);
+      const e = h.t * h.t * (3 - 2 * h.t);
+      this.x = h.fx + (h.tx - h.fx) * e;
+      this.z = h.fz + (h.tz - h.fz) * e;
+      this.groundY = h.fy + (h.ty - h.fy) * e;
+      this.air = Math.sin(h.t * Math.PI) * (0.28 + Math.max(0, h.ty - h.fy) * 0.25);
+      const dx = h.tx - h.fx;
+      const dz = h.tz - h.fz;
+      const face = this.perch ? (h.t > 0.5 ? this.perch.yaw : Math.atan2(dx, dz)) : Math.hypot(dx, dz) > 0.05 ? Math.atan2(dx, dz) : this.yaw;
+      this.yaw += angleDiff(face, this.yaw) * (1 - Math.exp(-dt * 12));
+      this.y = this.groundY + this.air;
+      this.speed = 0;
+      this.walk += (0 - this.walk) * (1 - Math.exp(-dt * 9));
+      this.sit += (0 - this.sit) * (1 - Math.exp(-dt * 8));
+      this.anim = 'jump';
+      if (h.t >= 1) {
+        this.hop = null;
+        this.air = 0;
+        this.y = this.groundY;
+        // 올라앉으면 바로 앉는다
+        if (this.perch) this.idle = 5.01;
+      }
+      return;
+    }
+    if (this.perch) {
+      if (m > 0.01 || jump) {
+        this.getDown();
+        return;
+      }
+      const p = this.perch;
+      this.x = p.x;
+      this.z = p.z;
+      this.groundY = this.y = p.y;
+      this.air = 0;
+      this.speed = 0;
+      this.yaw += angleDiff(p.yaw, this.yaw) * (1 - Math.exp(-dt * 8));
+      this.walk += (0 - this.walk) * (1 - Math.exp(-dt * 9));
+      this.idle = Math.max(this.idle, 5.01) + dt;
+      this.sit += (1 - this.sit) * (1 - Math.exp(-dt * 6));
+      this.anim = 'sit';
+      return;
+    }
     let tx = 0;
     let tz = 0;
     if (m > 0.01) {

@@ -9,7 +9,7 @@ import { LABEL_CAPACITY, LabelLayer, regionIndex, type LabelEntry } from '../cor
 import { itemDef, type ItemGeometries } from '../free/catalog';
 import type { DrawingStore } from '../free/drawings';
 import { FreeItems, type FreeGroup } from '../free/FreeItems';
-import { blockersOf, pickItem, yardSpace, type Space } from '../free/space';
+import { blockersOf, pickItem, seatNearIn, yardSpace, type SeatSpot, type Space } from '../free/space';
 import type { PlacedItem } from '../free/types';
 import { cellToLocal, ItemField } from '../items/ItemField';
 import { houseSlot, isBigYard, MAILBOX_LOCAL, NEIGHBORHOODS, NEIGHBORHOODS_PER_ZONE, YARD_HALF, YARD_HALF_BIG, yardHalfOf, ZONE, zoneCenter } from '../layout';
@@ -539,6 +539,17 @@ export class HouseLayer {
     }
   }
   private readonly blockerPool: Array<{ x: number; z: number; r: number }> = [];
+
+  /** (2026-11-20) (x, z) 가까이 마당에 놓인 올라앉는 가구 (의자, 벤치, 캣타워...) */
+  seatNear(x: number, z: number, reach: number): SeatSpot | null {
+    let best: SeatSpot | null = null;
+    for (const r of this.near) {
+      if (Math.abs(r.x - x) > 5.5 || Math.abs(r.z - z) > 5.5) continue;
+      const free = this.freeLists.get(r.house.houseNo);
+      if (free?.length) best = seatNearIn(this.yardSpace(r.house.houseNo)!, free, x, z, reach, best);
+    }
+    return best;
+  }
 
   /** 자세히 그리는 집 수 상한 (성능이 모자라면 줄인다) */
   setNearLimit(n: number) {

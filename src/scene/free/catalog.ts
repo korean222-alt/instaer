@@ -29,6 +29,11 @@ export interface ItemDef {
   block?: ReadonlyArray<readonly [number, number, number]>;
   /** 직접 그린 그림이 붙는 자리 (정사각형). flat 이면 바닥에 눕힌다 */
   art?: { size: number; x: number; y: number; z: number; flat?: boolean };
+  /**
+   * (2026-11-20) 고양이가 올라앉는 자리: 아이템 기준 (x, z) 와 윗면 높이 y.
+   * sit = 앉기(의자, 소파...), up = 올라가기(침대, 캣타워...). 내려올 때는 앞쪽(+z)으로 내려온다
+   */
+  seat?: { kind: 'sit' | 'up'; x: number; z: number; y: number };
   build: () => THREE.BufferGeometry;
 }
 
@@ -412,20 +417,20 @@ function bathtub(): Pieces {
 
 export const FREE_ITEMS: Record<string, ItemDef> = {
   // ── 기존 마당 아이템 8종 (마당과 집 안 어디든) ──
-  cat_tower: { label: '캣타워', mount: 'floor', hx: 0.45, hz: 0.45, height: 1.7, block: [[0, 0, 0.42]], build: yard('cat_tower') },
-  hammock: { label: '해먹', mount: 'floor', hx: 0.68, hz: 0.32, height: 0.9, block: [[-0.3, 0, 0.3], [0.3, 0, 0.3]], build: yard('hammock') },
+  cat_tower: { label: '캣타워', mount: 'floor', hx: 0.45, hz: 0.45, height: 1.7, block: [[0, 0, 0.42]], seat: { kind: 'up', x: -0.2, z: -0.18, y: 1.6 }, build: yard('cat_tower') },
+  hammock: { label: '해먹', mount: 'floor', hx: 0.68, hz: 0.32, height: 0.9, block: [[-0.3, 0, 0.3], [0.3, 0, 0.3]], seat: { kind: 'up', x: 0, z: 0, y: 0.4 }, build: yard('hammock') },
   plant: { label: '화분', mount: 'floor', hx: 0.3, hz: 0.3, height: 1.05, build: yard('plant') },
   sign: { label: '간판', mount: 'floor', hx: 0.4, hz: 0.12, height: 1.2, art: { size: 0.34, x: 0, y: 0.9, z: 0.083 }, build: yard('sign') },
   fish_rack: { label: '생선 건조대', mount: 'floor', hx: 0.5, hz: 0.22, height: 1.15, block: [[-0.24, 0, 0.24], [0.24, 0, 0.24]], build: yard('fish_rack') },
-  cushion: { label: '방석', mount: 'floor', hx: 0.44, hz: 0.44, height: 0.3, build: yard('cushion') },
+  cushion: { label: '방석', mount: 'floor', hx: 0.44, hz: 0.44, height: 0.3, seat: { kind: 'sit', x: 0, z: 0, y: 0.2 }, build: yard('cushion') },
   lantern: { label: '등불', mount: 'floor', hx: 0.22, hz: 0.22, height: 1.1, build: yard('lantern') },
-  bench: { label: '벤치', mount: 'floor', hx: 0.5, hz: 0.22, height: 0.85, block: [[-0.24, 0, 0.26], [0.24, 0, 0.26]], build: yard('bench') },
+  bench: { label: '벤치', mount: 'floor', hx: 0.5, hz: 0.22, height: 0.85, block: [[-0.24, 0, 0.26], [0.24, 0, 0.26]], seat: { kind: 'sit', x: 0, z: 0.03, y: 0.415 }, build: yard('bench') },
   // ── 새 아이템 ──
-  bed: { label: '침대', mount: 'floor', hx: 0.58, hz: 1.05, height: 0.95, block: [[0, -0.5, 0.56], [0, 0.5, 0.56]], build: () => merge(bed()) },
+  bed: { label: '침대', mount: 'floor', hx: 0.58, hz: 1.05, height: 0.95, block: [[0, -0.5, 0.56], [0, 0.5, 0.56]], seat: { kind: 'up', x: 0, z: 0.3, y: 0.58 }, build: () => merge(bed()) },
   bookshelf: { label: '책장', mount: 'floor', hx: 0.62, hz: 0.2, height: 1.8, block: [[-0.36, 0, 0.24], [0, 0, 0.24], [0.36, 0, 0.24]], build: () => merge(bookshelf()) },
   table: { label: '탁자', mount: 'floor', hx: 0.62, hz: 0.42, height: 0.74, block: [[-0.22, 0, 0.4], [0.22, 0, 0.4]], build: () => merge(table()) },
-  chair: { label: '의자', mount: 'floor', hx: 0.25, hz: 0.25, height: 1.0, block: [[0, 0, 0.24]], build: () => merge(chair()) },
-  sofa: { label: '소파', mount: 'floor', hx: 0.87, hz: 0.42, height: 0.95, block: [[-0.46, 0, 0.4], [0, 0, 0.4], [0.46, 0, 0.4]], build: () => merge(sofa()) },
+  chair: { label: '의자', mount: 'floor', hx: 0.25, hz: 0.25, height: 1.0, block: [[0, 0, 0.24]], seat: { kind: 'sit', x: 0, z: 0.02, y: 0.475 }, build: () => merge(chair()) },
+  sofa: { label: '소파', mount: 'floor', hx: 0.87, hz: 0.42, height: 0.95, block: [[-0.46, 0, 0.4], [0, 0, 0.4], [0.46, 0, 0.4]], seat: { kind: 'sit', x: 0, z: 0.08, y: 0.53 }, build: () => merge(sofa()) },
   floor_lamp: { label: '스탠드 조명', mount: 'floor', hx: 0.24, hz: 0.24, height: 1.7, block: [[0, 0, 0.16]], build: () => merge(floorLamp()) },
   rug: { label: '러그', mount: 'rug', hx: 0.8, hz: 0.8, height: 0.05, art: { size: 1.3, x: 0, y: 0.04, z: 0, flat: true }, build: () => merge(rug()) },
   frame: { label: '액자', mount: 'wall', hx: 0.43, hz: 0.05, y0: 1.32, height: 0.86, art: { size: 0.7, x: 0, y: 1.75, z: 0.068 }, build: () => merge(frame()) },

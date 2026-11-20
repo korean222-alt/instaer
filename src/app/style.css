@@ -903,6 +903,16 @@ body:has(.sheet.open) .view-pad { display: none; }
 .dock-tabs { display: flex; gap: 6px; margin-bottom: 6px; }
 .dock-tabs button { appearance: none; border: 0; cursor: pointer; border-radius: 999px; padding: 6px 12px; font: 800 13px var(--font); background: var(--field); color: var(--ink-soft); }
 .dock-tabs button.on { background: var(--accent); color: var(--accent-ink); }
+.dock-tabs .shop-tab { position: relative; display: inline-flex; align-items: center; gap: 4px; background: var(--card, #fff); color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent), 0 2px 0 rgba(0, 0, 0, 0.12); }
+.dock-tabs .shop-tab.on { box-shadow: none; }
+.dock-tabs .shop-tab svg { flex: none; }
+.dock-tabs .shop-tab .chev { font-style: normal; font-size: 15px; line-height: 1; margin-left: 1px; }
+.dock-tabs .shop-tab:active { transform: translateY(1px); }
+.dock-tabs .shop-tab.hint { animation: shop-bounce 1.6s ease-in-out infinite; }
+.dock-tabs .shop-tab .tap-hint { position: absolute; left: 50%; bottom: calc(100% + 7px); transform: translateX(-50%); white-space: nowrap; font: 800 11.5px var(--font); font-style: normal; background: var(--accent); color: var(--accent-ink); padding: 4px 9px; border-radius: 999px; pointer-events: none; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18); }
+.dock-tabs .shop-tab .tap-hint::after { content: ''; position: absolute; left: 50%; top: 100%; margin-left: -5px; border: 5px solid transparent; border-top-color: var(--accent); }
+@keyframes shop-bounce { 0%, 60%, 100% { transform: translateY(0); } 70% { transform: translateY(-3px); } 80% { transform: translateY(0); } 90% { transform: translateY(-1.5px); } }
+.decor-strip .strip-go-shop { appearance: none; border: 0; cursor: pointer; margin-left: 4px; padding: 5px 11px; border-radius: 999px; font: 800 12.5px var(--font); background: var(--accent); color: var(--accent-ink); }
 .dock-tabs .coins { margin-left: auto; align-self: center; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
 .decor-strip .strip-empty { font-size: 12.5px; color: var(--ink-soft); font-weight: 700; padding: 18px 6px; white-space: normal; }
 .decor-dock .strip-item.shop small { color: var(--accent); font-weight: 800; font-size: 11px; }

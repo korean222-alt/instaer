@@ -232,6 +232,51 @@ export function pickItem(s: Space, items: readonly PlacedItem[], ray: THREE.Ray)
   return best;
 }
 
+/** (2026-11-20) 올라앉는 자리 하나 (화면 좌표) */
+export interface SeatSpot {
+  id: string;
+  type: string;
+  label: string;
+  kind: 'sit' | 'up';
+  x: number;
+  z: number;
+  y: number;
+  yaw: number;
+  /** 내려올 자리 (앞쪽) */
+  exitX: number;
+  exitZ: number;
+  /** 찾을 때 잰 거리 */
+  dist: number;
+}
+
+/** (x, z) 에서 reach 안에 있는 가장 가까운 올라앉는 자리. 아이템 몸체 가장자리까지의 거리로 잰다 */
+export function seatNearIn(s: Space, items: readonly PlacedItem[], x: number, z: number, reach: number, best: SeatSpot | null): SeatSpot | null {
+  let bestD = best ? best.dist : reach;
+  for (const item of items) {
+    const def = itemDef(item.type);
+    if (!def.seat) continue;
+    const r = s.rot + item.rotY;
+    const c = Math.cos(item.rotY);
+    const sn = Math.sin(item.rotY);
+    // 아이템 기준 좌표로 옮겨 네모 가장자리까지 거리
+    const l = toLocal(s, x, z, _l);
+    const dx = l.x - item.x;
+    const dz = l.z - item.z;
+    const ux = dx * c - dz * sn;
+    const uz = dx * sn + dz * c;
+    const d = Math.hypot(Math.max(0, Math.abs(ux) - def.hx), Math.max(0, Math.abs(uz) - def.hz));
+    if (d >= bestD) continue;
+    bestD = d;
+    const st = def.seat;
+    const at = toWorld(s, item.x + st.x * c + st.z * sn, item.z - st.x * sn + st.z * c, { x: 0, z: 0 });
+    const ez = def.hz + 0.42;
+    const ex = toWorld(s, item.x + ez * sn, item.z + ez * c, { x: 0, z: 0 });
+    best = { id: item.id, type: item.type, label: def.label, kind: st.kind, x: at.x, z: at.z, y: s.y + st.y, yaw: r, exitX: ex.x, exitZ: ex.z, dist: d };
+  }
+  return best;
+}
+const _l = { x: 0, z: 0 };
+
 /** 걸어서 못 지나가는 원들을 out 에 담는다 (화면 좌표) */
 export function blockersOf(s: Space, items: readonly PlacedItem[], pool: Array<{ x: number; z: number; r: number }>, n: number, out: Array<{ x: number; z: number; r: number }>): number {
   for (const item of items) {

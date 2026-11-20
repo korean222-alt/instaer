@@ -14,7 +14,7 @@ import { ItemGeometries } from './free/catalog';
 import { DrawingStore } from './free/drawings';
 import { FishingRig, type FishingState } from './fishing/FishingRig';
 import { Placer } from './free/Placer';
-import { blockersOf, pickItem, type Space } from './free/space';
+import { blockersOf, pickItem, seatNearIn, type SeatSpot, type Space } from './free/space';
 import type { Drawing, InteriorItem, PlacedItem } from './free/types';
 import { Interior, ROOM_EXIT, ROOM_START, ROOM_WALK } from './interior/Interior';
 import { ROOM_HALF, ROOM_HALF_BIG } from './free/space';
@@ -208,6 +208,15 @@ export interface IslandScene {
   onExitCave(cb: () => void): void;
   /** 동굴 안에서 (x, z) 둘레 reach 안의 가장 가까운 광석 바위 id */
   caveNodeNear(reach?: number): string | null;
+  /**
+   * (2026-11-20) 걷는 중 reach(미터, 기본 1.0) 안의 가장 가까운 올라앉는 가구 (지금 있는 집 안, 또는 둘레 마당).
+   * kind: 'sit' 앉기(의자, 소파, 벤치, 방석) / 'up' 올라가기(침대, 해먹, 캣타워). 없으면 null
+   */
+  seatNear(reach?: number): { id: string; type: string; label: string; kind: 'sit' | 'up' } | null;
+  /** (2026-11-20) 그 가구에 폴짝 올라앉는다 (null 이면 내려온다). 조이스틱이나 점프로도 내려온다. 올라갔으면 true */
+  sitOnSeat(itemId: string | null): boolean;
+  /** (2026-11-20) 지금 올라앉아 있는 가구 id (내려오는 중이거나 아니면 null) */
+  getSeat(): string | null;
   /** (2026-11-19 곤충 채집) 섬에 보일 곤충 전체. 빠진 곤충은 작아지며 사라진다. 집 안/동굴에서는 안 보인다 */
   setBugs(bugs: SceneBug[]): void;
   /** 그 곤충이 지금 그려진 자리 (둘레를 날아다니므로 앱이 준 자리와 조금 다르다). 없으면 null */
@@ -548,6 +557,12 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
   const walker = new Walker();
   const walkCam = new WalkCamera();
   walker.hasHouse = walkCam.hasHouse = (houseNo) => houses.has(houseNo);
+  /** (2026-11-20) 고양이 둘레에서 올라앉을 가구 */
+  const findSeat = (reach: number): SeatSpot | null => {
+    if (inCave) return null;
+    if (inside !== null && interior) return seatNearIn(interior.space, interior.list, walker.x, walker.z, reach, null);
+    return walking ? houses.seatNear(walker.x, walker.z, reach) : null;
+  };
   walker.blockers = (x, z, out) => {
     if (inCave && cave) cave.blockers(out);
     else if (inside !== null && interior) blockersOf(interior.space, interior.list, roomBlockers, 0, out);
@@ -1445,6 +1460,24 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     caveNodeNear(reach = 1.1) {
       return inCave && cave ? cave.nodeNear(walker.x, walker.z, reach) : null;
     },
+    seatNear(reach = 1.0) {
+      const s = findSeat(reach);
+      return s ? { id: s.id, type: s.type, label: s.label, kind: s.kind } : null;
+    },
+    sitOnSeat(itemId) {
+      if (itemId === null) {
+        walker.getDown();
+        return false;
+      }
+      if ((!walking && inside === null) || inCave || riding !== null || fishing !== null || placer.active) return false;
+      const s = findSeat(1.6);
+      if (!s || s.id !== itemId) return false;
+      walker.sitOn(s);
+      return true;
+    },
+    getSeat() {
+      return walker.perch?.id ?? null;
+    },
     setWalkZoom(amount) {
       walkCam.zoom = Math.max(0, Math.min(1, Number(amount) || 0));
     },
@@ -1476,6 +1509,8 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
       }
     },
     startPlacing(typeOrItemId, houseNo) {
+      // 꾸미는 동안 가구가 옮겨질 수 있으니 올라앉아 있던 가구에서 내려온다
+      walker.getDown();
       let space: Space | null = null;
       let list: PlacedItem[] = [];
       if (inside !== null && interior) {

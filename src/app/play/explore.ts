@@ -145,6 +145,9 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
   let ores: Ore[] = [];
   let nearOre: Ore | null = null;
   let nearDeeper = false;
+  /** (2026-11-20) 올라앉을 수 있는 가까운 가구, 지금 올라앉아 있는가 */
+  let nearSeat: { id: string; label: string; kind: 'sit' | 'up' } | null = null;
+  let onSeat = false;
   /** 캐기 버튼을 누르기 시작한 시각 (0 = 안 누름) */
   let holdAt = 0;
   let holdRaf = 0;
@@ -237,6 +240,13 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       nearBug = bug;
       draw();
     }
+    const seat = !cave && !riding ? scene.seatNear(1.0) : null;
+    const sat = !!scene.getSeat();
+    if (seat?.id !== nearSeat?.id || sat !== onSeat) {
+      nearSeat = seat;
+      onSeat = sat;
+      draw();
+    }
     const changed = list.length !== shownNpcs.length || list.some((n, i) => shownNpcs[i]?.id !== n.id);
     shownNpcs = list;
     // 산책냥은 자리가 계속 바뀌므로 보이는 동안 매번 넘긴다
@@ -324,6 +334,8 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
         const n = state.wallet ? unreadMail(state.wallet.data) : 0;
         btns.push(`<button class="act-btn${n ? ' primary' : ''}" data-act="mail">${hooks.icon('mail')}<span>우편함 열기${n ? ` (${n})` : ''}</span></button>`);
       }
+      if (onSeat) btns.push(`<button class="act-btn primary" data-act="seatoff">${hooks.icon('close')}<span>내려오기</span></button>`);
+      else if (nearSeat && !riding) btns.push(`<button class="act-btn primary" data-act="seat">${hooks.icon('cat')}<span>${esc(nearSeat.label)}${nearSeat.kind === 'up' ? '에 올라가기' : '에 앉기'}</span></button>`);
       if (nearDeeper) btns.push(`<button class="act-btn" data-act="deeper">${hooks.icon('door')}<span>더 깊이 들어가기 (${cave + 1}층)</span></button>`);
       if (nearNpc) btns.push(`<button class="act-btn primary" data-act="talk">${hooks.icon('chat')}<span>${esc(nearNpc.name)}에게 말 걸기</span></button>`);
       if (nearFish && !nearNpc) btns.push(`<button class="act-btn primary" data-act="fish">${hooks.icon('fish')}<span>${nearFish === 'sea' ? '바다 낚시하기' : '낚시하기'}</span></button>`);
@@ -374,6 +386,19 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       hooks.fish(nearFish);
     }
     else if (act === 'bug' && nearBug) catchBug(nearBug);
+    else if (act === 'seat' && nearSeat) {
+      if (scene.sitOnSeat(nearSeat.id)) {
+        play('jump');
+        window.setTimeout(() => play('purr'), 500);
+        onSeat = true;
+        draw();
+      }
+    } else if (act === 'seatoff') {
+      scene.sitOnSeat(null);
+      play('jump');
+      onSeat = false;
+      draw();
+    }
     else if (act === 'enter' && doorNo !== null) void api.enter(doorNo);
     else if (act === 'home' && nearHome) api.enterHome(nearHome.id);
     else if (act === 'cave') enterCave(1);
