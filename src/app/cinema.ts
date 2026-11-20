@@ -1232,6 +1232,9 @@ function buildThumbShot(): { pose: Pose; cats: RemotePlayer[] } {
   };
 }
 
+/** 꾸미기 썸네일 기본 집 (앞에 있을수록 먼저). 사용자가 고른 정돈된 집 */
+const TIDY_THUMB = ['푸른곰팡이'];
+
 const FADE = 0.45;
 
 /** 나레이션이 끝나기 전에 영상이 끝나지 않게 마지막 컷을 늘린다 (목소리 끝 + 1.6초는 마지막 화면을 보여 준다) */
@@ -1268,6 +1271,7 @@ export function startCinema(scene: IslandScene) {
       <label class="cine-opt cine-day-row">연재 <b>Day</b> <input class="cine-day-in" type="number" min="1" inputmode="numeric" value="${seriesDay()}" /> <small>(날짜로 자동, 고칠 수 있어요)</small></label>
       <button class="cine-go cine-go-sub cine-thumb">🖼️ 썸네일 사진 <small>고양이 6마리, 글자 없이</small></button>
       <button class="cine-go cine-go-sub cine-decorthumb">🖼️ 꾸미기 썸네일 <small>입주 첫날 vs 지금, 글자 없이</small></button>
+      <label class="cine-opt">썸네일 집 <select class="cine-thumb-house"><option value="">찾는 중…</option></select></label>
       <button class="cine-go cine-hookreel cine-go-sub2">🔥 첫 1초 릴스 <small>빈 집 → 내 집, 약 14초</small></button>
       <button class="cine-go cine-reel cine-go-sub2" disabled>📣 새 주민 릴스 <small class="cine-reel-who">찾는 중…</small></button>
       <p class="cine-reel-note">나레이션 목소리가 함께 나와요. 소리를 켜고 찍으세요.</p>
@@ -1513,6 +1517,14 @@ export function startCinema(scene: IslandScene) {
     }, 2200);
   });
 
+  // 썸네일 집 고르기: 꾸민 방 목록. 기본은 정돈된 집 (2026-11-20 사용자: "오레오 집 말고 정돈된 집으로")
+  const thumbHouse = $<HTMLSelectElement>('.cine-thumb-house');
+  void fetchShowcase().then((d) => {
+    const list = d.rooms.filter((x) => state.houses.has(x.houseNo));
+    thumbHouse.innerHTML = list.length ? list.map((x) => `<option value="${x.houseNo}">${esc(x.handle)} (${x.room.length}개)</option>`).join('') : '<option value="">꾸민 집이 없어요</option>';
+    const tidy = list.find((x) => TIDY_THUMB.includes(x.handle));
+    if (tidy) thumbHouse.value = String(tidy.houseNo);
+  });
   // ── 꾸미기 썸네일 (2026-11-20): 같은 방을 같은 자리에서 두 번 찍어 위(빈 방 = 입주 첫날) / 아래(꾸민 방 = 지금)로 붙인다 ──
   const decorThumbBtn = $<HTMLButtonElement>('.cine-decorthumb');
   /** 다음 그림 한 장을 캔버스로 복사 */
@@ -1533,7 +1545,8 @@ export function startCinema(scene: IslandScene) {
     decorThumbBtn.disabled = true;
     void (async () => {
       const data = await fetchShowcase();
-      const r = data.rooms.find((x) => state.houses.has(x.houseNo));
+      const pickNo = Number(thumbHouse.value);
+      const r = data.rooms.find((x) => x.houseNo === pickNo && state.houses.has(x.houseNo)) ?? data.rooms.find((x) => state.houses.has(x.houseNo));
       if (!r) {
         decorThumbBtn.disabled = false;
         resultBox.innerHTML = '<p class="cine-lead">꾸민 집 안이 아직 없어요.</p>';

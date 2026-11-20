@@ -91,7 +91,7 @@ export async function showcase(env: Env): Promise<Response> {
     ).map((r) => ({ houseNo: r.houseNo, handle: r.handle, region: r.region, roofArt: r.d.roofArt, roofArtBack: r.d.roofArtBack })),
     rooms: pick(
       rows.filter((r) => r.d.room.length >= 3).sort((a, b) => b.roomScore - a.roomScore),
-      4,
+      10,
     ).map((r) => ({ houseNo: r.houseNo, handle: r.handle, region: r.region, rank: r.rank, room: r.d.room, wallpaper: r.d.wallpaper, floor: r.d.floor, big: r.big })),
     yards: pick(
       rows.filter((r) => r.d.yard.length >= 3).sort((a, b) => b.yardScore - a.yardScore),
