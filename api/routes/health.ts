@@ -1,6 +1,8 @@
 import type { Env } from '../env';
 import { publicHandle } from '../lib/houses';
 import { json } from '../http';
+import { toDecor, type DecorRow } from '../lib/decor';
+import { decorRank, decorScore } from '../../src/shared/decorScore';
 
 /**
  * GET /api/health : D1 연결 확인.
@@ -53,5 +55,47 @@ export async function series(env: Env): Promise<Response> {
   return json({
     total: total?.n ?? 0,
     recent: (recent.results ?? []).map((r) => ({ houseNo: r.house_no, handle: publicHandle(r), region: r.region })),
+  });
+}
+
+/**
+ * GET /api/showcase : 촬영 모드 "꾸미기 릴스" (2026-11-20). 지붕 그림이 있는 집, 집 안을 잘 꾸민 집(방 전체 꾸미기 포함), 마당을 잘 꾸민 집.
+ * 집이 수백 채라 꾸미기 줄을 한 번에 읽어 점수로 고른다. 촬영할 때만 불러서 가볍다.
+ */
+export async function showcase(env: Env): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    `SELECT h.house_no, h.ig_handle, h.hide_handle, h.region, d.yard, d.room, d.wallpaper, d.floor, d.roof_art, w.data AS wallet
+     FROM house_decor d JOIN houses h ON h.id = d.house_id LEFT JOIN wallets w ON w.house_id = d.house_id`,
+  ).all<{ house_no: number; ig_handle: string; hide_handle: number; region: string; wallpaper: string; floor: string; wallet: string | null } & DecorRow>();
+  const rows = (results ?? []).map((r) => {
+    const d = toDecor(r.house_no, r);
+    const score = decorScore(d);
+    const surf = (d.wallpaper !== 'cream' ? 1 : 0) + (d.floor !== 'wood' ? 1 : 0);
+    return {
+      houseNo: r.house_no,
+      handle: publicHandle(r),
+      region: r.region,
+      score,
+      rank: decorRank(score),
+      d,
+      roomScore: d.room.length * 10 + new Set(d.room.map((i) => i.type)).size * 5 + surf * 15 + d.room.filter((i) => i.drawingId).length * 5,
+      yardScore: d.yard.length * 10 + new Set(d.yard.map((i) => i.type)).size * 5,
+      big: !!r.wallet && r.wallet.includes('"room_big"'),
+    };
+  });
+  const pick = <T>(list: T[], n: number) => list.slice(0, n);
+  return json({
+    roofs: pick(
+      rows.filter((r) => r.d.roofArt || r.d.roofArtBack).sort((a, b) => b.score - a.score),
+      5,
+    ).map((r) => ({ houseNo: r.houseNo, handle: r.handle, region: r.region, roofArt: r.d.roofArt, roofArtBack: r.d.roofArtBack })),
+    rooms: pick(
+      rows.filter((r) => r.d.room.length >= 3).sort((a, b) => b.roomScore - a.roomScore),
+      4,
+    ).map((r) => ({ houseNo: r.houseNo, handle: r.handle, region: r.region, rank: r.rank, room: r.d.room, wallpaper: r.d.wallpaper, floor: r.d.floor, big: r.big })),
+    yards: pick(
+      rows.filter((r) => r.d.yard.length >= 3).sort((a, b) => b.yardScore - a.yardScore),
+      6,
+    ).map((r) => ({ houseNo: r.houseNo, handle: r.handle, region: r.region })),
   });
 }

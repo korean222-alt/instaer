@@ -838,6 +838,7 @@ body.decorating .guide-walk, body.playing .guide-walk, body:has(.sheet.open) .gu
 .cine-day span { font-size: 16px; font-weight: 900; }
 .cine-day i { font-style: normal; }
 .cine-hook.cine-series-hook { top: calc(env(safe-area-inset-top, 0px) + 14%); font-size: 31px; }
+.cine-chips.cine-decor-chips { top: 76%; }
 .cine-series-hook small { display: block; margin-top: 6px; font-size: 17px; font-weight: 800; color: #8a705c; }
 .cine-count { top: calc(env(safe-area-inset-top, 0px) + 14%); left: 50%; --tx: -50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; min-width: 220px; padding: 12px 26px 16px; border-radius: 26px; background: rgba(255, 250, 240, .97); color: #4a3424; text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, .22); animation: cine-pop .5s cubic-bezier(.2, 1.5, .4, 1) both; }
 .cine-count small { font-size: 17px; font-weight: 800; color: #8a705c; }

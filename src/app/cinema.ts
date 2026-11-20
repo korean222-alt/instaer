@@ -7,8 +7,10 @@
 // 씬은 setCinemaCamera / setNameTags / setCinemaQuality / setTimeOfDay 로만 다룬다.
 import { dockArea, GROUND_Y, houseSlot, neighborhoodArea, townSquares, TOWN_SQUARE, type CinemaCamera, type IslandScene } from '../scene';
 import { FOUNDER_MAX, NEIGHBORHOOD_SIZE, REGIONS } from '../shared/config';
-import type { House, RegionId, RemotePlayer } from '../shared/types';
+import type { House, InteriorItem, RegionId, RemotePlayer } from '../shared/types';
+import { pinDrawings, setArtCenter, surfaceDrawing } from './art';
 import { loadCineVoice, playCine, playCineVoice, startRecordAudio, stopRecordAudio, unlockSound, type CineSfx } from './audio/sound';
+import decorVoiceUrl from './reels/decor-voice.mp3?url';
 import hookVoiceUrl from './reels/hook-voice.mp3?url';
 import newcomerVoiceUrl from './reels/newcomer-voice.mp3?url';
 import seriesVoiceUrl from './reels/series-voice.mp3?url';
@@ -38,6 +40,8 @@ interface Shot {
   fade?: number;
   /** u: 0~1 (이 컷 안에서 얼마나 지났는지, 부드럽게 굴린 값) */
   pose: (u: number) => Pose;
+  /** 이 컷이 시작될 때 한 번 (집 안에 들어가기 같은 것) */
+  enter?: () => void;
 }
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
@@ -868,6 +872,305 @@ function buildSeriesReel(data: SeriesData, day: number): Reel {
   };
 }
 
+// ── 꾸미기 릴스 "내 집, 내 맘대로" (2026-11-20) ──
+// 사용자: "이번에는 고양이도 보여주는데 집 꾸미기 위주로. 지붕을 직접 그릴 수도 있고 집 안도 잘 꾸민 사람들 보여주고".
+// 지붕 그림 집 → 이웃들 지붕 그림 (최대 3) → 잘 꾸민 마당 (최대 2) → 잘 꾸민 집 안 (최대 3, 씬이 방 안에서도 촬영 카메라를 쓴다)
+// → 그 집 고양이 가까이 (방 안) → 동네 위로 "댓글에 입주".
+// 데이터 GET /api/showcase. 나레이션 src/app/reels/decor-voice.mp3 (ElevenLabs Yeonhee, eleven_v4, 28.0초, 이름은 말하지 않는다).
+// 문장 시간은 silencedetect 로 잰 값이다. 파일을 바꾸면 DECOR_LINES 도 고친다 (컷 경계도 여기서 나온다).
+const DECOR_VOICE_AT = 0.3;
+const DECOR_LINES: [number, number, string][] = [
+  [0.0, 3.36, '고양이섬에서는\n내 집을 내 맘대로 꾸밀 수 있어요!'], // 0
+  [3.78, 6.42, '지붕에는 직접 그린 그림을\n올릴 수 있어요'], // 1
+  [6.94, 9.42, '이웃들이 그린 지붕,\n같이 구경해 볼까요?'], // 2
+  [10.11, 13.19, '마당에는 캣타워랑 해먹,\n화분을 놓고요'], // 3
+  [13.63, 17.54, '집 안은 벽지랑 바닥,\n가구까지 전부 마음대로!'], // 4
+  [18.05, 20.53, '섬에서 제일 예쁘게 꾸민 집들이에요'], // 5
+  [20.99, 23.27, '고양이도 꾸민 집에서\n기다리고 있어요'], // 6
+  [23.73, 25.7, "댓글에 '입주'라고 남기면,"], // 7
+  [25.88, 27.61, '당신만의 집을 꾸밀 수 있어요!'], // 8
+];
+
+interface ShowcaseHouse {
+  houseNo: number;
+  handle: string;
+  region: string;
+}
+interface ShowcaseRoom extends ShowcaseHouse {
+  rank: string;
+  room: InteriorItem[];
+  wallpaper: string;
+  floor: string;
+  big: boolean;
+}
+interface ShowcaseData {
+  roofs: (ShowcaseHouse & { roofArt: string | null; roofArtBack: string | null })[];
+  rooms: ShowcaseRoom[];
+  yards: ShowcaseHouse[];
+}
+
+async function fetchShowcase(): Promise<ShowcaseData> {
+  try {
+    const res = await fetch('/api/showcase', { cache: 'no-store' });
+    if (res.ok) return (await res.json()) as ShowcaseData;
+  } catch {
+    /* 아래 */
+  }
+  // 서버가 안 되면: 섬에 있는 지붕 그림과 마당만 (집 안은 못 본다)
+  const of = (no: number): ShowcaseHouse | null => {
+    const h = state.houses.get(no);
+    return h && h.igHandle && !h.isNpc ? { houseNo: no, handle: h.igHandle, region: h.region } : null;
+  };
+  const roofNos = [...new Set([...state.roofArt.keys(), ...state.roofArtBack.keys()])];
+  return {
+    roofs: roofNos
+      .map((no) => of(no))
+      .filter((h): h is ShowcaseHouse => !!h)
+      .slice(0, 5)
+      .map((h) => ({ ...h, roofArt: state.roofArt.get(h.houseNo) ?? null, roofArtBack: state.roofArtBack.get(h.houseNo) ?? null })),
+    rooms: [],
+    yards: [...state.yards.entries()]
+      .sort((a, b) => b[1].length - a[1].length)
+      .map(([no]) => of(no))
+      .filter((h): h is ShowcaseHouse => !!h)
+      .slice(0, 3),
+  };
+}
+
+function buildDecorReel(data: ShowcaseData): Reel {
+  const G = GROUND_Y;
+  const A = DECOR_VOICE_AT;
+  const L = (i: number) => A + DECOR_LINES[i][0];
+  const here = (h: ShowcaseHouse) => state.houses.has(h.houseNo);
+  const roofs = data.roofs.filter(here).slice(0, 3);
+  const rooms = data.rooms.filter(here).slice(0, 3);
+  const yardSrc = data.yards.filter(here);
+  // 마당은 지붕/집 안에서 안 나온 집을 먼저
+  const shown = new Set([...roofs, ...rooms].map((h) => h.houseNo));
+  const yards = [...yardSrc.filter((h) => !shown.has(h.houseNo)), ...yardSrc.filter((h) => shown.has(h.houseNo))].slice(0, 2);
+  // 주인공(첫 화면): 지붕 그림 1등, 없으면 집 안 1등, 없으면 마당 1등, 없으면 가장 최근 집
+  const anyHouse = [...state.houses.values()].filter((h) => !h.isNpc && h.igHandle).sort((a, b) => b.houseNo - a.houseNo)[0];
+  const heroNo = roofs[0]?.houseNo ?? rooms[0]?.houseNo ?? yards[0]?.houseNo ?? anyHouse?.houseNo ?? 1;
+  // 고양이 컷과 마지막 컷은 집 안 1등 집 (없으면 주인공)
+  const catHouse = rooms[0] ?? null;
+  const endNo = catHouse?.houseNo ?? heroNo;
+
+  // 지붕 그림을 화면에 넘길 수 있게 (서버 목록에만 있으면 넣어 둔다)
+  for (const r of data.roofs) {
+    if (r.roofArt) state.roofArt.set(r.houseNo, r.roofArt);
+    if (r.roofArtBack) state.roofArtBack.set(r.houseNo, r.roofArtBack);
+  }
+  // 집 안 그림(가구, 벽지, 바닥)은 미리 받아 둔다 (검은 화면 동안)
+  pinDrawings(rooms.flatMap((r) => [...r.room.map((i) => i.drawingId), surfaceDrawing(r.wallpaper), surfaceDrawing(r.floor)]));
+  const heroSlot = houseSlot(heroNo);
+  setArtCenter(heroSlot.x, heroSlot.z);
+
+  const t1 = L(1) - 0.2; // 지붕 그림들
+  const t2 = L(3) - 0.2; // 마당
+  const t3 = L(4) - 0.2; // 집 안
+  const t4 = L(6) - 0.2; // 고양이
+  const t5 = L(7) - 0.2; // 댓글에 입주
+  const tEnd = A + 27.61 + 2.2;
+
+  /** 지붕이 잘 보이는 자리: 집 가운데 위를 조금 높이서 앞쪽 비스듬히 */
+  const roofPose = (no: number, u: number, side: number): Pose => {
+    const hs = houseSlot(no);
+    return { x: hs.x, y: G + 2.3, z: hs.z, yaw: hs.rot + side * lerp(0.55, 0.15, u), pitch: lerp(0.62, 0.5, u), dist: lerpDist(15, 11.5, u), fov: 40 };
+  };
+  /** 마당이 잘 보이는 자리: 집 앞 마당 가운데를 위에서 천천히 돌며 */
+  const yardPose = (no: number, u: number, side: number): Pose => {
+    const hs = houseSlot(no);
+    const fx = Math.sin(hs.rot);
+    const fz = Math.cos(hs.rot);
+    return { x: hs.x + fx * 1.6, y: G + 0.9, z: hs.z + fz * 1.6, yaw: hs.rot + side * lerp(0.7, 0.2, u), pitch: lerp(0.72, 0.6, u), dist: lerpDist(14, 11, u), fov: 40 };
+  };
+  /** 방 안 (방 가운데가 원점, 벽은 뒤쪽과 왼쪽. 0 ~ 1.35 사이 방향에서만 본다) */
+  const roomPose = (r: ShowcaseRoom, u: number, i: number): Pose => {
+    const k = r.big ? 5.5 / 4 : 1;
+    const from = i % 2 ? 1.05 : 0.15;
+    const to = i % 2 ? 0.45 : 0.8;
+    return { x: lerp(-0.3, 0.3, u) * k, y: 0.7, z: lerp(0.2, -0.2, u) * k, yaw: lerp(from, to, u), pitch: lerp(0.72, 0.6, u), dist: lerpDist(18, 14.5, u) * k, fov: 40 };
+  };
+
+  // 방 안에 들어가기 / 나오기 (씬: 걷기 모드로 그 집 고양이를 내 고양이 자리에 세우고 방을 연다)
+  let insideNo: number | null = null;
+  const enterRoom = (r: ShowcaseRoom, cat?: { x: number; z: number; yaw: number }) => {
+    const sc = state.scene;
+    if (insideNo !== r.houseNo) {
+      sc.setWalkMode(true, r.houseNo);
+      sc.enterHouse(r.houseNo, r.room, r.wallpaper, r.floor, r.big);
+      insideNo = r.houseNo;
+    }
+    const half = r.big ? 5.5 : 4;
+    const spot = cat ?? { x: half * 0.15, z: half - 1.3, yaw: 0.45 };
+    sc.setLocalPosition(spot.x, spot.z, spot.yaw);
+    sc.setSitting(!!cat);
+  };
+  const leaveRoom = () => {
+    if (insideNo === null) return;
+    insideNo = null;
+    state.scene.setSitting(false);
+    state.scene.setWalkMode(false);
+  };
+
+  const shots: Shot[] = [];
+  const overlays: Overlay[] = [];
+  shots.push({
+    id: 'decor-hook',
+    label: '지붕 그림 집',
+    dur: t1,
+    fade: 0.04,
+    // 동네 위에서 첫 집 지붕까지 한 번에 내려온다
+    pose: (u) => {
+      const p = roofPose(heroNo, 1, 1);
+      return { ...p, yaw: p.yaw + lerp(0.9, 0, u), pitch: lerp(1.0, p.pitch, u), dist: lerpDist(60, 13, u) };
+    },
+  });
+  overlays.push({ at: 0, end: t1 - 0.08, cls: 'cine-hook cine-series-hook', html: `내 집,<br /><b>내 맘대로</b> 🎨<small>지붕 그림부터 가구까지</small>` });
+
+  // 지붕 그림 (첫 집은 이미 봤으니 그다음 집부터, 모자라면 첫 집도 다시)
+  const roofList = roofs.length > 1 ? [...roofs.slice(1), roofs[0]].slice(0, 3) : roofs;
+  if (roofList.length) {
+    const each = (t2 - t1) / roofList.length;
+    roofList.forEach((r, i) => {
+      const side = i % 2 ? -1 : 1;
+      shots.push({
+        id: `decor-roof${i}`,
+        label: `지붕 ${r.handle}`,
+        dur: each,
+        fade: 0.14,
+        enter: () => {
+          const s = houseSlot(r.houseNo);
+          setArtCenter(s.x, s.z);
+        },
+        pose: (u) => roofPose(r.houseNo, u, side),
+      });
+      overlays.push({
+        at: t1 + each * i + 0.15,
+        end: t1 + each * (i + 1) - 0.12,
+        cls: 'cine-card',
+        html: `<small>직접 그린 지붕 🎨 ${i + 1}/${roofList.length}</small><b>${esc(r.handle)}</b>`,
+        sfx: 'sparkle',
+      });
+    });
+  } else {
+    shots.push({ id: 'decor-roof', label: '지붕', dur: t2 - t1, fade: 0.14, pose: (u) => roofPose(heroNo, u, -1) });
+  }
+
+  // 마당 (없으면 주인공 집 마당)
+  const yardList = yards.length ? yards : [{ houseNo: heroNo, handle: '', region: '' }];
+  {
+    const each = (t3 - t2) / yardList.length;
+    yardList.forEach((y, i) => {
+      const side = i % 2 ? 1 : -1;
+      shots.push({
+        id: `decor-yard${i}`,
+        label: `마당 ${y.handle}`,
+        dur: each,
+        fade: 0.14,
+        enter: () => {
+          const s = houseSlot(y.houseNo);
+          setArtCenter(s.x, s.z);
+        },
+        pose: (u) => yardPose(y.houseNo, u, side),
+      });
+      if (y.handle)
+        overlays.push({
+          at: t2 + each * i + 0.15,
+          end: t2 + each * (i + 1) - 0.12,
+          cls: 'cine-card',
+          html: `<small>마당 꾸미기 🌿</small><b>${esc(y.handle)}</b>`,
+          sfx: 'sparkle',
+        });
+    });
+  }
+
+  // 집 안 (없으면 마당을 하나 더 길게: 주인공 집 마당을 돌아본다)
+  if (rooms.length) {
+    const each = (t4 - t3) / rooms.length;
+    rooms.forEach((r, i) => {
+      shots.push({
+        id: `decor-room${i}`,
+        label: `집 안 ${r.handle}`,
+        dur: each,
+        fade: 0.14,
+        enter: () => enterRoom(r),
+        pose: (u) => roomPose(r, u, i),
+      });
+      overlays.push({
+        at: t3 + each * i + 0.15,
+        end: t3 + each * (i + 1) - 0.12,
+        cls: 'cine-card',
+        html: `<small>🛋️ ${esc(r.rank)}</small><b>${esc(r.handle)}</b><em>집 안 구경</em>`,
+        sfx: 'sparkle',
+      });
+    });
+    overlays.push({ at: L(4) + 0.4, end: t4 - 0.15, cls: 'cine-chips cine-decor-chips', html: `<span>🧱 벽지</span><span>🪵 바닥</span><span>🛋️ 가구</span>` });
+  } else {
+    shots.push({ id: 'decor-yard-more', label: '마당 더', dur: t4 - t3, fade: 0.14, pose: (u) => yardPose(heroNo, u, 1) });
+  }
+
+  // 고양이 가까이: 집 안 1등 집 방 가운데에 앉은 고양이 (없으면 마당 앞 고양이 눈높이)
+  if (catHouse) {
+    const half = catHouse.big ? 5.5 : 4;
+    const cat = { x: 0.2, z: half - 1.4, yaw: 0.4 };
+    shots.push({
+      id: 'decor-cat',
+      label: '고양이',
+      dur: t5 - t4,
+      fade: 0.14,
+      enter: () => enterRoom(catHouse, cat),
+      pose: (u) => ({ x: cat.x, y: 0.55, z: cat.z, yaw: lerp(0.15, 0.75, u), pitch: lerp(0.32, 0.26, u), dist: lerpDist(5, 3.6, u), fov: 40 }),
+    });
+    overlays.push({ at: t4 + 0.15, end: t5 - 0.12, cls: 'cine-card', html: `<small>이 집 고양이 🐾</small><b>${esc(catHouse.handle)}</b>`, sfx: 'chime' });
+  } else {
+    const hs = houseSlot(heroNo);
+    shots.push({
+      id: 'decor-cat',
+      label: '고양이',
+      dur: t5 - t4,
+      fade: 0.14,
+      pose: (u) => ({ x: hs.x + Math.sin(hs.rot) * 2, y: G + 0.6, z: hs.z + Math.cos(hs.rot) * 2, yaw: hs.rot + lerp(0.4, -0.2, u), pitch: 0.3, dist: lerpDist(8, 6, u), fov: 40 }),
+    });
+  }
+
+  // 끝: 그 집에서 동네 위로 (방에서 나온다)
+  {
+    const hs = houseSlot(endNo);
+    const nb = neighborhoodArea(hs.neighborhood);
+    shots.push({
+      id: 'decor-cta',
+      label: '댓글에 입주',
+      dur: tEnd - t5,
+      fade: 0.2,
+      enter: leaveRoom,
+      pose: (u) => ({
+        x: lerp(hs.x, nb.x, u),
+        y: G + 1.5,
+        z: lerp(hs.z, nb.z, u),
+        yaw: hs.rot + lerp(-0.3, 0.6, u),
+        pitch: lerp(0.5, 0.85, u),
+        dist: lerpDist(14, 70, u),
+        fov: 38,
+      }),
+    });
+  }
+  overlays.push({ at: t5 + 0.2, end: 99, cls: 'cine-cta', html: `<span>댓글에</span> <b>'입주'</b><em>당신 집도 꾸며 보세요 🏡</em>`, sfx: 'pop' });
+
+  return {
+    shots,
+    heroNo: null,
+    voice: decorVoiceUrl,
+    voiceAt: A,
+    caps: DECOR_LINES.map(([a, b, text]) => ({ at: A + a, end: A + b + 0.25, text })),
+    overlays,
+    cleanup: () => {
+      leaveRoom();
+      pinDrawings([]);
+    },
+  };
+}
+
 /** 지금 섬의 집들 + 가짜 내 집 (빈 집 자리) */
 function withMine(mine: House): House[] {
   const list = new Map([...state.houses.values()].map((h) => [h.houseNo, h]));
@@ -947,7 +1250,7 @@ export function startCinema(scene: IslandScene) {
   scene.highlightRegion(null);
   const shots = buildShots();
   // 릴스 나레이션은 미리 받아 두고, 새 주민은 서버에 묻는다
-  const voices = new Map([seriesVoiceUrl, hookVoiceUrl, newcomerVoiceUrl].map((u) => [u, loadCineVoice(u)]));
+  const voices = new Map([decorVoiceUrl, seriesVoiceUrl, hookVoiceUrl, newcomerVoiceUrl].map((u) => [u, loadCineVoice(u)]));
   let newcomer: Newcomer | null = null;
 
   const root = document.createElement('div');
@@ -960,7 +1263,8 @@ export function startCinema(scene: IslandScene) {
       <h2>🎬 촬영 모드</h2>
       <p class="cine-lead">진짜 게임 화면에 카메라만 움직여요. <b>자동 녹화</b>가 켜져 있으면 화면 기록 없이 끝나자마자 영상 파일이 나와요.</p>
       <div class="cine-result" hidden></div>
-      <button class="cine-go cine-series">📅 연재 릴스 <small>약 39초</small></button>
+      <button class="cine-go cine-decor">🎨 꾸미기 릴스 <small>지붕 그림, 집 안, 고양이 · 약 30초</small></button>
+      <button class="cine-go cine-go-sub cine-series">📅 연재 릴스 <small>약 39초</small></button>
       <label class="cine-opt cine-day-row">연재 <b>Day</b> <input class="cine-day-in" type="number" min="1" inputmode="numeric" value="${seriesDay()}" /> <small>(날짜로 자동, 고칠 수 있어요)</small></label>
       <button class="cine-go cine-go-sub cine-thumb">🖼️ 썸네일 사진 <small>고양이 6마리, 글자 없이</small></button>
       <button class="cine-go cine-hookreel cine-go-sub2">🔥 첫 1초 릴스 <small>빈 집 → 내 집, 약 14초</small></button>
@@ -971,7 +1275,7 @@ export function startCinema(scene: IslandScene) {
         ${shots.map((s, i) => `<button class="cine-shot" data-i="${i}">${s.label}</button>`).join('')}
       </div>
       <label class="cine-opt"><input type="checkbox" data-o="rec" ${canRecord() ? 'checked' : 'disabled'} /> 🔴 자동 녹화 <small>${canRecord() ? '(끝나면 영상 파일로 저장)' : '(이 브라우저는 안 돼요. 화면 기록을 쓰세요)'}</small></label>
-      <label class="cine-opt"><input type="checkbox" data-o="caps" checked /> 자막 넣기 <small>(새 주민 릴스)</small></label>
+      <label class="cine-opt"><input type="checkbox" data-o="caps" checked /> 자막 넣기 <small>(릴스)</small></label>
       <label class="cine-opt"><input type="checkbox" data-o="tags" checked /> 집 이름표 보이기</label>
       <label class="cine-opt"><input type="checkbox" data-o="max" checked /> 아주 선명하게 <small>(끊기면 끄세요)</small></label>
       <div class="cine-btns">
@@ -1091,6 +1395,7 @@ export function startCinema(scene: IslandScene) {
       shotIndex = i;
       // 밤 컷이 시작되면 해가 진다 (1.4초 동안). 낮 컷은 낮으로 (컷 사이 검은 동안 바뀐다)
       scene.setTimeOfDay(shot.night || (i > 0 && playlist[i - 1].night && shot.id === 'island') ? 'night' : 'day');
+      shot.enter?.();
     }
     scene.setCinemaCamera(toCamera(shot.pose(glide(t / shot.dur)), now / 1000));
     // 컷 사이: 앞뒤로 살짝 검게
@@ -1273,6 +1578,16 @@ export function startCinema(scene: IslandScene) {
       seriesBtn.disabled = false;
       recLabel = `day${day}`;
       startReel(seriesBtn, () => buildSeriesReel(data, day));
+    });
+  });
+  const decorBtn = $<HTMLButtonElement>('.cine-decor');
+  decorBtn.addEventListener('click', () => {
+    void unlockSound();
+    decorBtn.disabled = true;
+    void fetchShowcase().then((data) => {
+      decorBtn.disabled = false;
+      recLabel = 'decor';
+      startReel(decorBtn, () => buildDecorReel(data));
     });
   });
   const hookBtn = $<HTMLButtonElement>('.cine-hookreel');

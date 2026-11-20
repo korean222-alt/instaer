@@ -2,7 +2,7 @@
 // /api/* 만 여기로 들어오고(wrangler.jsonc 의 run_worker_first), 나머지는 dist 정적 파일이 바로 나간다.
 import type { Env } from './env';
 import { error } from './http';
-import { health, newcomer, series } from './routes/health';
+import { health, newcomer, series, showcase } from './routes/health';
 import { like } from './routes/like';
 import { me, moveHouse, moveIn, rename, setPrivacy } from './routes/moveIn';
 import { regions } from './routes/regions';
@@ -35,6 +35,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (method === 'GET' && path === '/api/health') return health(env);
   if (method === 'GET' && path === '/api/newcomer') return newcomer(env);
   if (method === 'GET' && path === '/api/series') return series(env);
+  if (method === 'GET' && path === '/api/showcase') return showcase(env);
   if (method === 'GET' && path === '/api/village') return village(env, ctx);
   if (method === 'GET' && path === '/api/regions') return regions(env, ctx);
   if (method === 'GET' && path === '/api/me') return me(request, env);

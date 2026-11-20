@@ -931,6 +931,20 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     moveCb(localState());
   };
 
+  /** 촬영 카메라를 그대로 놓는다. 바라보는 곳까지 거리를 돌려준다 */
+  const applyCinemaCamera = (c: CinemaCamera) => {
+    camera.position.set(c.x, c.y, c.z);
+    camera.lookAt(c.lookX, c.lookY, c.lookZ);
+    const d = camera.position.distanceTo(cineLook.set(c.lookX, c.lookY, c.lookZ));
+    const near = THREE.MathUtils.clamp(d * 0.06, 0.25, 12);
+    if (Math.abs(near - camera.near) > 0.01) {
+      camera.near = near;
+      camera.updateProjectionMatrix();
+    }
+    camera.updateMatrixWorld();
+    return d;
+  };
+
   const startBlend = () => {
     blend = 0;
     blendPos.copy(camera.position);
@@ -1052,7 +1066,14 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
       // 꾸미는 동안에는 조이스틱이 숨고 고양이도 가만히 있는다 (2026-11-16)
       const jumpIn = controls.takeJump();
       walker.update(dt, placer.active ? 0 : controls.moveX, placer.active ? 0 : controls.moveY, interior.yaw, !placer.active && jumpIn);
-      interior.updateCamera(camera, dt, walker.x, walker.z);
+      // 촬영 모드 (2026-11-20 꾸미기 릴스): 집 안도 앱이 준 카메라로 (방 가운데가 원점)
+      if (cinema) {
+        applyCinemaCamera(cinema);
+        if (camera.fov !== (cinema.fov ?? VIEW_FOV)) {
+          camera.fov = cinema.fov ?? VIEW_FOV;
+          camera.updateProjectionMatrix();
+        }
+      } else interior.updateCamera(camera, dt, walker.x, walker.z);
       interior.update();
       const dmi = drawPlayer(dt, 0.01);
       player.setMood(0, dmi ? 0 : walker.sit, walker.yawn);
@@ -1073,6 +1094,8 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
       npcView.viewportH = viewportH;
       npcs.update(dt, npcView);
       renderer.render(interior.scene, camera);
+      // 녹화/썸네일도 집 안을 찍는다 (2026-11-20 꾸미기 릴스)
+      afterRenderCb?.();
       cpuMs = cpuMs * 0.9 + (performance.now() - t0) * 0.1;
       // 문턱을 넘으면 밖으로 내보내고 알린다
       if (walker.z > ROOM_EXIT.z && !placer.dragging) leaveHouse(true);
@@ -1123,15 +1146,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
       notifyMove(now);
     } else if (cinema) {
       // 촬영 모드: 앱이 준 자리에 그대로 둔다 (부드러운 움직임은 앱이 매 프레임 계산한다)
-      camera.position.set(cinema.x, cinema.y, cinema.z);
-      camera.lookAt(cinema.lookX, cinema.lookY, cinema.lookZ);
-      const d = camera.position.distanceTo(cineLook.set(cinema.lookX, cinema.lookY, cinema.lookZ));
-      const near = THREE.MathUtils.clamp(d * 0.06, 0.25, 12);
-      if (Math.abs(near - camera.near) > 0.01) {
-        camera.near = near;
-        camera.updateProjectionMatrix();
-      }
-      camera.updateMatrixWorld();
+      const d = applyCinemaCamera(cinema);
       target.x = cinema.lookX;
       target.z = cinema.lookZ;
       target.dist = d;
@@ -1338,7 +1353,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
         houses.setWalkFocus(walkFocus);
         walkFocus.x = walker.x;
         walkFocus.z = walker.z;
-        if (!walking) startBlend();
+        if (!walking && !cinema) startBlend();
         // 다음 프레임에 시작 위치를 한 번 알린다
         sent.x = NaN;
         walkCam.snap(walker.x, walker.groundY, walker.z, 0);
@@ -1353,7 +1368,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
         myCar.end();
         houses.setAwayCat(null);
         houses.setWalkFocus(null);
-        startBlend();
+        if (!cinema) startBlend();
         rig.enabled = true;
         rig.jumpTo(walker.x, walker.z - 1, camera.aspect < 0.8 ? NEIGHBORHOOD_DIST : 60);
         if (nearHouse !== null) {
