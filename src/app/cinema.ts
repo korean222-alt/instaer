@@ -1202,6 +1202,33 @@ const WINTER_ROOM: InteriorItem[] = [
   { id: 'cine-window', type: 'window', x: 2.2, z: -4, rotY: 0 },
 ];
 
+/** 겨울밤 썸네일 방: 코타츠를 카메라 쪽으로 돌리고, 트리와 밤 창문이 고양이 뒤로 오게 */
+const WINTER_THUMB_ROOM: InteriorItem[] = [
+  { id: 'cine-kotatsu', type: 'kotatsu', x: 0.3, z: 0.3, rotY: 0.72 },
+  { id: 'cine-tree', type: 'xmas_tree', x: -2.4, z: -1.5, rotY: 0.6 },
+  { id: 'cine-window', type: 'window', x: 0.2, z: -4, rotY: 0 },
+  { id: 'cine-lamp', type: 'floor_lamp', x: -3.3, z: 0.6, rotY: 0 },
+  { id: 'cine-sofa', type: 'sofa', x: -1.6, z: -3.3, rotY: 0 },
+  { id: 'cine-plant', type: 'plant', x: 1.4, z: -3.5, rotY: 0 },
+  { id: 'cine-record', type: 'record_player', x: 2.4, z: -3.4, rotY: 0 },
+];
+
+/** 코타츠 방에 쓸 가짜 집 (가장 최근 입주 집 옆 빈 집을 영상/사진 안에서만 치즈 고양이 집으로) */
+function winterRoomHouse(newestNo: number | null): House {
+  const residents = [...state.houses.values()].filter((h) => !h.isNpc && h.igHandle);
+  const heroNo = newestNo ?? residents.sort((a, b) => b.houseNo - a.houseNo)[0]?.houseNo ?? 1;
+  return {
+    houseNo: pickEmptyNextDoor(heroNo),
+    igHandle: '',
+    roofColor: '#ffb04d',
+    region: '' as RegionId,
+    cat: { pattern: 'cheese', fur: '#f4a24a', eyeColor: '#5fbf6a' },
+    likes: 0,
+    isNpc: false,
+    verified: false,
+  };
+}
+
 function buildWinterReel(newestNo: number | null): Reel {
   const G = GROUND_Y;
   const A = WINTER_VOICE_AT;
@@ -1482,6 +1509,7 @@ export function startCinema(scene: IslandScene) {
       <p class="cine-lead">진짜 게임 화면에 카메라만 움직여요. <b>자동 녹화</b>가 켜져 있으면 화면 기록 없이 끝나자마자 영상 파일이 나와요.</p>
       <div class="cine-result" hidden></div>
       <button class="cine-go cine-winter">🌙 겨울밤 릴스 <small>코타츠 고양이, 남은 집 · 약 27초</small></button>
+      <button class="cine-go cine-go-sub cine-winterthumb">🖼️ 겨울밤 썸네일 <small>코타츠 고양이, 글자 없이</small></button>
       <button class="cine-go cine-go-sub2 cine-decor">🎨 꾸미기 릴스 <small>지붕 그림, 집 안, 고양이 · 약 30초</small></button>
       <button class="cine-go cine-go-sub cine-series">📅 연재 릴스 <small>약 39초</small></button>
       <label class="cine-opt cine-day-row">연재 <b>Day</b> <input class="cine-day-in" type="number" min="1" inputmode="numeric" value="${seriesDay()}" /> <small>(날짜로 자동, 고칠 수 있어요)</small></label>
@@ -1817,6 +1845,45 @@ export function startCinema(scene: IslandScene) {
       ctx.fillStyle = '#fffaf0';
       ctx.fillRect(0, h - Math.round(H * 0.004), W, Math.round(H * 0.008));
       out.toBlob((blob) => showPhoto(blob, '위는 입주 첫날(빈 방), 아래는 지금(꾸민 방)이에요. 가운데 줄 근처나 위아래 끝에 "입주 첫날 → 지금" 같은 글자를 넣으세요. 프로필 격자에서는 가운데 3:4 만 보여요.', 'decorthumb'), 'image/png');
+    })();
+  });
+
+  // ── 겨울밤 썸네일 (2026-11-21): 밤, 코타츠 위에 앉은 치즈 고양이 + 뒤에 트리와 밤 창문. 위쪽 1/3 은 글자 자리로 비운다 ──
+  const winterThumbBtn = $<HTMLButtonElement>('.cine-winterthumb');
+  winterThumbBtn.addEventListener('click', () => {
+    if (playing || thumbPose) return;
+    winterThumbBtn.disabled = true;
+    void (async () => {
+      const fake = winterRoomHouse(newcomer?.houseNo ?? null);
+      const max = ($('[data-o="max"]') as HTMLInputElement).checked;
+      scene.setCinemaQuality(max ? 'max' : 'high');
+      scene.setNameTags(false);
+      scene.setTimeOfDay('night');
+      panel.hidden = true;
+      resultBox.hidden = true;
+      scene.setHouses(withMine(fake));
+      scene.setWalkMode(true, fake.houseNo);
+      scene.enterHouse(fake.houseNo, WINTER_THUMB_ROOM, 'stripe', 'carpet', false);
+      // 코타츠 앞(카메라 쪽)에서 코타츠를 보고 섰다가 폴짝 올라간다
+      scene.setLocalPosition(1.2, 1.3, 0.72 + Math.PI);
+      // 고양이를 화면 아래쪽 가운데, 트리를 뒤 왼쪽에 (위쪽은 벽과 창문 = 글자 자리)
+      thumbPose = { x: -0.1, y: 1.35, z: 0.35, yaw: 0.72, pitch: 0.14, dist: 4.4, fov: 42 };
+      await wait(700);
+      scene.sitOnSeat('cine-kotatsu');
+      await wait(2600);
+      const shot = await grab();
+      scene.sitOnSeat(null);
+      scene.setWalkMode(false);
+      pushHousesToScene(true);
+      thumbPose = null;
+      scene.setTimeOfDay('day');
+      scene.setNameTags(true);
+      panel.hidden = false;
+      winterThumbBtn.disabled = false;
+      shot.toBlob(
+        (blob) => showPhoto(blob, '위쪽 벽 자리에 "추운 밤엔 고양이섬 ❄️", 아래나 옆에 작은 띠로 "남은 집 N채"(설정의 다음 섬까지 숫자)를 넣으세요. 프로필 격자에서는 가운데 3:4 만 보여요.', 'winterthumb'),
+        'image/png',
+      );
     })();
   });
 
