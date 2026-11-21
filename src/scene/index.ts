@@ -14,7 +14,7 @@ import { ItemGeometries } from './free/catalog';
 import { DrawingStore } from './free/drawings';
 import { FishingRig, type FishingState } from './fishing/FishingRig';
 import { Placer } from './free/Placer';
-import { blockersOf, pickItem, seatNearIn, type SeatSpot, type Space } from './free/space';
+import { blockersOf, pickItem, seatNearIn, seatOf, type SeatSpot, type Space } from './free/space';
 import type { Drawing, InteriorItem, PlacedItem } from './free/types';
 import { Interior, ROOM_EXIT, ROOM_START, ROOM_WALK } from './interior/Interior';
 import { ROOM_HALF, ROOM_HALF_BIG } from './free/space';
@@ -210,7 +210,8 @@ export interface IslandScene {
   caveNodeNear(reach?: number): string | null;
   /**
    * (2026-11-20) 걷는 중 reach(미터, 기본 1.0) 안의 가장 가까운 올라앉는 가구 (지금 있는 집 안, 또는 둘레 마당).
-   * kind: 'sit' 앉기(의자, 소파, 벤치, 방석) / 'up' 올라가기(침대, 해먹, 캣타워). 없으면 null
+   * kind: 'sit' 앉기(의자, 소파, 벤치, 방석) / 'up' 올라가기(침대, 해먹, 캣타워, 탁자, 코타츠). 없으면 null.
+   * (2026-11-21) 걷는 중 그 가구를 직접 눌러도 3.2m 안이면 올라간다 (getSeat 로 알 수 있다)
    */
   seatNear(reach?: number): { id: string; type: string; label: string; kind: 'sit' | 'up' } | null;
   /** (2026-11-20) 그 가구에 폴짝 올라앉는다 (null 이면 내려온다). 조이스틱이나 점프로도 내려온다. 올라갔으면 true */
@@ -557,6 +558,8 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
   const walker = new Walker();
   const walkCam = new WalkCamera();
   walker.hasHouse = walkCam.hasHouse = (houseNo) => houses.has(houseNo);
+  /** (2026-11-21) 가구를 눌러서 올라앉을 수 있는 거리 (고양이 자리에서 앉는 자리까지, 미터) */
+  const SEAT_TAP_REACH = 3.2;
   /** (2026-11-20) 고양이 둘레에서 올라앉을 가구 */
   const findSeat = (reach: number): SeatSpot | null => {
     if (inCave) return null;
@@ -767,12 +770,23 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
     if (inside !== null) {
       // 집 안: 아이템을 누르면 알린다 (꾸미기 모드에서는 끌어 놓기 쪽이 먼저 받는다)
       const hit = interior && !placer.active ? pickItem(interior.space, interior.list, rig.rayFrom(cx, cy)) : null;
-      if (hit?.drawingId && artTapCb) artTapCb(hit.drawingId, hit.type);
+      // (2026-11-21) 올라앉는 가구(의자, 침대...)를 누르면 가까이 있을 때 폴짝 올라간다
+      const seat = hit && interior && !walker.perch && riding === null && fishing === null ? seatOf(interior.space, hit) : null;
+      if (seat && Math.hypot(seat.x - walker.x, seat.z - walker.z) <= SEAT_TAP_REACH) walker.sitOn(seat);
+      else if (hit?.drawingId && artTapCb) artTapCb(hit.drawingId, hit.type);
       else if (hit) placer.onPick?.(hit.id);
       return;
     }
     if (placer.active) return;
     const ray = rig.rayFrom(cx, cy);
+    // (2026-11-21) 걷는 중 마당의 올라앉는 가구를 누르면 폴짝 올라간다
+    if (walking && !walker.perch && riding === null && fishing === null) {
+      const seat = houses.pickSeat(ray, walker.x, walker.z, SEAT_TAP_REACH);
+      if (seat) {
+        walker.sitOn(seat);
+        return;
+      }
+    }
     if (artTapCb) {
       const art = houses.pickArt(ray);
       if (art?.drawingId) {

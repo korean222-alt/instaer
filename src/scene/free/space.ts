@@ -249,29 +249,40 @@ export interface SeatSpot {
   dist: number;
 }
 
+/** 그 아이템의 올라앉는 자리 (자리가 없는 아이템이면 null). dist 는 0 */
+export function seatOf(s: Space, item: PlacedItem): SeatSpot | null {
+  const def = itemDef(item.type);
+  const st = def.seat;
+  if (!st) return null;
+  const c = Math.cos(item.rotY);
+  const sn = Math.sin(item.rotY);
+  const at = toWorld(s, item.x + st.x * c + st.z * sn, item.z - st.x * sn + st.z * c, { x: 0, z: 0 });
+  const ez = def.hz + 0.42;
+  const ex = toWorld(s, item.x + ez * sn, item.z + ez * c, { x: 0, z: 0 });
+  return { id: item.id, type: item.type, label: def.label, kind: st.kind, x: at.x, z: at.z, y: s.y + st.y, yaw: s.rot + item.rotY, exitX: ex.x, exitZ: ex.z, dist: 0 };
+}
+
 /** (x, z) 에서 reach 안에 있는 가장 가까운 올라앉는 자리. 아이템 몸체 가장자리까지의 거리로 잰다 */
 export function seatNearIn(s: Space, items: readonly PlacedItem[], x: number, z: number, reach: number, best: SeatSpot | null): SeatSpot | null {
   let bestD = best ? best.dist : reach;
+  const l = toLocal(s, x, z, _l);
   for (const item of items) {
     const def = itemDef(item.type);
     if (!def.seat) continue;
-    const r = s.rot + item.rotY;
     const c = Math.cos(item.rotY);
     const sn = Math.sin(item.rotY);
     // 아이템 기준 좌표로 옮겨 네모 가장자리까지 거리
-    const l = toLocal(s, x, z, _l);
     const dx = l.x - item.x;
     const dz = l.z - item.z;
     const ux = dx * c - dz * sn;
     const uz = dx * sn + dz * c;
     const d = Math.hypot(Math.max(0, Math.abs(ux) - def.hx), Math.max(0, Math.abs(uz) - def.hz));
     if (d >= bestD) continue;
+    const spot = seatOf(s, item);
+    if (!spot) continue;
     bestD = d;
-    const st = def.seat;
-    const at = toWorld(s, item.x + st.x * c + st.z * sn, item.z - st.x * sn + st.z * c, { x: 0, z: 0 });
-    const ez = def.hz + 0.42;
-    const ex = toWorld(s, item.x + ez * sn, item.z + ez * c, { x: 0, z: 0 });
-    best = { id: item.id, type: item.type, label: def.label, kind: st.kind, x: at.x, z: at.z, y: s.y + st.y, yaw: r, exitX: ex.x, exitZ: ex.z, dist: d };
+    spot.dist = d;
+    best = spot;
   }
   return best;
 }

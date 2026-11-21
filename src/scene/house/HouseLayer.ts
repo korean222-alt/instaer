@@ -9,7 +9,7 @@ import { LABEL_CAPACITY, LabelLayer, regionIndex, type LabelEntry } from '../cor
 import { itemDef, type ItemGeometries } from '../free/catalog';
 import type { DrawingStore } from '../free/drawings';
 import { FreeItems, type FreeGroup } from '../free/FreeItems';
-import { blockersOf, pickItem, seatNearIn, yardSpace, type SeatSpot, type Space } from '../free/space';
+import { blockersOf, pickItem, seatNearIn, seatOf, yardSpace, type SeatSpot, type Space } from '../free/space';
 import type { PlacedItem } from '../free/types';
 import { cellToLocal, ItemField } from '../items/ItemField';
 import { houseSlot, isBigYard, MAILBOX_LOCAL, NEIGHBORHOODS, NEIGHBORHOODS_PER_ZONE, YARD_HALF, YARD_HALF_BIG, yardHalfOf, ZONE, zoneCenter } from '../layout';
@@ -470,6 +470,27 @@ export class HouseLayer {
       if (d < bestD) {
         bestD = d;
         best = hit;
+      }
+    }
+    return best;
+  }
+
+  /** (2026-11-21) 광선에 맞은 마당의 올라앉는 가구 (x, z 에서 maxDist 안의 집만) */
+  pickSeat(ray: THREE.Ray, x: number, z: number, maxDist: number): SeatSpot | null {
+    let best: SeatSpot | null = null;
+    let bestD = Infinity;
+    for (const r of this.near) {
+      if (Math.abs(r.x - x) > 6 || Math.abs(r.z - z) > 6) continue;
+      const items = this.freeLists.get(r.house.houseNo);
+      if (!items?.length) continue;
+      const s = this.yardSpace(r.house.houseNo)!;
+      const hit = pickItem(s, items.filter((it) => itemDef(it.type).seat), ray);
+      const spot = hit ? seatOf(s, hit) : null;
+      if (!spot) continue;
+      const d = Math.hypot(spot.x - x, spot.z - z);
+      if (d <= maxDist && d < bestD) {
+        bestD = d;
+        best = spot;
       }
     }
     return best;

@@ -240,9 +240,14 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
       nearBug = bug;
       draw();
     }
-    const seat = !cave && !riding ? scene.seatNear(1.0) : null;
+    const seat = !cave && !riding ? scene.seatNear(1.3) : null;
     const sat = !!scene.getSeat();
     if (seat?.id !== nearSeat?.id || sat !== onSeat) {
+      // 올라앉았다 (버튼이든 가구를 눌러서든): 가르릉
+      if (sat && !onSeat) {
+        play('jump');
+        window.setTimeout(() => play('purr'), 450);
+      }
       nearSeat = seat;
       onSeat = sat;
       draw();
@@ -327,6 +332,9 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     const btns: string[] = [];
     if (walking && !sheetOpen && !document.body.classList.contains('playing')) {
       if (riding === 'passenger') btns.push(`<button class="act-btn primary" data-act="getoff">${hooks.icon('close')}<span>차에서 내리기</span></button>`);
+      // (2026-11-21) 가구 앉기는 앞쪽에 (곤충/우편함 버튼에 밀려 안 보이던 일)
+      if (onSeat) btns.push(`<button class="act-btn primary" data-act="seatoff">${hooks.icon('close')}<span>내려오기</span></button>`);
+      else if (nearSeat && !riding) btns.push(`<button class="act-btn primary" data-act="seat">${hooks.icon('cat')}<span>${esc(nearSeat.label)}${nearSeat.kind === 'up' ? '에 올라가기' : '에 앉기'}</span></button>`);
       if (nearBug) btns.push(`<button class="act-btn primary" data-act="bug">${hooks.icon('net')}<span>${esc(nearBug.def.label)} 잡기</span></button>`);
       if (nearOre) btns.push(`<button class="act-btn primary hold" data-act="mine"><i class="hold-fill"></i>${hooks.icon('pick')}<span>꾹 눌러 캐기</span></button>`);
       if (nearDriver && !riding) btns.push(`<button class="act-btn primary" data-act="ride">${hooks.icon('cat')}<span>${esc(nearDriver.handle)} 차 뒷자리 타기</span></button>`);
@@ -334,8 +342,6 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
         const n = state.wallet ? unreadMail(state.wallet.data) : 0;
         btns.push(`<button class="act-btn${n ? ' primary' : ''}" data-act="mail">${hooks.icon('mail')}<span>우편함 열기${n ? ` (${n})` : ''}</span></button>`);
       }
-      if (onSeat) btns.push(`<button class="act-btn primary" data-act="seatoff">${hooks.icon('close')}<span>내려오기</span></button>`);
-      else if (nearSeat && !riding) btns.push(`<button class="act-btn primary" data-act="seat">${hooks.icon('cat')}<span>${esc(nearSeat.label)}${nearSeat.kind === 'up' ? '에 올라가기' : '에 앉기'}</span></button>`);
       if (nearDeeper) btns.push(`<button class="act-btn" data-act="deeper">${hooks.icon('door')}<span>더 깊이 들어가기 (${cave + 1}층)</span></button>`);
       if (nearNpc) btns.push(`<button class="act-btn primary" data-act="talk">${hooks.icon('chat')}<span>${esc(nearNpc.name)}에게 말 걸기</span></button>`);
       if (nearFish && !nearNpc) btns.push(`<button class="act-btn primary" data-act="fish">${hooks.icon('fish')}<span>${nearFish === 'sea' ? '바다 낚시하기' : '낚시하기'}</span></button>`);
@@ -389,7 +395,7 @@ export function createExplore(scene: IslandScene, realtime: Realtime, hooks: Exp
     else if (act === 'seat' && nearSeat) {
       if (scene.sitOnSeat(nearSeat.id)) {
         play('jump');
-        window.setTimeout(() => play('purr'), 500);
+        window.setTimeout(() => play('purr'), 450);
         onSeat = true;
         draw();
       }

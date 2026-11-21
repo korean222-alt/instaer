@@ -428,7 +428,7 @@ export const FREE_ITEMS: Record<string, ItemDef> = {
   // ── 새 아이템 ──
   bed: { label: '침대', mount: 'floor', hx: 0.58, hz: 1.05, height: 0.95, block: [[0, -0.5, 0.56], [0, 0.5, 0.56]], seat: { kind: 'up', x: 0, z: 0.3, y: 0.58 }, build: () => merge(bed()) },
   bookshelf: { label: '책장', mount: 'floor', hx: 0.62, hz: 0.2, height: 1.8, block: [[-0.36, 0, 0.24], [0, 0, 0.24], [0.36, 0, 0.24]], build: () => merge(bookshelf()) },
-  table: { label: '탁자', mount: 'floor', hx: 0.62, hz: 0.42, height: 0.74, block: [[-0.22, 0, 0.4], [0.22, 0, 0.4]], build: () => merge(table()) },
+  table: { label: '탁자', mount: 'floor', hx: 0.62, hz: 0.42, height: 0.74, block: [[-0.22, 0, 0.4], [0.22, 0, 0.4]], seat: { kind: 'up', x: -0.25, z: -0.05, y: 0.64 }, build: () => merge(table()) },
   chair: { label: '의자', mount: 'floor', hx: 0.25, hz: 0.25, height: 1.0, block: [[0, 0, 0.24]], seat: { kind: 'sit', x: 0, z: 0.02, y: 0.475 }, build: () => merge(chair()) },
   sofa: { label: '소파', mount: 'floor', hx: 0.87, hz: 0.42, height: 0.95, block: [[-0.46, 0, 0.4], [0, 0, 0.4], [0.46, 0, 0.4]], seat: { kind: 'sit', x: 0, z: 0.08, y: 0.53 }, build: () => merge(sofa()) },
   floor_lamp: { label: '스탠드 조명', mount: 'floor', hx: 0.24, hz: 0.24, height: 1.7, block: [[0, 0, 0.16]], build: () => merge(floorLamp()) },
@@ -447,7 +447,7 @@ export const FREE_ITEMS: Record<string, ItemDef> = {
   grand_clock: { label: '괘종시계', mount: 'floor', hx: 0.3, hz: 0.21, height: 1.98, block: [[0, 0, 0.26]], build: () => merge(grandClock()) },
   aquarium: { label: '어항', mount: 'floor', hx: 0.51, hz: 0.24, height: 1.22, block: [[-0.25, 0, 0.27], [0.25, 0, 0.27]], build: () => merge(aquarium()) },
   record_player: { label: '축음기', mount: 'floor', hx: 0.32, hz: 0.25, height: 1.35, block: [[0, 0, 0.3]], build: () => merge(recordPlayer()) },
-  kotatsu: { label: '코타츠', mount: 'floor', hx: 0.56, hz: 0.56, height: 0.56, block: [[0, 0, 0.5]], build: () => merge(kotatsu()) },
+  kotatsu: { label: '코타츠', mount: 'floor', hx: 0.56, hz: 0.56, height: 0.56, block: [[0, 0, 0.5]], seat: { kind: 'up', x: -0.25, z: 0.2, y: 0.41 }, build: () => merge(kotatsu()) },
   wall_clock: { label: '벽시계', mount: 'wall', hx: 0.27, hz: 0.05, y0: 1.48, height: 0.54, build: () => merge(wallClock()) },
   wall_shelf: { label: '벽 선반', mount: 'wall', hx: 0.5, hz: 0.14, y0: 1.42, height: 0.5, build: () => merge(wallShelf()) },
   flower_bed: { label: '꽃밭', mount: 'floor', hx: 0.62, hz: 0.36, height: 0.55, block: [[-0.3, 0, 0.3], [0.3, 0, 0.3]], build: () => merge(flowerBed()) },
