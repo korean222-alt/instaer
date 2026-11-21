@@ -440,18 +440,38 @@ export function setMusicMood(isNight: boolean) {
 
 /** 첫 터치에 소리를 켜고, 탭이 숨겨지면 멈춘다 */
 export function initSound() {
+  // 브라우저는 사람이 화면을 만지기 전에는 소리를 막는다(자동 재생 정책).
+  // 1) 켜자마자 한 번 시도(전에 들어와 본 사이트면 데스크톱 크롬 등은 바로 된다)
+  // 2) 아이폰/인스타 앱은 pointerdown 이 아니라 touchend/click 에서만 풀리므로 모두 듣고,
+  //    실제로 소리가 켜질 때(running)까지 계속 시도한다.
+  const evs = ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'click', 'keydown'] as const;
+  let done = false;
   const unlock = () => {
+    if (done) return;
     const c = ensure();
     if (!c) return;
-    c.resume().then(() => {
-      startMusic();
-      loadMeow();
-    });
-    window.removeEventListener('pointerdown', unlock, true);
-    window.removeEventListener('keydown', unlock, true);
+    // 아이폰: 사용자 동작 안에서 무음 한 조각을 재생해야 확실히 풀린다
+    try {
+      const b = c.createBuffer(1, 1, 22050);
+      const s = c.createBufferSource();
+      s.buffer = b;
+      s.connect(c.destination);
+      s.start(0);
+    } catch {
+      /* 무시 */
+    }
+    c.resume()
+      .then(() => {
+        if (c.state !== 'running' || done) return;
+        done = true;
+        for (const e of evs) window.removeEventListener(e, unlock, true);
+        startMusic();
+        loadMeow();
+      })
+      .catch(() => {});
   };
-  window.addEventListener('pointerdown', unlock, true);
-  window.addEventListener('keydown', unlock, true);
+  for (const e of evs) window.addEventListener(e, unlock, true);
+  unlock();
   document.addEventListener('visibilitychange', () => {
     if (!ctx) return;
     if (document.visibilityState === 'hidden') {
