@@ -133,3 +133,4 @@ createIslandScene(canvas) → IslandScene
 - 가구에 앉기/올라가기(의자/소파/벤치/방석 앉기, 침대/해먹/캣타워 올라가기, 씬 `seatNear`/`sitOnSeat`/`getSeat`), 꾸미기 상점 탭 눌러 보라는 표시 (2026-11-20, Opus). README.md.
 - 가구 올라가기 버튼이 곤충/우편함 버튼에 밀리던 것 고침(앉기 버튼 맨 앞, 1.3m), 가구 직접 눌러 올라가기, 탁자/코타츠 추가 (2026-11-21, Opus). README.md.
 - 배경 음악 자동 재생: 브라우저가 첫 터치 전에는 소리를 막는다(정책, 못 피함). 켜자마자 한 번 시도 + 아이폰/인스타는 touchend/click 에서만 풀려서 그 이벤트도 듣고 실제로 켜질 때까지 재시도(`initSound`) (2026-11-21, Opus).
+- 촬영 모드 겨울밤 릴스(눈 오는 밤, 코타츠 고양이, 광장 트리, 입주 수 + 남은 빈 집 = HUD '다음 섬까지', ElevenLabs 나레이션 `winter-voice.mp3`) (2026-11-21, Opus). README.md. 환경 허용 주소에 `elevenlabsusercontent.com` 추가(나레이션 받기). 이 컨테이너에서 운영 사이트(workers.dev)는 502 로 안 닿아 화면 확인은 `vite preview` + Playwright 로 했다.

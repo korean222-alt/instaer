@@ -14,8 +14,9 @@ import decorVoiceUrl from './reels/decor-voice.mp3?url';
 import hookVoiceUrl from './reels/hook-voice.mp3?url';
 import newcomerVoiceUrl from './reels/newcomer-voice.mp3?url';
 import seriesVoiceUrl from './reels/series-voice.mp3?url';
+import winterVoiceUrl from './reels/winter-voice.mp3?url';
 import { canRecord, startRecording, videoFileName, type Recording } from './reelRecorder';
-import { pushHousesToScene, state } from './state';
+import { pushHousesToScene, state, toNextIsland, totalHouses } from './state';
 import { withEmptyLots } from './village';
 
 export const cinemaRequested = () => new URLSearchParams(location.search).has('cinema');
@@ -1171,6 +1172,218 @@ function buildDecorReel(data: ShowcaseData): Reel {
   };
 }
 
+// ── 겨울밤 릴스 "추운 밤엔 고양이섬" (2026-11-21) ──
+// 사용자: "겨울밤 해줘, 사람들 많이 입주했던데 사이트 접속하면 몇 채 남았는지 뜨잖아".
+// 눈 오는 밤 동네 위 → 불 켜진 골목 → 코타츠 위로 폴짝 올라가 조는 고양이 (예시 방, 영상 안에서만) → 광장 트리 앞 고양이들 →
+// 입주 수가 올라가고 "다음 섬까지 남은 집" (HUD 의 "다음 섬까지 N마리"와 같은 계산) → "댓글에 입주".
+// 나레이션 src/app/reels/winter-voice.mp3 (ElevenLabs Yeonhee, eleven_v4, 25.1초, 숫자/이름은 말하지 않아 겨울 내내 쓴다).
+// 문장 시간은 silencedetect 로 잰 값이다. 파일을 바꾸면 WINTER_LINES 도 고친다 (컷 경계도 여기서 나온다).
+const WINTER_VOICE_AT = 0.3;
+const WINTER_LINES: [number, number, string][] = [
+  [0.1, 4.55, '추운 겨울밤,\n고양이섬에는 눈이 소복소복 쌓여요'], // 0
+  [5.24, 7.91, '집집마다 반짝반짝 불이 켜지고요'], // 1
+  [8.43, 12.26, '고양이는 따뜻한 코타츠 위에서\n꾸벅꾸벅 졸아요'], // 2
+  [12.84, 15.69, '광장 트리 앞에는\n이웃 고양이들이 모였어요!'], // 3
+  [16.01, 18.13, '벌써 이만큼이나 입주했어요'], // 4
+  [18.5, 20.67, '이 섬 빈 집이 얼마 안 남았어요!'], // 5
+  [21.03, 24.87, "댓글에 '입주'라고 남기면,\n따뜻한 집 한 채를 드릴게요"], // 6
+];
+
+/** 코타츠 방 (예시 방, 영상 안에서만). 벽은 뒤쪽(z=-4)과 왼쪽(x=-4), 카메라는 앞 오른쪽에서 본다 */
+const WINTER_ROOM: InteriorItem[] = [
+  { id: 'cine-kotatsu', type: 'kotatsu', x: 0.3, z: 0.3, rotY: 0 },
+  { id: 'cine-tree', type: 'xmas_tree', x: -3.0, z: -3.0, rotY: 0.6 },
+  { id: 'cine-sofa', type: 'sofa', x: -3.1, z: -0.4, rotY: Math.PI / 2 },
+  { id: 'cine-lamp', type: 'floor_lamp', x: -3.3, z: 1.3, rotY: 0 },
+  { id: 'cine-shelf', type: 'bookshelf', x: -0.9, z: -3.4, rotY: 0 },
+  { id: 'cine-record', type: 'record_player', x: 0.8, z: -3.4, rotY: 0 },
+  { id: 'cine-tower', type: 'cat_tower', x: 3.0, z: -3.0, rotY: -0.5 },
+  { id: 'cine-plant', type: 'plant', x: 2.0, z: -3.5, rotY: 0 },
+  { id: 'cine-window', type: 'window', x: 2.2, z: -4, rotY: 0 },
+];
+
+function buildWinterReel(newestNo: number | null): Reel {
+  const G = GROUND_Y;
+  const A = WINTER_VOICE_AT;
+  const L = (i: number) => A + WINTER_LINES[i][0];
+  const residents = [...state.houses.values()].filter((h) => !h.isNpc && h.igHandle);
+  const heroNo = newestNo ?? residents.sort((a, b) => b.houseNo - a.houseNo)[0]?.houseNo ?? 1;
+  const { hs, nb } = heroFrame(heroNo);
+  const doorX = hs.x + Math.sin(hs.rot) * 0.6;
+  const doorZ = hs.z + Math.cos(hs.rot) * 0.6;
+  // 코타츠 방은 빈 집 하나를 영상 안에서만 치즈 고양이 집으로 바꿔 쓴다 (진짜 주민 집 안은 건드리지 않는다)
+  const roomNo = pickEmptyNextDoor(heroNo);
+  const fake: House = {
+    houseNo: roomNo,
+    igHandle: '',
+    roofColor: '#ffb04d',
+    region: '' as RegionId,
+    cat: { pattern: 'cheese', fur: '#f4a24a', eyeColor: '#5fbf6a' },
+    likes: 0,
+    isNpc: false,
+    verified: false,
+  };
+  const total = totalHouses();
+  const left = toNextIsland();
+
+  const t1 = L(1) - 0.2; // 불 켜진 골목
+  const t2 = L(2) - 0.25; // 코타츠
+  const t3 = L(3) - 0.25; // 광장
+  const t4 = L(4) - 0.2; // 입주 수, 남은 집
+  const t6 = L(6) - 0.2; // 댓글에 입주
+  const tEnd = A + 24.87 + 2.2;
+
+  const sq = townSquares(1)[0] ?? { x: TOWN_SQUARE.x, z: TOWN_SQUARE.z };
+  const gx = sq.x;
+  const gz = sq.z + 5.2;
+
+  let inside = false;
+  const enterRoom = () => {
+    const sc = state.scene;
+    sc.setHouses(withMine(fake));
+    sc.setWalkMode(true, roomNo);
+    sc.enterHouse(roomNo, WINTER_ROOM, 'stripe', 'carpet', false);
+    // 코타츠 앞에서 코타츠 쪽(-z)을 보고 선다. 조금 뒤 폴짝 올라간다
+    sc.setLocalPosition(0.3, 1.55, Math.PI);
+    inside = true;
+  };
+  const leaveRoom = () => {
+    if (!inside) return;
+    inside = false;
+    state.scene.sitOnSeat(null);
+    state.scene.setWalkMode(false);
+    pushHousesToScene(true);
+  };
+
+  const shots: Shot[] = [
+    {
+      id: 'winter-hook',
+      label: '눈 오는 밤',
+      dur: t1,
+      fade: 0.04,
+      night: true,
+      // 눈 내리는 동네 위에서 천천히 내려온다
+      pose: (u) => ({ x: nb.x, y: G, z: nb.z, yaw: hs.rot + lerp(1.0, 0.55, u), pitch: lerp(0.95, 0.62, u), dist: lerpDist(85, 40, u), fov: 38 }),
+    },
+    {
+      id: 'winter-lights',
+      label: '불 켜진 골목',
+      dur: t2 - t1,
+      fade: 0.15,
+      night: true,
+      // 집 앞 골목을 낮게 지나간다 (LED, 창문 불빛)
+      pose: (u) => ({ x: doorX, y: G + 1.6, z: doorZ, yaw: hs.rot + lerp(0.75, -0.35, u), pitch: lerp(0.3, 0.24, u), dist: lerpDist(17, 12, u), fov: 40 }),
+    },
+    {
+      id: 'winter-kotatsu',
+      label: '코타츠 고양이',
+      dur: t3 - t2,
+      fade: 0.15,
+      night: true,
+      enter: enterRoom,
+      // 코타츠 위 고양이 가까이에서 시작해 트리가 보이게 방 쪽으로 물러난다
+      pose: (u) => ({ x: lerp(0.05, -0.4, u), y: lerp(0.2, 0.55, u), z: lerp(0.5, 0.0, u), yaw: lerp(0.25, 0.7, u), pitch: lerp(0.34, 0.5, u), dist: lerpDist(4.2, 11, u), fov: 40 }),
+    },
+    {
+      id: 'winter-square',
+      label: '광장 트리',
+      dur: t4 - t3,
+      fade: 0.18,
+      night: true,
+      enter: leaveRoom,
+      pose: (u) => {
+        const yaw = lerp(-0.2, 0.35, u);
+        return { x: gx + Math.sin(yaw) * 1.0, y: G + 0.6, z: gz + Math.cos(yaw) * 1.0, yaw, pitch: lerp(0.42, 0.36, u), dist: lerpDist(14, 11.5, u), fov: 40 };
+      },
+    },
+    {
+      id: 'winter-count',
+      label: '남은 집',
+      dur: t6 - t4,
+      fade: 0.15,
+      night: true,
+      // 광장에서 동네 위로 올라가며 불 켜진 집들과 빈 집들을 보여 준다
+      pose: (u) => ({ x: lerp(gx, nb.x, u), y: G + 0.5, z: lerp(gz, nb.z, u), yaw: lerp(0.3, 1.1, u), pitch: lerp(0.45, 0.85, u), dist: lerpDist(14, 75, u), fov: 38 }),
+    },
+    {
+      id: 'winter-cta',
+      label: '댓글에 입주',
+      dur: tEnd - t6,
+      fade: 0.2,
+      night: true,
+      pose: (u) => ({ x: lerp(nb.x, doorX, u), y: G + 1, z: lerp(nb.z, doorZ, u), yaw: hs.rot + lerp(1.1, 0.4, u), pitch: lerp(0.8, 0.55, u), dist: lerpDist(70, 30, u), fov: 38 }),
+    },
+  ];
+
+  // 광장 트리 앞 고양이들 (진짜 주민 고양이, 가짜 접속자로 영상 안에서만)
+  const crowdSrc = residents.slice(0, 7);
+  const ACTS: Array<Pick<RemotePlayer, 'anim' | 'dance'>> = [{ anim: 'sit' }, { anim: 'idle', dance: 'sway' }, { anim: 'idle' }, { anim: 'sit' }, { anim: 'idle', dance: 'hop' }, { anim: 'idle' }, { anim: 'sit' }];
+  const crowd: RemotePlayer[] = crowdSrc.map((h, i) => {
+    const a = (i / crowdSrc.length) * Math.PI * 2 + 0.3;
+    const r = 1.25 + (i % 2) * 0.45;
+    const x = gx + Math.sin(a) * r;
+    const z = gz + Math.cos(a) * r;
+    const rotY = z > gz ? (x > gx ? -0.7 : 0.7) : Math.atan2(gx - x, gz - z);
+    return { id: `cine-wn${i}`, houseNo: h.houseNo, handle: h.igHandle!, x, z, rotY, cat: h.cat, ...ACTS[i % ACTS.length] };
+  });
+
+  // 입주 수가 0 에서 올라간다 (1.4초)
+  const c0 = t4 + 0.25;
+  const tick = (t: number) => {
+    if (t < c0 || t > L(5)) return;
+    const k = clamp01((t - c0) / 1.4);
+    const v = Math.round(total * (1 - Math.pow(1 - k, 3)));
+    document.querySelectorAll('#cinema .cine-num').forEach((el) => {
+      if (el.textContent !== String(v)) el.textContent = String(v);
+    });
+  };
+
+  const overlays: Overlay[] = [
+    {
+      at: 0,
+      end: t1 - 0.08,
+      cls: 'cine-hook cine-series-hook',
+      html: `추운 겨울밤엔<br /><b>고양이섬</b> ❄️<small>눈 오는 밤의 작은 마을</small>`,
+      // 광장 고양이들은 처음부터 세워 둔다 (나타나는 시간이 있어서)
+      run: () => state.scene.setRemotePlayers(crowd),
+    },
+    // 방에 들어오고 조금 뒤 코타츠 위로 폴짝
+    { at: t2 + 0.55, end: t2 + 1.2, cls: 'cine-none', html: '', sfx: 'pop', pitch: 0.7, run: () => state.scene.sitOnSeat('cine-kotatsu') },
+    { at: t2 + 1.3, end: t3 - 0.15, cls: 'cine-chips cine-decor-chips', html: `<span>🍊 코타츠</span><span>🎄 트리</span><span>💤 꾸벅꾸벅</span>` },
+    { at: t3 + 0.1, end: t3 + 2.2, cls: 'cine-card cine-square', html: `<small>메리 크리스마스</small><b>마을 광장 🎄</b>`, sfx: 'chime' },
+    {
+      at: t4 + 0.15,
+      end: L(5) - 0.1,
+      cls: 'cine-count',
+      html: `<small>고양이섬 주민</small><b class="cine-num">0</b><em>마리 입주 🎉</em>`,
+      sfx: 'riser',
+    },
+    {
+      at: L(5) - 0.05,
+      end: t6 - 0.1,
+      cls: 'cine-founder',
+      html: `<i>🏠</i><b>남은 빈 집</b><em>${left}채</em><span>다 차면 다음 섬이 열려요</span>`,
+      sfx: 'pop',
+    },
+    { at: t6 + 0.2, end: 99, cls: 'cine-cta', html: `<span>댓글에</span> <b>'입주'</b><em>따뜻한 집 한 채 드려요 🏡</em>`, sfx: 'pop' },
+  ];
+
+  return {
+    shots,
+    heroNo: null,
+    voice: winterVoiceUrl,
+    voiceAt: A,
+    caps: WINTER_LINES.map(([a, b, text]) => ({ at: A + a, end: A + b + 0.25, text })),
+    overlays,
+    tick,
+    cleanup: () => {
+      leaveRoom();
+      state.scene.setRemotePlayers([]);
+      pushHousesToScene(true);
+    },
+  };
+}
+
 /** 지금 섬의 집들 + 가짜 내 집 (빈 집 자리) */
 function withMine(mine: House): House[] {
   const list = new Map([...state.houses.values()].map((h) => [h.houseNo, h]));
@@ -1253,7 +1466,7 @@ export function startCinema(scene: IslandScene) {
   scene.highlightRegion(null);
   const shots = buildShots();
   // 릴스 나레이션은 미리 받아 두고, 새 주민은 서버에 묻는다
-  const voices = new Map([decorVoiceUrl, seriesVoiceUrl, hookVoiceUrl, newcomerVoiceUrl].map((u) => [u, loadCineVoice(u)]));
+  const voices = new Map([winterVoiceUrl, decorVoiceUrl, seriesVoiceUrl, hookVoiceUrl, newcomerVoiceUrl].map((u) => [u, loadCineVoice(u)]));
   let newcomer: Newcomer | null = null;
 
   const root = document.createElement('div');
@@ -1266,7 +1479,8 @@ export function startCinema(scene: IslandScene) {
       <h2>🎬 촬영 모드</h2>
       <p class="cine-lead">진짜 게임 화면에 카메라만 움직여요. <b>자동 녹화</b>가 켜져 있으면 화면 기록 없이 끝나자마자 영상 파일이 나와요.</p>
       <div class="cine-result" hidden></div>
-      <button class="cine-go cine-decor">🎨 꾸미기 릴스 <small>지붕 그림, 집 안, 고양이 · 약 30초</small></button>
+      <button class="cine-go cine-winter">🌙 겨울밤 릴스 <small>코타츠 고양이, 남은 집 · 약 27초</small></button>
+      <button class="cine-go cine-go-sub2 cine-decor">🎨 꾸미기 릴스 <small>지붕 그림, 집 안, 고양이 · 약 30초</small></button>
       <button class="cine-go cine-go-sub cine-series">📅 연재 릴스 <small>약 39초</small></button>
       <label class="cine-opt cine-day-row">연재 <b>Day</b> <input class="cine-day-in" type="number" min="1" inputmode="numeric" value="${seriesDay()}" /> <small>(날짜로 자동, 고칠 수 있어요)</small></label>
       <button class="cine-go cine-go-sub cine-thumb">🖼️ 썸네일 사진 <small>고양이 6마리, 글자 없이</small></button>
@@ -1681,6 +1895,11 @@ export function startCinema(scene: IslandScene) {
       recLabel = 'decor';
       startReel(decorBtn, () => buildDecorReel(data));
     });
+  });
+  const winterBtn = $<HTMLButtonElement>('.cine-winter');
+  winterBtn.addEventListener('click', () => {
+    recLabel = 'winter';
+    startReel(winterBtn, () => buildWinterReel(newcomer?.houseNo ?? null));
   });
   const hookBtn = $<HTMLButtonElement>('.cine-hookreel');
   hookBtn.addEventListener('click', () => {
