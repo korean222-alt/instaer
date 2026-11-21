@@ -12,7 +12,7 @@
   4. 배포 확인: `curl https://api.cloudflare.com/client/v4/accounts/90803ea7738d89a9cb2ad9a14333183f/builds/workers/4aca8f0441074d948625db0ac32eefc5/builds?per_page=1` 의 `build_outcome` 이 `success` 가 될 때까지 본다(보통 1~2분, 인증은 프록시가 붙인다. 실패하면 `.../builds/<build_uuid>/logs` 로 원인을 보고 고쳐서 다시 push).
 - Cloudflare Builds 트리거의 브랜치(`branch_includes`)는 `claude/zen-mendel-t7b5sp` 로 고정한다. 바꾸지 않는다(2026-11-17 에 다른 브랜치로 바뀌어 배포가 멈춘 일이 있었다). push 했는데 빌드가 안 생기면 `.../builds/triggers` 로 확인하고, `POST .../builds/triggers/<trigger_uuid>/builds` `{"branch":"claude/zen-mendel-t7b5sp"}` 로 직접 빌드할 수 있다.
 - DB 스키마(`db/migrations`)를 바꿨으면 배포 전에 원격 D1(`cat-island-db`)에 먼저 적용한다. 이 세션 환경에서는 `wrangler deploy` 직접 실행이 401 로 막히니 쓰지 않는다.
-- 끝에 사용자에게는 "배포 완료/실패" 와 주소만 짧게 알린다.
+- 끝에 사용자에게는 "배포 완료/실패" 와 주소만 짧게 알린다. **사이트 주소는 `https://cat-island.goyangi-seom.workers.dev`** (2026-11-21 에 다른 주소를 잘못 알려 "사이트 안 열려"가 됐다. 환경 허용 목록에도 이 주소를 넣어 두어 배포 뒤 curl 로 확인할 수 있다).
 
 ## 프로젝트 요약
 - 인스타 팔로워가 고양이 집을 입양받는 3D 고양이섬 웹게임. 한 섬에 모두가 같이 산다(공유 섬).
@@ -133,4 +133,4 @@ createIslandScene(canvas) → IslandScene
 - 가구에 앉기/올라가기(의자/소파/벤치/방석 앉기, 침대/해먹/캣타워 올라가기, 씬 `seatNear`/`sitOnSeat`/`getSeat`), 꾸미기 상점 탭 눌러 보라는 표시 (2026-11-20, Opus). README.md.
 - 가구 올라가기 버튼이 곤충/우편함 버튼에 밀리던 것 고침(앉기 버튼 맨 앞, 1.3m), 가구 직접 눌러 올라가기, 탁자/코타츠 추가 (2026-11-21, Opus). README.md.
 - 배경 음악 자동 재생: 브라우저가 첫 터치 전에는 소리를 막는다(정책, 못 피함). 켜자마자 한 번 시도 + 아이폰/인스타는 touchend/click 에서만 풀려서 그 이벤트도 듣고 실제로 켜질 때까지 재시도(`initSound`) (2026-11-21, Opus).
-- 촬영 모드 겨울밤 릴스(눈 오는 밤, 코타츠 고양이, 광장 트리, 입주 수 + 남은 빈 집 = HUD '다음 섬까지', ElevenLabs 나레이션 `winter-voice.mp3`) (2026-11-21, Opus). README.md. 환경 허용 주소에 `elevenlabsusercontent.com` 추가(나레이션 받기). 이 컨테이너에서 운영 사이트(workers.dev)는 502 로 안 닿아 화면 확인은 `vite preview` + Playwright 로 했다.
+- 촬영 모드 겨울밤 릴스(눈 오는 밤, 코타츠 고양이, 광장 트리, 입주 수 + 남은 빈 집 = HUD '다음 섬까지', ElevenLabs 나레이션 `winter-voice.mp3`) (2026-11-21, Opus). README.md. 환경 허용 주소에 `elevenlabsusercontent.com` 추가(나레이션 받기). 배포 뒤 Playwright 로 운영 사이트 `?cinema` 를 직접 열어 확인했다(광장 고양이는 집 안에 들어갔다 나오면 씬이 지우므로 다시 세운다).

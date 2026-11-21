@@ -920,3 +920,4 @@ body:has(.sheet.open) .view-pad { display: none; }
 .decor-buy img { width: 40px; height: 40px; object-fit: contain; flex: none; }
 .decor-buy div { flex: 1; min-width: 0; font-size: 13px; font-weight: 800; }
 .decor-buy div small { display: block; font-size: 11px; color: var(--ink-soft); font-weight: 700; }
+.cine-left span { margin-top: 6px; white-space: nowrap; }

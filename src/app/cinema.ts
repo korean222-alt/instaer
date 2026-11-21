@@ -1253,6 +1253,8 @@ function buildWinterReel(newestNo: number | null): Reel {
     state.scene.sitOnSeat(null);
     state.scene.setWalkMode(false);
     pushHousesToScene(true);
+    // 걷기 모드를 껐다 켜면 가짜 접속자가 지워지므로 광장 고양이들을 다시 세운다
+    state.scene.setRemotePlayers(crowd);
   };
 
   const shots: Shot[] = [
@@ -1361,7 +1363,7 @@ function buildWinterReel(newestNo: number | null): Reel {
     {
       at: L(5) - 0.05,
       end: t6 - 0.1,
-      cls: 'cine-founder',
+      cls: 'cine-founder cine-left',
       html: `<i>🏠</i><b>남은 빈 집</b><em>${left}채</em><span>다 차면 다음 섬이 열려요</span>`,
       sfx: 'pop',
     },
