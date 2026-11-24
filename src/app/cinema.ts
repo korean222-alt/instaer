@@ -1455,7 +1455,8 @@ function playThumbSpot(): { catX: number; catZ: number; catYaw: number; pose: Po
     catZ,
     catYaw,
     pose: { x: catX, y: GROUND_Y + 0.75, z: catZ + dDir * 0.4, yaw, pitch: 0.12, dist: 4.6, fov: 44 },
-    bugs: [{ id: 'cine-thumb-bug', kind: 'fly', x: catX - 1.0, z: catZ - dDir * 0.6, color: '#ffbf3a', size: 2 }],
+    // 나비는 날아다니다 고양이 머리 뒤에 오면 날개처럼 보여서 넣지 않는다
+    bugs: [],
   };
 }
 
