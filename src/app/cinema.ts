@@ -1448,8 +1448,8 @@ function playThumbSpot(): { catX: number; catZ: number; catYaw: number; pose: Po
   const catX = dock.x;
   const catZ = dock.z1 - dDir * 0.8;
   const catYaw = dDir > 0 ? 0 : Math.PI;
-  // 카메라는 고양이 앞(바다) 쪽 비스듬히, 낮게
-  const yaw = catYaw + 0.55;
+    // 옆에서 (앞에서 찍으면 낚싯대가 고양이 얼굴/몸을 뚫고 지나가 보인다, 2026-11-24 사용자)
+  const yaw = catYaw + 1.1;
   return {
     catX,
     catZ,
