@@ -1577,8 +1577,8 @@ function buildPlayReel(newestNo: number | null): Reel {
       },
       pose: (u) => {
         // 광장 쪽(가판대 앞)에서 고양이 등 너머로 가판대와 주인을 본다 (가판대 뒤는 나무가 막는다)
-        const yaw = st.rot + lerp(0.6, 0.3, u);
-        return { x: shopMid.x, y: G + 0.7, z: shopMid.z, yaw, pitch: lerp(0.32, 0.26, u), dist: lerpDist(8, 6.2, u), fov: 40 };
+        const yaw = st.rot + lerp(-0.05, -0.3, u);
+        return { x: shopMid.x, y: G + 0.9, z: shopMid.z, yaw, pitch: lerp(0.62, 0.5, u), dist: lerpDist(11, 8.5, u), fov: 40 };
       },
     },
     {
