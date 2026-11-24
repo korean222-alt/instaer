@@ -137,9 +137,12 @@ export class FishingRig {
     if (casting) tiltGoal = -0.5 + 1.55 * Math.min(1, k * 1.6);
     else if (state === 'bite') tiltGoal = 0.98 + Math.sin(c * 38) * 0.035;
     else if (state === 'reel') tiltGoal = 0.52 + Math.sin(c * 15) * 0.07;
-    else if (state === 'caught') tiltGoal = 0.3;
+    else if (state === 'caught') tiltGoal = 0.5;
     this.tilt += (tiltGoal - this.tilt) * (1 - Math.exp(-dt * (casting ? 30 : 9)));
-    this.base.set(x + sin * 0.3 * scale, y + 0.3 * scale, z + cos * 0.3 * scale);
+    // 2026-11-24: 몸 가운데 가까이 세우면 (특히 낚아 올릴 때 거의 세우면) 낚싯대가 머리를 뚫고 지나가 보여서 앞발 앞, 살짝 옆으로 뺀다
+    const fwd = 0.58 * scale;
+    const side = 0.14 * scale;
+    this.base.set(x + sin * fwd + cos * side, y + 0.26 * scale, z + cos * fwd - sin * side);
     this.rod.position.copy(this.base);
     this.rod.rotation.set(this.tilt, yaw, 0, 'YXZ');
     this.rod.scale.setScalar(scale);
