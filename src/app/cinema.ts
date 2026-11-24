@@ -1491,9 +1491,9 @@ function buildPlayReel(newestNo: number | null): Reel {
   };
 
   const BUGS_HERE: SceneBug[] = [
-    { id: 'cine-bug-tiger', kind: 'fly', x: bugX + fx * 1.0, z: bugZ + fz * 1.0, color: '#ffbf3a', size: 1.5 },
-    { id: 'cine-bug-blue', kind: 'fly', x: bugX - fz * 2.2 + fx * 1.6, z: bugZ + fx * 2.2 + fz * 1.6, color: '#4aa8ff', size: 1.3 },
-    { id: 'cine-bug-yellow', kind: 'fly', x: bugX + fz * 2.0 + fx * 0.8, z: bugZ - fx * 2.0 + fz * 0.8, color: '#ffd84a', size: 1.1 },
+    { id: 'cine-bug-tiger', kind: 'fly', x: bugX + fx * 1.0, z: bugZ + fz * 1.0, color: '#ffbf3a', size: 2.2 },
+    { id: 'cine-bug-blue', kind: 'fly', x: bugX - fz * 2.2 + fx * 1.6, z: bugZ + fx * 2.2 + fz * 1.6, color: '#4aa8ff', size: 1.9 },
+    { id: 'cine-bug-yellow', kind: 'fly', x: bugX + fz * 2.0 + fx * 0.8, z: bugZ - fx * 2.0 + fz * 0.8, color: '#ffd84a', size: 1.6 },
     { id: 'cine-bug-lady', kind: 'ground', x: bugX + fz * 0.9 + fx * 0.5, z: bugZ - fx * 0.9 + fz * 0.5, color: '#e8463c', size: 1.1 },
   ];
   const CAVE_HERE: CaveNode[] = [
@@ -1545,7 +1545,7 @@ function buildPlayReel(newestNo: number | null): Reel {
       },
       pose: (u) => {
         const yaw = hs.rot + lerp(-0.9, -0.5, u);
-        return { x: bugX + fx * 0.6, y: G + 0.6, z: bugZ + fz * 0.6, yaw, pitch: lerp(0.28, 0.22, u), dist: lerpDist(7.5, 5.8, u), fov: 40 };
+        return { x: bugX + fx * 0.9, y: G + 0.75, z: bugZ + fz * 0.9, yaw, pitch: lerp(0.24, 0.18, u), dist: lerpDist(6.2, 4.6, u), fov: 40 };
       },
     },
     {
@@ -1576,8 +1576,9 @@ function buildPlayReel(newestNo: number | null): Reel {
         sc().setNpcs(shopNpcs);
       },
       pose: (u) => {
-        const yaw = st.rot + lerp(1.15, 0.85, u);
-        return { x: shopMid.x, y: G + 0.6, z: shopMid.z, yaw, pitch: lerp(0.3, 0.26, u), dist: lerpDist(8.5, 6.8, u), fov: 40 };
+        // 광장 쪽(가판대 앞)에서 고양이 등 너머로 가판대와 주인을 본다 (가판대 뒤는 나무가 막는다)
+        const yaw = st.rot + lerp(0.6, 0.3, u);
+        return { x: shopMid.x, y: G + 0.7, z: shopMid.z, yaw, pitch: lerp(0.32, 0.26, u), dist: lerpDist(8, 6.2, u), fov: 40 };
       },
     },
     {
