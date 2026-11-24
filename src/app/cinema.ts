@@ -5,15 +5,17 @@
 // - 촬영 중에는 화질을 최고 단계로 고정한다 (자동으로 낮추지 않음, 선택하면 해상도 3배).
 // - 장면(컷)을 하나씩 찍거나 전체를 이어서 찍을 수 있다. 컷 사이에는 짧게 검게 넘어간다.
 // 씬은 setCinemaCamera / setNameTags / setCinemaQuality / setTimeOfDay 로만 다룬다.
-import { dockArea, GROUND_Y, houseSlot, neighborhoodArea, townSquares, TOWN_SQUARE, type CinemaCamera, type IslandScene } from '../scene';
+import { dockArea, GROUND_Y, houseSlot, neighborhoodArea, townSquares, TOWN_SQUARE, type CaveNode, type CinemaCamera, type IslandScene, type SceneBug } from '../scene';
 import { FOUNDER_MAX, NEIGHBORHOOD_SIZE, REGIONS } from '../shared/config';
-import type { House, InteriorItem, RegionId, RemotePlayer } from '../shared/types';
+import type { House, InteriorItem, PlacedItem, RegionId, RemotePlayer } from '../shared/types';
+import { toSceneNpc, townNpcs } from './play/npcs';
 import { pinDrawings, setArtCenter, surfaceDrawing } from './art';
 import { loadCineVoice, playCine, playCineVoice, startRecordAudio, stopRecordAudio, unlockSound, type CineSfx } from './audio/sound';
 import decorVoiceUrl from './reels/decor-voice.mp3?url';
 import hookVoiceUrl from './reels/hook-voice.mp3?url';
 import newcomerVoiceUrl from './reels/newcomer-voice.mp3?url';
 import seriesVoiceUrl from './reels/series-voice.mp3?url';
+import playVoiceUrl from './reels/play-voice.mp3?url';
 import winterVoiceUrl from './reels/winter-voice.mp3?url';
 import { canRecord, startRecording, videoFileName, type Recording } from './reelRecorder';
 import { pushHousesToScene, state, toNextIsland, totalHouses } from './state';
@@ -1413,6 +1415,288 @@ function buildWinterReel(newestNo: number | null): Reel {
   };
 }
 
+// ── 노는 하루 릴스 "고양이섬에선 하루 종일 뭐 해?" (2026-11-24) ──
+// 사용자가 고른 주제: 섬에서 노는 하루. 부두 낚시 → 풀숲 곤충 → 동굴 보석 → 잡화점에 팔아 츄르 → 츄르로 가구 사서 마당 꾸미기 → 댓글에 입주.
+// 주인공은 겨울밤 릴스와 같은 가짜 집(가장 최근 입주 집 옆 빈 집을 영상 안에서만 치즈 고양이 집으로). 낚시/곤충/동굴은 진짜 씬 그대로
+// 걷기 모드로 찍는다 (씬 setCinemaCamera 가 걷기/동굴에서도 듣게 했다). 잡은 것과 츄르 숫자는 영상 안에서만 (지갑은 건드리지 않는다).
+// 나레이션 src/app/reels/play-voice.mp3 (ElevenLabs Yeonhee, eleven_v4, 21.6초, 숫자/이름 안 말함). 문장 시간은 silencedetect 로 잰 값.
+const PLAY_VOICE_AT = 0.3;
+const PLAY_LINES: [number, number, string][] = [
+  [0.0, 2.6, '고양이섬에선 하루 종일 뭐 하냐면요?'], // 0
+  [2.72, 4.96, '아침엔 부두에서 낚시를 하고요'], // 1
+  [5.17, 6.39, '앗, 큰 거 잡았다!'], // 2
+  [6.87, 9.09, '풀숲에서 반짝이는 나비도 잡아요'], // 3
+  [9.53, 11.63, '동굴에 들어가면 보석이 숨어 있고요!'], // 4
+  [12.08, 14.45, '잡은 걸 가게에 팔면 츄르가 생겨요'], // 5
+  [14.88, 17.26, '츄르로 가구를 사서 우리 집을 꾸며요'], // 6
+  [17.7, 21.36, "댓글에 '입주'라고 남기면,\n오늘부터 같이 놀 수 있어요!"], // 7
+];
+
+/** 마당에 하나씩 놓이는 가구 (마당 좌표, 앞이 +z, 집 몸체는 z -3~0) */
+const PLAY_YARD: PlacedItem[] = [
+  { id: 'cine-y-hammock', type: 'hammock', x: -1.7, z: 1.3, rotY: 0.3 },
+  { id: 'cine-y-tower', type: 'cat_tower', x: 2.2, z: 0.6, rotY: -0.5 },
+  { id: 'cine-y-lantern', type: 'lantern', x: -2.5, z: 2.6, rotY: 0 },
+  { id: 'cine-y-plant', type: 'plant', x: 2.5, z: 2.5, rotY: 0 },
+  { id: 'cine-y-cushion', type: 'cushion', x: 0.6, z: 1.6, rotY: 0 },
+];
+
+function buildPlayReel(newestNo: number | null): Reel {
+  const G = GROUND_Y;
+  const A = PLAY_VOICE_AT;
+  const L = (i: number) => A + PLAY_LINES[i][0];
+  const fake = winterRoomHouse(newestNo);
+  const homeNo = fake.houseNo;
+  const hs = houseSlot(homeNo);
+  const nb = neighborhoodArea(hs.neighborhood);
+  const fx = Math.sin(hs.rot);
+  const fz = Math.cos(hs.rot);
+  // 대문 앞 (씬 setWalkMode 가 세우는 자리와 같다)
+  const gate = { x: hs.x + fx * (3.6 + 1.3), z: hs.z + fz * (3.6 + 1.3) };
+
+  // 부두 끝: 바다 쪽을 보고 앉아 낚시
+  const dock = dockArea();
+  const dDir = Math.sign(dock.z1 - dock.z0) || 1;
+  const fishX = dock.x;
+  const fishZ = dock.z1 - dDir * 0.8;
+  const fishYaw = dDir > 0 ? 0 : Math.PI;
+  // 곤충: 집 앞 길에서 조금 더 나간 풀밭
+  const bugX = gate.x + fx * 2.2;
+  const bugZ = gate.z + fz * 2.2;
+  // 잡화점 가판대 (1구역 광장)
+  const sq = townSquares(1)[0];
+  const st = sq.stalls.find((s) => s.kind === 'shop') ?? sq.stalls[0];
+  const sfx = Math.sin(st.rot);
+  const sfz = Math.cos(st.rot);
+  const shopCat = { x: st.x + sfx * 3.0, z: st.z + sfz * 3.0 };
+  const shopMid = { x: st.x + sfx * 2.2, z: st.z + sfz * 2.2 };
+  const shopNpcs = townNpcs(state.unlockedZones)
+    .filter((n) => Math.hypot(n.x - sq.x, n.z - sq.z) < sq.r + 4)
+    .map(toSceneNpc);
+
+  const t1 = L(1) - 0.2; // 낚시
+  const t3 = L(3) - 0.25; // 곤충
+  const t4 = L(4) - 0.25; // 동굴
+  const t5 = L(5) - 0.25; // 팔기
+  const t6 = L(6) - 0.25; // 꾸미기
+  const t7 = L(7) - 0.2; // 댓글에 입주
+  const tEnd = A + 21.36 + 2.0;
+
+  const sc = () => state.scene;
+  let inCave = false;
+  const leaveCave = () => {
+    if (!inCave) return;
+    inCave = false;
+    sc().exitCave();
+  };
+
+  const BUGS_HERE: SceneBug[] = [
+    { id: 'cine-bug-tiger', kind: 'fly', x: bugX + fx * 1.0, z: bugZ + fz * 1.0, color: '#ffbf3a', size: 1.5 },
+    { id: 'cine-bug-blue', kind: 'fly', x: bugX - fz * 2.2 + fx * 1.6, z: bugZ + fx * 2.2 + fz * 1.6, color: '#4aa8ff', size: 1.3 },
+    { id: 'cine-bug-yellow', kind: 'fly', x: bugX + fz * 2.0 + fx * 0.8, z: bugZ - fx * 2.0 + fz * 0.8, color: '#ffd84a', size: 1.1 },
+    { id: 'cine-bug-lady', kind: 'ground', x: bugX + fz * 0.9 + fx * 0.5, z: bugZ - fx * 0.9 + fz * 0.5, color: '#e8463c', size: 1.1 },
+  ];
+  const CAVE_HERE: CaveNode[] = [
+    { id: 'cine-ore-amethyst', x: 0.2, z: -0.9, color: '#b07ce8', size: 1.35 },
+    { id: 'cine-ore-gold', x: -2.4, z: -2.0, color: '#ffcf3f', size: 1.1 },
+    { id: 'cine-ore-iron', x: 2.6, z: -1.6, color: '#a8adbb', size: 1.0 },
+    { id: 'cine-ore-copper', x: -1.2, z: -4.6, color: '#d9884e', size: 0.9 },
+    { id: 'cine-ore-amethyst2', x: 2.0, z: -5.2, color: '#b07ce8', size: 1.0 },
+    { id: 'cine-ore-diamond', x: -3.6, z: -5.6, color: '#8fe3ff', size: 1.2 },
+  ];
+
+  const shots: Shot[] = [
+    {
+      id: 'play-hook',
+      label: '노는 하루',
+      dur: t1,
+      fade: 0.04,
+      enter: () => {
+        sc().setHouses(withMine(fake));
+        sc().setWalkMode(true, homeNo);
+      },
+      // 동네 위에서 천천히 내려온다
+      pose: (u) => ({ x: nb.x, y: G, z: nb.z, yaw: hs.rot + lerp(0.9, 0.5, u), pitch: lerp(0.9, 0.62, u), dist: lerpDist(80, 42, u), fov: 38 }),
+    },
+    {
+      id: 'play-fish',
+      label: '부두 낚시',
+      dur: t3 - t1,
+      fade: 0.15,
+      enter: () => {
+        sc().setLocalPosition(fishX, fishZ, fishYaw);
+        sc().setFishing('cast');
+      },
+      // 고양이 옆 뒤에서, 고양이와 찌가 같이 보이게
+      pose: (u) => {
+        const yaw = fishYaw + Math.PI + lerp(1.05, 0.75, u);
+        return { x: fishX, y: G + 0.5, z: fishZ + dDir * 1.1, yaw, pitch: lerp(0.3, 0.24, u), dist: lerpDist(8.5, 6.2, u), fov: 40 };
+      },
+    },
+    {
+      id: 'play-bug',
+      label: '곤충 채집',
+      dur: t4 - t3,
+      fade: 0.15,
+      enter: () => {
+        sc().setFishing(null);
+        sc().setLocalPosition(bugX, bugZ, hs.rot);
+        sc().setBugs(BUGS_HERE);
+      },
+      pose: (u) => {
+        const yaw = hs.rot + lerp(-0.9, -0.5, u);
+        return { x: bugX + fx * 0.6, y: G + 0.6, z: bugZ + fz * 0.6, yaw, pitch: lerp(0.28, 0.22, u), dist: lerpDist(7.5, 5.8, u), fov: 40 };
+      },
+    },
+    {
+      id: 'play-cave',
+      label: '동굴 보석',
+      dur: t5 - t4,
+      fade: 0.15,
+      enter: () => {
+        sc().setDance(null);
+        sc().setBugs([]);
+        sc().enterCave(2, CAVE_HERE);
+        inCave = true;
+        // 자수정 바위 앞에서 바위 쪽(-z)을 본다
+        sc().setLocalPosition(0.2, 0.4, Math.PI);
+      },
+      // 동굴 좌표 (가운데가 원점, 앞 +z 가 나가는 길)
+      pose: (u) => ({ x: 0.2, y: lerp(0.5, 0.35, u), z: lerp(-0.1, -0.3, u), yaw: lerp(0.55, 0.3, u), pitch: lerp(0.5, 0.4, u), dist: lerpDist(8, 5.2, u), fov: 42 }),
+    },
+    {
+      id: 'play-sell',
+      label: '잡화점 팔기',
+      dur: t6 - t5,
+      fade: 0.15,
+      enter: () => {
+        sc().setDance(null);
+        leaveCave();
+        sc().setLocalPosition(shopCat.x, shopCat.z, st.rot + Math.PI);
+        sc().setNpcs(shopNpcs);
+      },
+      pose: (u) => {
+        const yaw = st.rot + lerp(1.15, 0.85, u);
+        return { x: shopMid.x, y: G + 0.6, z: shopMid.z, yaw, pitch: lerp(0.3, 0.26, u), dist: lerpDist(8.5, 6.8, u), fov: 40 };
+      },
+    },
+    {
+      id: 'play-decor',
+      label: '마당 꾸미기',
+      dur: t7 - t6,
+      fade: 0.15,
+      enter: () => {
+        sc().setNpcs([]);
+        sc().setLocalPosition(gate.x, gate.z, hs.rot + Math.PI);
+      },
+      // 대문 앞에서 마당과 집을 본다
+      pose: (u) => ({ x: hs.x + fx * 0.8, y: G + 0.7, z: hs.z + fz * 0.8, yaw: hs.rot + lerp(0.55, 0.2, u), pitch: lerp(0.42, 0.34, u), dist: lerpDist(15, 11.5, u), fov: 40 }),
+    },
+    {
+      id: 'play-cta',
+      label: '댓글에 입주',
+      dur: tEnd - t7,
+      fade: 0.2,
+      enter: () => sc().setDance('hop'),
+      // 꾸민 집에서 동네 위로 올라간다
+      pose: (u) => ({ x: lerp(hs.x, nb.x, u), y: G + 0.8, z: lerp(hs.z, nb.z, u), yaw: hs.rot + lerp(0.2, 0.9, u), pitch: lerp(0.38, 0.8, u), dist: lerpDist(12, 60, u), fov: 38 }),
+    },
+  ];
+
+  // 낚시 단계: 던지고 → 기다리고 → 입질 → 감기 → 잡았다
+  const fishStage = (s: 'wait' | 'bite' | 'reel' | 'caught') => () => sc().setFishing(s);
+  const yardUpTo = (n: number) => () => sc().setYardItemsFree(homeNo, PLAY_YARD.slice(0, n));
+  const BAG = [
+    { icon: '🐟', label: '참돔', price: 40 },
+    { icon: '🦋', label: '호랑나비', price: 28 },
+    { icon: '💎', label: '자수정', price: 32 },
+  ];
+  const earned = BAG.reduce((s, b) => s + b.price, 0);
+
+  // 츄르 숫자가 0 에서 올라간다 (1.2초)
+  const c0 = t5 + 1.2;
+  const tick = (t: number) => {
+    if (t < c0 || t > t6) return;
+    const k = clamp01((t - c0) / 1.2);
+    const v = Math.round(earned * (1 - Math.pow(1 - k, 3)));
+    document.querySelectorAll('#cinema .cine-num').forEach((el) => {
+      if (el.textContent !== `+${v}`) el.textContent = `+${v}`;
+    });
+  };
+
+  const overlays: Overlay[] = [
+    {
+      at: 0,
+      end: t1 - 0.08,
+      cls: 'cine-hook cine-series-hook',
+      html: `고양이섬에선<br /><b>하루 종일</b> 뭐 해? 🐾<small>오늘의 고양이 하루</small>`,
+    },
+    // 낚시
+    { at: t1 + 0.7, end: t1 + 0.8, cls: 'cine-none', html: '', run: fishStage('wait') },
+    { at: L(2) - 0.5, end: L(2) - 0.4, cls: 'cine-none', html: '', sfx: 'tick', run: fishStage('bite') },
+    { at: L(2) - 0.05, end: L(2), cls: 'cine-none', html: '', run: fishStage('reel') },
+    { at: L(2) + 0.6, end: t3 - 0.1, cls: 'cine-card', html: `<small>✨ 희귀 물고기</small><b>🐟 참돔 52cm!</b>`, sfx: 'sparkle', run: fishStage('caught') },
+    // 곤충
+    { at: t3 + 0.2, end: L(4) - 0.4, cls: 'cine-chips cine-decor-chips', html: `<span>🦋 호랑나비</span><span>🦋 파랑 나비</span><span>🐞 무당벌레</span>` },
+    {
+      at: L(3) + 1.5,
+      end: t4 - 0.1,
+      cls: 'cine-card',
+      html: `<small>도감 등록!</small><b>🦋 호랑나비 잡았다</b>`,
+      sfx: 'pop',
+      run: () => {
+        sc().setBugs(BUGS_HERE.filter((b) => b.id !== 'cine-bug-tiger'));
+        sc().setDance('hop');
+      },
+    },
+    // 동굴
+    { at: t4 + 0.3, end: L(4) + 1.6, cls: 'cine-chips cine-decor-chips', html: `<span>⛏️ 동굴 2층</span><span>💎 반짝반짝</span>` },
+    {
+      at: L(4) + 1.4,
+      end: t5 - 0.1,
+      cls: 'cine-card',
+      html: `<small>✨ 희귀 광석</small><b>💎 자수정 캤다!</b>`,
+      sfx: 'sparkle',
+      run: () => {
+        sc().setCaveNodes(CAVE_HERE.filter((n) => n.id !== 'cine-ore-amethyst'));
+        sc().setDance('hop');
+      },
+    },
+    // 팔기
+    { at: t5 + 0.2, end: t6 - 0.1, cls: 'cine-chips cine-decor-chips', html: BAG.map((b) => `<span>${b.icon} ${b.label} ${b.price}</span>`).join('') },
+    { at: t5 + 1.0, end: t6 - 0.1, cls: 'cine-count', html: `<small>잡화점에 팔았어요</small><b class="cine-num">+0</b><em>츄르 💰</em>`, sfx: 'riser' },
+    // 꾸미기: 가구가 하나씩 놓인다
+    { at: t6 + 0.35, end: t6 + 0.4, cls: 'cine-none', html: '', sfx: 'pop', pitch: 0.5, run: yardUpTo(1) },
+    { at: t6 + 0.85, end: t6 + 0.9, cls: 'cine-none', html: '', sfx: 'pop', pitch: 0.6, run: yardUpTo(2) },
+    { at: t6 + 1.35, end: t6 + 1.4, cls: 'cine-none', html: '', sfx: 'pop', pitch: 0.7, run: yardUpTo(3) },
+    { at: t6 + 1.85, end: t6 + 1.9, cls: 'cine-none', html: '', sfx: 'pop', pitch: 0.8, run: yardUpTo(4) },
+    { at: t6 + 2.3, end: t6 + 2.35, cls: 'cine-none', html: '', sfx: 'pop', pitch: 0.9, run: yardUpTo(5) },
+    { at: t6 + 0.3, end: t7 - 0.1, cls: 'cine-chips cine-decor-chips', html: `<span>🛒 해먹</span><span>🐾 캣타워</span><span>🏮 등불</span>` },
+    { at: t7 + 0.2, end: 99, cls: 'cine-cta', html: `<span>댓글에</span> <b>'입주'</b><em>오늘부터 같이 놀아요 🐾</em>`, sfx: 'pop' },
+  ];
+
+  return {
+    shots,
+    heroNo: null,
+    voice: playVoiceUrl,
+    voiceAt: A,
+    caps: PLAY_LINES.map(([a, b, text]) => ({ at: A + a, end: A + b + 0.25, text })),
+    overlays,
+    tick,
+    cleanup: () => {
+      const s = sc();
+      s.setFishing(null);
+      s.setDance(null);
+      s.setBugs([]);
+      s.setNpcs([]);
+      leaveCave();
+      s.setYardItemsFree(homeNo, []);
+      s.setWalkMode(false);
+      pushHousesToScene(true);
+    },
+  };
+}
+
 /** 지금 섬의 집들 + 가짜 내 집 (빈 집 자리) */
 function withMine(mine: House): House[] {
   const list = new Map([...state.houses.values()].map((h) => [h.houseNo, h]));
@@ -1495,7 +1779,7 @@ export function startCinema(scene: IslandScene) {
   scene.highlightRegion(null);
   const shots = buildShots();
   // 릴스 나레이션은 미리 받아 두고, 새 주민은 서버에 묻는다
-  const voices = new Map([winterVoiceUrl, decorVoiceUrl, seriesVoiceUrl, hookVoiceUrl, newcomerVoiceUrl].map((u) => [u, loadCineVoice(u)]));
+  const voices = new Map([playVoiceUrl, winterVoiceUrl, decorVoiceUrl, seriesVoiceUrl, hookVoiceUrl, newcomerVoiceUrl].map((u) => [u, loadCineVoice(u)]));
   let newcomer: Newcomer | null = null;
 
   const root = document.createElement('div');
@@ -1508,7 +1792,8 @@ export function startCinema(scene: IslandScene) {
       <h2>🎬 촬영 모드</h2>
       <p class="cine-lead">진짜 게임 화면에 카메라만 움직여요. <b>자동 녹화</b>가 켜져 있으면 화면 기록 없이 끝나자마자 영상 파일이 나와요.</p>
       <div class="cine-result" hidden></div>
-      <button class="cine-go cine-winter">🌙 겨울밤 릴스 <small>코타츠 고양이, 남은 집 · 약 27초</small></button>
+      <button class="cine-go cine-play">🎣 노는 하루 릴스 <small>낚시, 곤충, 동굴, 츄르, 꾸미기 · 약 24초</small></button>
+      <button class="cine-go cine-go-sub cine-winter">🌙 겨울밤 릴스 <small>코타츠 고양이, 남은 집 · 약 27초</small></button>
       <button class="cine-go cine-go-sub cine-winterthumb">🖼️ 겨울밤 썸네일 <small>코타츠 고양이, 글자 없이</small></button>
       <button class="cine-go cine-go-sub2 cine-decor">🎨 꾸미기 릴스 <small>지붕 그림, 집 안, 고양이 · 약 30초</small></button>
       <button class="cine-go cine-go-sub cine-series">📅 연재 릴스 <small>약 39초</small></button>
@@ -1964,6 +2249,11 @@ export function startCinema(scene: IslandScene) {
       recLabel = 'decor';
       startReel(decorBtn, () => buildDecorReel(data));
     });
+  });
+  const playBtn = $<HTMLButtonElement>('.cine-play');
+  playBtn.addEventListener('click', () => {
+    recLabel = 'play';
+    startReel(playBtn, () => buildPlayReel(newcomer?.houseNo ?? null));
   });
   const winterBtn = $<HTMLButtonElement>('.cine-winter');
   winterBtn.addEventListener('click', () => {

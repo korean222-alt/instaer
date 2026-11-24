@@ -292,7 +292,8 @@ export interface IslandScene {
 
   /**
    * 촬영 모드 (2026-11-17): 카메라를 앱이 직접 놓는다. null 이면 원래 카메라(손가락 조작)로 돌아간다.
-   * 켜 있는 동안에는 손가락으로 지도를 움직이거나 집을 누를 수 없다. 걷기/집 안에서는 무시한다.
+   * 켜 있는 동안에는 손가락으로 지도를 움직이거나 집을 누를 수 없다.
+   * 집 안(2026-11-20), 걷기와 동굴 안(2026-11-24)에서도 이 카메라로 그린다 (집 안/동굴은 그 방 좌표).
    */
   setCinemaCamera(cam: CinemaCamera | null): void;
   /** 집 이름표를 보일지 (기본 true). 촬영 모드에서 가까이 찍을 때 끈다 */
@@ -1057,7 +1058,14 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
       controls.update();
       controls.takeLook();
       walker.update(dt, controls.moveX, controls.moveY, 0, controls.takeJump());
-      cave.updateCamera(camera, dt, walker.x, walker.z);
+      // 촬영 모드 (2026-11-24 노는 하루 릴스): 동굴 안도 앱이 준 카메라로 (동굴 가운데가 원점)
+      if (cinema) {
+        applyCinemaCamera(cinema);
+        if (camera.fov !== (cinema.fov ?? VIEW_FOV)) {
+          camera.fov = cinema.fov ?? VIEW_FOV;
+          camera.updateProjectionMatrix();
+        }
+      } else cave.updateCamera(camera, dt, walker.x, walker.z);
       cave.update(dt);
       const dmc = drawPlayer(dt, 0.01);
       player.setMood(0, dmc ? 0 : walker.sit, walker.yawn);
@@ -1078,6 +1086,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
       npcView.viewportH = viewportH;
       npcs.update(dt, npcView);
       renderer.render(cave.scene, camera);
+      afterRenderCb?.();
       cpuMs = cpuMs * 0.9 + (performance.now() - t0) * 0.1;
       if (walker.z > CAVE_EXIT_Z) leaveCave(true);
       return;
@@ -1162,6 +1171,8 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
         if (zr !== 1) walkCam.zoomMul = THREE.MathUtils.clamp(walkCam.zoomMul / zr, 0.5, 1.5);
       }
       walkCam.update(dt, camera, walker.x, walker.groundY, walker.air, walker.z, controls.takeLook() + takeYawKick(dt));
+      // 촬영 모드 (2026-11-24 노는 하루 릴스): 걷는 고양이(낚시, 곤충)도 앱이 준 카메라로 찍는다
+      if (cinema) applyCinemaCamera(cinema);
       // 물고기를 낚으면 눈웃음을 짓는다
       const dmw = drawPlayer(dt, 0.035, fishing === 'caught' ? 1 : 0, fishing === null);
       player.setMood(0, riding ? 1 : dmw ? 0 : walker.sit, fishing !== null || riding ? 0 : walker.yawn);
@@ -1187,7 +1198,7 @@ export function createIslandScene(canvas: HTMLCanvasElement, options: IslandScen
       target.dist = t.dist;
     }
     // 시점이 바뀌는 동안에는 이전 카메라 자리에서 새 자리로 부드럽게 옮긴다
-    const fovGoal = walking ? WALK_FOV + walkCam.zoom * 8 : cinema ? (cinema.fov ?? VIEW_FOV) : VIEW_FOV;
+    const fovGoal = walking && !cinema ? WALK_FOV + walkCam.zoom * 8 : cinema ? (cinema.fov ?? VIEW_FOV) : VIEW_FOV;
     if (blend < 1) {
       blend = Math.min(1, blend + dt / 0.9);
       const e = blend * blend * (3 - 2 * blend);
