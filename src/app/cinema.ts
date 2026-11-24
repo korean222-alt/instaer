@@ -1441,6 +1441,24 @@ const PLAY_YARD: PlacedItem[] = [
   { id: 'cine-y-cushion', type: 'cushion', x: 0.6, z: 1.6, rotY: 0 },
 ];
 
+/** 노는 하루 썸네일 자리: 부두 끝 고양이 + 바다 쪽 카메라 (고양이 얼굴, 낚싯대, 뒤로 섬) */
+function playThumbSpot(): { catX: number; catZ: number; catYaw: number; pose: Pose; bugs: SceneBug[] } {
+  const dock = dockArea();
+  const dDir = Math.sign(dock.z1 - dock.z0) || 1;
+  const catX = dock.x;
+  const catZ = dock.z1 - dDir * 0.8;
+  const catYaw = dDir > 0 ? 0 : Math.PI;
+  // 카메라는 고양이 앞(바다) 쪽 비스듬히, 낮게
+  const yaw = catYaw + 0.55;
+  return {
+    catX,
+    catZ,
+    catYaw,
+    pose: { x: catX, y: GROUND_Y + 0.75, z: catZ + dDir * 0.4, yaw, pitch: 0.12, dist: 4.6, fov: 44 },
+    bugs: [{ id: 'cine-thumb-bug', kind: 'fly', x: catX - 1.0, z: catZ - dDir * 0.6, color: '#ffbf3a', size: 2 }],
+  };
+}
+
 function buildPlayReel(newestNo: number | null): Reel {
   const G = GROUND_Y;
   const A = PLAY_VOICE_AT;
@@ -1794,6 +1812,7 @@ export function startCinema(scene: IslandScene) {
       <p class="cine-lead">진짜 게임 화면에 카메라만 움직여요. <b>자동 녹화</b>가 켜져 있으면 화면 기록 없이 끝나자마자 영상 파일이 나와요.</p>
       <div class="cine-result" hidden></div>
       <button class="cine-go cine-play">🎣 노는 하루 릴스 <small>낚시, 곤충, 동굴, 츄르, 꾸미기 · 약 24초</small></button>
+      <button class="cine-go cine-go-sub cine-playthumb">🖼️ 노는 하루 썸네일 <small>부두에서 낚시 성공, 글자 없이</small></button>
       <button class="cine-go cine-go-sub cine-winter">🌙 겨울밤 릴스 <small>코타츠 고양이, 남은 집 · 약 27초</small></button>
       <button class="cine-go cine-go-sub cine-winterthumb">🖼️ 겨울밤 썸네일 <small>코타츠 고양이, 글자 없이</small></button>
       <button class="cine-go cine-go-sub2 cine-decor">🎨 꾸미기 릴스 <small>지붕 그림, 집 안, 고양이 · 약 30초</small></button>
@@ -2135,6 +2154,47 @@ export function startCinema(scene: IslandScene) {
   });
 
   // ── 겨울밤 썸네일 (2026-11-21): 밤, 코타츠 위에 앉은 치즈 고양이 + 뒤에 트리와 밤 창문. 위쪽 1/3 은 글자 자리로 비운다 ──
+  // ── 노는 하루 썸네일 (2026-11-24): 부두 끝에서 물고기를 낚아 올린 치즈 고양이를 바다 쪽에서. 위쪽은 하늘과 섬 = 글자 자리 ──
+  const playThumbBtn = $<HTMLButtonElement>('.cine-playthumb');
+  playThumbBtn.addEventListener('click', () => {
+    if (playing || thumbPose) return;
+    playThumbBtn.disabled = true;
+    void (async () => {
+      const fake = winterRoomHouse(newcomer?.houseNo ?? null);
+      const max = ($('[data-o="max"]') as HTMLInputElement).checked;
+      scene.setCinemaQuality(max ? 'max' : 'high');
+      scene.setNameTags(false);
+      scene.setTimeOfDay('day');
+      panel.hidden = true;
+      resultBox.hidden = true;
+      scene.setHouses(withMine(fake));
+      scene.setWalkMode(true, fake.houseNo);
+      const p = playThumbSpot();
+      scene.setLocalPosition(p.catX, p.catZ, p.catYaw);
+      scene.setBugs(p.bugs);
+      thumbPose = p.pose;
+      await wait(300);
+      scene.setFishing('cast');
+      await wait(1400);
+      scene.setFishing('bite');
+      await wait(400);
+      scene.setFishing('reel');
+      await wait(800);
+      scene.setFishing('caught');
+      await wait(1100);
+      const shot = await grab();
+      scene.setFishing(null);
+      scene.setBugs([]);
+      scene.setWalkMode(false);
+      pushHousesToScene(true);
+      thumbPose = null;
+      scene.setNameTags(true);
+      panel.hidden = false;
+      playThumbBtn.disabled = false;
+      shot.toBlob((blob) => showPhoto(blob, '위쪽 하늘 자리에 "고양이섬에선 하루 종일 뭐 해? 🎣" 같은 글자를 넣으세요. 프로필 격자에서는 가운데 3:4 만 보여요.', 'playthumb'), 'image/png');
+    })();
+  });
+
   const winterThumbBtn = $<HTMLButtonElement>('.cine-winterthumb');
   winterThumbBtn.addEventListener('click', () => {
     if (playing || thumbPose) return;
